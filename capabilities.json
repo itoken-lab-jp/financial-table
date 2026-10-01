@@ -1,0 +1,3965 @@
+{
+    "dataRoles": [
+        {
+            "name": "account",
+            "kind": "Grouping",
+            "displayName": "科目",
+            "description": "科目の階層を上から入れる：区分 → 中分類（任意）→ 科目名。一番上が区分（区分ごとに小計を付ける）、一番下が科目（行に出す名前）。並びはモデルの「列で並べ替え」の順（区分・中分類・科目名それぞれに設定する）。セグメントごとに科目の顔ぶれが違って届いた順では決まらない所は、並びの欄で決める。区分の名前には意味を持たせない（向きは貸方フラグ、残高は残高フラグから）"
+        },
+        {
+            "displayName": "科目コード",
+            "description": "科目マスタのコード（任意）。行を見分けるキー（無ければ区分・中分類・科目名をキーにする）",
+            "name": "accountCode",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "並び",
+            "description": "科目の並びの数値（任意）。並びはモデルの「列で並べ替え」の順で、この欄はその順で決まらない所（セグメントやシナリオごとに科目の顔ぶれが違うとき）だけを決める。決まらない所があれば表の上で知らせるので、そのときに入れる",
+            "name": "accountOrder",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "残高フラグ",
+            "description": "ON の科目は残高（期末の値）で、四半期・通期で足さずに期間の最後の月の値を出す（貸借対照表の科目）。空ならフロー。区分と残高・フローの違う科目は区分の合計には足さない",
+            "name": "balanceFlag",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "貸方フラグ",
+            "description": "必須。ON の科目は正常な残高が貸方（収益・負債・純資産）、OFF は借方（費用・資産）。空は OFF でなく区分の向きを継ぐ（区分の科目がどれも空なら向きが分からず、区分を足さない）。区分の向きは区分の中の科目の値の多数で決め、区分と逆の科目（減価償却累計額・貸倒引当金・自己株式・売上値引）は ▲ で見せる。良し悪しは、貸方のフローは増えると良い、借方のフローは増えると悪い、残高は色なし",
+            "name": "creditFlag",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "月",
+            "description": "月の列（日付か 2025-04 の形の文字）。四半期・半期・年度・累計はビジュアルが月から組む。前年同期も月の値から取るので、比べる前年の月も入る範囲にする",
+            "name": "period",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "シナリオ",
+            "description": "実績・予算・見通しなどの名前の列（縦持ち）。無ければ、値の欄に入れたメジャーの名前をシナリオにする（横持ち。比較順は書式ペインでメジャーごとに決める）",
+            "name": "event",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "比較順",
+            "description": "シナリオの確かさの順。数か日付（ファイルの更新日など）で、大きい・新しいほど確か（例：期初予算 1・修正予算 2・見通し 3・実績 4）。最新見込みで先に採り、比較の既定は一番小さいシナリオ。前年実績のように比べるだけのシナリオは空にする",
+            "name": "eventOrder",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "セグメント",
+            "description": "事業・部門など（任意）。最大 3 段（会社 → 事業 → 部門など）で、段を重ねるときは上の段から入れる（道筋でセグメントを見分ける）。表はセグメントごとのブロックと、それを足した計のブロックを並べ、セグメントの名前を左の列に出す（見る人が開き閉じする）。最新見込みと比較は、一番下の段のセグメントごとに月の数字のあるシナリオを採ってから足す。セグメントの合計の行（全社の行）は持たず、セグメントの足し算にする",
+            "name": "organization",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "値",
+            "description": "科目ごとの値のメジャー（財務の値。人数・時間などの量は指標へ）。シナリオの列を使わないときは、実績・予算のように複数入れると、メジャーの名前がシナリオになる",
+            "name": "amount",
+            "kind": "Measure"
+        },
+        {
+            "displayName": "指標",
+            "description": "表に行として足すメジャー（人数・時間・台数などの量、EBITDA のような会社独自の行、「うち」）。セグメント × シナリオ × 月の値（科目を外した値）を読む。置く場所・期間の集計・書式・良し悪しは書式ペインの「指標」でメジャーごとに決める",
+            "name": "indicator",
+            "kind": "Measure"
+        }
+    ],
+    "dataViewMappings": [
+        {
+            "conditions": [
+                {
+                    "organization": {
+                        "max": 3
+                    },
+                    "event": {
+                        "max": 1
+                    },
+                    "eventOrder": {
+                        "max": 1
+                    },
+                    "account": {
+                        "max": 3
+                    },
+                    "accountCode": {
+                        "max": 1
+                    },
+                    "accountOrder": {
+                        "max": 1
+                    },
+                    "balanceFlag": {
+                        "max": 1
+                    },
+                    "creditFlag": {
+                        "max": 1
+                    },
+                    "period": {
+                        "max": 1
+                    },
+                    "amount": {
+                        "max": 10
+                    },
+                    "indicator": {
+                        "max": 20
+                    }
+                }
+            ],
+            "matrix": {
+                "rows": {
+                    "select": [
+                        {
+                            "for": {
+                                "in": "organization"
+                            }
+                        },
+                        {
+                            "for": {
+                                "in": "event"
+                            }
+                        },
+                        {
+                            "for": {
+                                "in": "eventOrder"
+                            }
+                        },
+                        {
+                            "for": {
+                                "in": "account"
+                            }
+                        },
+                        {
+                            "for": {
+                                "in": "accountCode"
+                            }
+                        },
+                        {
+                            "for": {
+                                "in": "accountOrder"
+                            }
+                        },
+                        {
+                            "for": {
+                                "in": "balanceFlag"
+                            }
+                        },
+                        {
+                            "for": {
+                                "in": "creditFlag"
+                            }
+                        }
+                    ],
+                    "dataReductionAlgorithm": {
+                        "window": {
+                            "count": 30000
+                        }
+                    }
+                },
+                "columns": {
+                    "for": {
+                        "in": "period"
+                    },
+                    "dataReductionAlgorithm": {
+                        "top": {
+                            "count": 2000
+                        }
+                    }
+                },
+                "values": {
+                    "select": [
+                        {
+                            "for": {
+                                "in": "amount"
+                            }
+                        },
+                        {
+                            "for": {
+                                "in": "indicator"
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    ],
+    "objects": {
+        "comparison": {
+            "displayName": "主と比較",
+            "properties": {
+                "main": {
+                    "displayName": "主",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffSwap": {
+                    "displayName": "2 段の上下を入れ替える",
+                    "type": {
+                        "bool": true
+                    }
+                }
+            }
+        },
+        "events": {
+            "displayName": "シナリオ（メジャーごと）",
+            "properties": {
+                "order": {
+                    "displayName": "比較順",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign": {
+                    "displayName": "符号の持ち方",
+                    "type": {
+                        "enumeration": []
+                    }
+                }
+            }
+        },
+        "periods": {
+            "displayName": "期間",
+            "properties": {
+                "fiscalStartMonth": {
+                    "displayName": "期首の月",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "fiscalYear": {
+                    "displayName": "年度",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "yearLabel": {
+                    "displayName": "年度の呼び方",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "showMonths": {
+                    "displayName": "月",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "showQuarters": {
+                    "displayName": "四半期",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "showHalves": {
+                    "displayName": "半期",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "showYear": {
+                    "displayName": "通期",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "showYtd": {
+                    "displayName": "累計",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "scrollStart": {
+                    "displayName": "スクロールの最初の位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                }
+            }
+        },
+        "display": {
+            "displayName": "表示",
+            "properties": {
+                "copyButton": {
+                    "displayName": "画像のコピー",
+                    "type": {
+                        "bool": true
+                    }
+                }
+            }
+        },
+        "rows": {
+            "displayName": "行",
+            "properties": {
+                "amountSign": {
+                    "displayName": "符号の持ち方",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "parentPosition": {
+                    "displayName": "小計の位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "orgTotalPosition": {
+                    "displayName": "セグメントの小計の位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "rootName": {
+                    "displayName": "合計の名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "hideEmptyAccounts": {
+                    "displayName": "データの無い科目を隠す",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "bands": {
+                    "displayName": "囲み",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "bandFill": {
+                    "displayName": "囲みの塗り",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "bandColor": {
+                    "displayName": "囲みの色（1 段目）",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "bandColor2": {
+                    "displayName": "囲みの色（2 段目）",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "bandColor3": {
+                    "displayName": "囲みの色（3 段目）",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "bandColor4": {
+                    "displayName": "囲みの色（4 段目から）",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "segmentFill": {
+                    "displayName": "セグメントの塗り",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "segmentColor": {
+                    "displayName": "セグメントの色（1 段目）",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "segmentColor2": {
+                    "displayName": "セグメントの色（2 段目）",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "segmentColor3": {
+                    "displayName": "セグメントの色（3 段目）",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "segmentColor4": {
+                    "displayName": "セグメントの色（4 段目から）",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "eventSigns": {
+            "displayName": "シナリオごとの符号の持ち方",
+            "properties": {
+                "event1": {
+                    "displayName": "シナリオ 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign1": {
+                    "displayName": "符号の持ち方 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "event2": {
+                    "displayName": "シナリオ 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign2": {
+                    "displayName": "符号の持ち方 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "event3": {
+                    "displayName": "シナリオ 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign3": {
+                    "displayName": "符号の持ち方 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "event4": {
+                    "displayName": "シナリオ 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign4": {
+                    "displayName": "符号の持ち方 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "event5": {
+                    "displayName": "シナリオ 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign5": {
+                    "displayName": "符号の持ち方 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "event6": {
+                    "displayName": "シナリオ 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign6": {
+                    "displayName": "符号の持ち方 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "event7": {
+                    "displayName": "シナリオ 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign7": {
+                    "displayName": "符号の持ち方 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "event8": {
+                    "displayName": "シナリオ 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "sign8": {
+                    "displayName": "符号の持ち方 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                }
+            }
+        },
+        "sectionNumbers": {
+            "displayName": "区分ごとの数値",
+            "properties": {
+                "section1": {
+                    "displayName": "区分 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitType1": {
+                    "displayName": "表示単位 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision1": {
+                    "displayName": "小数点以下の桁数 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeStyle1": {
+                    "displayName": "マイナスの書き方 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle1": {
+                    "displayName": "0 の書き方 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle1": {
+                    "displayName": "差が 0 の書き方 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero1": {
+                    "displayName": "丸めて 0 のマイナス 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "section2": {
+                    "displayName": "区分 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitType2": {
+                    "displayName": "表示単位 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision2": {
+                    "displayName": "小数点以下の桁数 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeStyle2": {
+                    "displayName": "マイナスの書き方 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle2": {
+                    "displayName": "0 の書き方 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle2": {
+                    "displayName": "差が 0 の書き方 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero2": {
+                    "displayName": "丸めて 0 のマイナス 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "section3": {
+                    "displayName": "区分 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitType3": {
+                    "displayName": "表示単位 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision3": {
+                    "displayName": "小数点以下の桁数 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeStyle3": {
+                    "displayName": "マイナスの書き方 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle3": {
+                    "displayName": "0 の書き方 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle3": {
+                    "displayName": "差が 0 の書き方 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero3": {
+                    "displayName": "丸めて 0 のマイナス 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "section4": {
+                    "displayName": "区分 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitType4": {
+                    "displayName": "表示単位 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision4": {
+                    "displayName": "小数点以下の桁数 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeStyle4": {
+                    "displayName": "マイナスの書き方 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle4": {
+                    "displayName": "0 の書き方 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle4": {
+                    "displayName": "差が 0 の書き方 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero4": {
+                    "displayName": "丸めて 0 のマイナス 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "section5": {
+                    "displayName": "区分 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitType5": {
+                    "displayName": "表示単位 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision5": {
+                    "displayName": "小数点以下の桁数 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeStyle5": {
+                    "displayName": "マイナスの書き方 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle5": {
+                    "displayName": "0 の書き方 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle5": {
+                    "displayName": "差が 0 の書き方 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero5": {
+                    "displayName": "丸めて 0 のマイナス 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "section6": {
+                    "displayName": "区分 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitType6": {
+                    "displayName": "表示単位 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision6": {
+                    "displayName": "小数点以下の桁数 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeStyle6": {
+                    "displayName": "マイナスの書き方 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle6": {
+                    "displayName": "0 の書き方 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle6": {
+                    "displayName": "差が 0 の書き方 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero6": {
+                    "displayName": "丸めて 0 のマイナス 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "section7": {
+                    "displayName": "区分 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitType7": {
+                    "displayName": "表示単位 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision7": {
+                    "displayName": "小数点以下の桁数 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeStyle7": {
+                    "displayName": "マイナスの書き方 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle7": {
+                    "displayName": "0 の書き方 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle7": {
+                    "displayName": "差が 0 の書き方 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero7": {
+                    "displayName": "丸めて 0 のマイナス 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "section8": {
+                    "displayName": "区分 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitType8": {
+                    "displayName": "表示単位 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision8": {
+                    "displayName": "小数点以下の桁数 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeStyle8": {
+                    "displayName": "マイナスの書き方 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle8": {
+                    "displayName": "0 の書き方 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle8": {
+                    "displayName": "差が 0 の書き方 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero8": {
+                    "displayName": "丸めて 0 のマイナス 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                }
+            }
+        },
+        "calcRows": {
+            "displayName": "計算の行",
+            "properties": {
+                "kind1": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name1": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from1": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after1": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator1": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator1": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format1": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good1": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind2": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name2": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from2": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after2": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator2": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator2": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format2": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good2": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind3": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name3": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from3": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after3": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator3": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator3": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format3": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good3": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind4": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name4": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from4": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after4": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator4": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator4": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format4": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good4": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind5": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name5": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from5": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after5": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator5": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator5": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format5": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good5": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind6": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name6": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from6": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after6": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator6": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator6": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format6": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good6": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind7": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name7": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from7": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after7": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator7": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator7": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format7": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good7": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind8": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name8": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from8": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after8": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator8": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator8": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format8": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good8": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind9": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name9": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from9": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after9": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator9": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator9": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format9": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good9": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind10": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name10": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from10": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after10": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator10": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator10": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format10": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good10": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind11": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name11": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from11": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after11": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator11": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator11": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format11": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good11": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind12": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name12": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from12": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after12": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator12": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator12": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format12": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good12": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind13": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name13": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from13": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after13": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator13": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator13": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format13": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good13": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind14": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name14": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from14": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after14": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator14": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator14": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format14": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good14": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind15": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name15": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from15": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after15": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator15": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator15": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format15": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good15": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind16": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name16": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from16": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after16": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator16": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator16": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format16": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good16": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind17": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name17": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from17": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after17": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator17": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator17": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format17": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good17": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind18": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name18": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from18": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after18": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator18": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator18": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format18": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good18": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind19": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name19": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from19": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after19": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator19": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator19": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format19": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good19": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "kind20": {
+                    "displayName": "種類",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "name20": {
+                    "displayName": "名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "from20": {
+                    "displayName": "どこから",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "after20": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "numerator20": {
+                    "displayName": "分子",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "denominator20": {
+                    "displayName": "分母",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format20": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good20": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                }
+            }
+        },
+        "indicators": {
+            "displayName": "指標",
+            "properties": {
+                "after": {
+                    "displayName": "置く場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "placement": {
+                    "displayName": "置き方",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "aggregation": {
+                    "displayName": "期間の集計",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "format": {
+                    "displayName": "書式",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "good": {
+                    "displayName": "良し悪し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "event": {
+                    "displayName": "シナリオ",
+                    "type": {
+                        "enumeration": []
+                    }
+                }
+            }
+        },
+        "numbers": {
+            "displayName": "数値",
+            "properties": {
+                "unitType": {
+                    "displayName": "表示単位",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitNotation": {
+                    "displayName": "単位の表記",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "precision": {
+                    "displayName": "小数点以下の桁数",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "currency": {
+                    "displayName": "通貨の字",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "negativeStyle": {
+                    "displayName": "マイナスの書き方",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "zeroStyle": {
+                    "displayName": "0 の書き方",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "diffZeroStyle": {
+                    "displayName": "差が 0 の書き方",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "negativeZero": {
+                    "displayName": "丸めて 0 のマイナスに符号を残す",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "unitPlace": {
+                    "displayName": "単位の置き場所",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "ratioCap": {
+                    "displayName": "比・率の上限（%）",
+                    "type": {
+                        "numeric": true
+                    }
+                }
+            }
+        },
+        "colors": {
+            "displayName": "色",
+            "properties": {
+                "toneMode": {
+                    "displayName": "差の色",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good": {
+                    "displayName": "良い差",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "bad": {
+                    "displayName": "悪い差",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "headBackground": {
+                    "displayName": "見出しの背景",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "lines": {
+            "displayName": "罫線",
+            "properties": {
+                "row": {
+                    "displayName": "行の間の点線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "subtotal": {
+                    "displayName": "小計の上の線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "total": {
+                    "displayName": "段階の上の二重線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "head": {
+                    "displayName": "見出しの下の線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "block": {
+                    "displayName": "セグメントの箱の線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "band": {
+                    "displayName": "囲みの線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "nameEdge": {
+                    "displayName": "行の名前と数字のあいだの線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "outer": {
+                    "displayName": "表の外枠",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "periods": {
+                    "displayName": "期間の区切り",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "period": {
+                    "displayName": "期間の区切りの色",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "text": {
+            "displayName": "文字",
+            "properties": {
+                "fontFamily": {
+                    "displayName": "フォント",
+                    "type": {
+                        "formatting": {
+                            "fontFamily": true
+                        }
+                    }
+                },
+                "fontSize": {
+                    "displayName": "表の上の文字サイズ",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "orgSize": {
+                    "displayName": "セグメントの名前",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "nameSize": {
+                    "displayName": "行の名前",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "periodSize": {
+                    "displayName": "期間の見出し",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "columnSize": {
+                    "displayName": "主の列の見出し",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "compareHeadSize": {
+                    "displayName": "比較の列の見出し",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "mainSize": {
+                    "displayName": "主の数字",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "compareSize": {
+                    "displayName": "比較の数字",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "subSize": {
+                    "displayName": "2 段目の数字",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                }
+            }
+        },
+        "visualState": {
+            "displayName": "内部状態 (保存用)",
+            "properties": {
+                "main": {
+                    "displayName": "主 (見る人)",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "mainBase": {
+                    "displayName": "主 (選んだときの書式)",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "compares": {
+                    "displayName": "比較の列 (見る人)",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "openOrgs": {
+                    "displayName": "開いたセグメント (見る人)",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "openRows": {
+                    "displayName": "開いた行 (見る人)",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "closedRows": {
+                    "displayName": "閉じた行 (見る人)",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "picks": {
+                    "displayName": "見せる科目 (見る人)",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "periods": {
+                    "displayName": "期間 (見る人)",
+                    "type": {
+                        "text": true
+                    }
+                }
+            }
+        },
+        "subTotals": {
+            "properties": {
+                "rowSubtotals": {
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "perRowLevel": {
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "columnSubtotals": {
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "perColumnLevel": {
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "levelSubtotalEnabled": {
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "rowSubtotalsType": {
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "Top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "Bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "hierarchy": {
+            "displayName": "階層の表示",
+            "properties": {
+                "enabled": {
+                    "displayName": "階層ごとの配置を使う",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "accountStyle": {
+                    "displayName": "科目の表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "accountTotal": {
+                    "displayName": "科目の展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "accountDirection": {
+                    "displayName": "科目の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "orgStyle": {
+                    "displayName": "セグメントの表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "orgTotal": {
+                    "displayName": "セグメントの展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "orgDirection": {
+                    "displayName": "セグメントの分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "accountRoot": {
+                    "displayName": "科目の最上位の並び",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "joined",
+                                "displayName": "連続した表"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦分割"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右分割"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        "hierarchyOverrides": {
+            "displayName": "階層・要素ごとの配置",
+            "properties": {
+                "target1": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style1": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total1": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction1": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target2": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style2": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total2": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction2": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target3": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style3": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total3": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction3": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target4": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style4": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total4": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction4": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target5": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style5": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total5": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction5": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target6": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style6": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total6": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction6": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target7": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style7": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total7": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction7": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target8": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style8": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total8": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction8": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target9": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style9": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total9": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction9": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target10": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style10": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total10": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction10": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target11": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style11": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total11": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction11": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target12": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style12": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total12": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction12": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target13": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style13": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total13": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction13": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target14": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style14": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total14": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction14": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target15": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style15": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total15": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction15": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target16": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style16": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total16": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction16": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target17": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style17": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total17": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction17": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target18": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style18": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total18": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction18": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target19": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style19": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total19": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction19": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "target20": {
+                    "displayName": "階層または要素",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "style20": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "total20": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "direction20": {
+                    "displayName": "子の分割方向",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "inherit",
+                                "displayName": "既定に合わせる"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "subtotals": {
+        "matrix": {
+            "rowSubtotals": {
+                "propertyIdentifier": {
+                    "objectName": "subTotals",
+                    "propertyName": "rowSubtotals"
+                },
+                "defaultValue": false
+            },
+            "rowSubtotalsPerLevel": {
+                "propertyIdentifier": {
+                    "objectName": "subTotals",
+                    "propertyName": "perRowLevel"
+                },
+                "defaultValue": false
+            },
+            "columnSubtotals": {
+                "propertyIdentifier": {
+                    "objectName": "subTotals",
+                    "propertyName": "columnSubtotals"
+                },
+                "defaultValue": false
+            },
+            "columnSubtotalsPerLevel": {
+                "propertyIdentifier": {
+                    "objectName": "subTotals",
+                    "propertyName": "perColumnLevel"
+                },
+                "defaultValue": false
+            },
+            "levelSubtotalEnabled": {
+                "propertyIdentifier": {
+                    "objectName": "subTotals",
+                    "propertyName": "levelSubtotalEnabled"
+                },
+                "defaultValue": false
+            },
+            "rowSubtotalsType": {
+                "propertyIdentifier": {
+                    "objectName": "subTotals",
+                    "propertyName": "rowSubtotalsType"
+                },
+                "defaultValue": "Top"
+            }
+        }
+    },
+    "tooltips": {
+        "supportedTypes": {
+            "default": true,
+            "canvas": false
+        }
+    },
+    "supportsLandingPage": true,
+    "supportsKeyboardFocus": true,
+    "privileges": []
+}

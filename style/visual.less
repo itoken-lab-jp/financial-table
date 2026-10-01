@@ -1,0 +1,923 @@
+/*
+ * 文字・色など書式ペインで変える値は style で渡す。
+ * 表の中の文字サイズ・見出しの背景・罫線の色は、App.tsx がルートに置く変数（--ft-size-*・--ft-head-bg・--ft-line-*）で受ける。
+ * ここに置くのは表の骨組み：スクロール、固定の見出し、線の形。
+ */
+
+.ft-root {
+    --ft-label-inset: 0.25em;
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    color: var(--ft-text);
+}
+
+.ft-toggle-slot { display: inline-block; width: 0.9em; flex: 0 0 0.9em; }
+.ft-toggle-slot > .ft-toggle { margin-right: 0; }
+.ft-number-parts { display: inline-flex; align-items: baseline; }
+.ft-number-tail { display: inline-block; width: var(--ft-tail-width, auto); text-align: left; }
+.ft-number-tail-content { display: inline-block; white-space: nowrap; }
+.ft-number-unit { font-size: 0.82em; }
+.ft-number-percent { font-size: inherit; }
+.ft-layout-stack { display: flex; align-items: stretch; gap: 0.8em; width: max-content; min-width: 100%; }
+.ft-layout-vertical { flex-direction: column; }
+.ft-layout-horizontal { flex-direction: row; flex-wrap: nowrap; align-items: flex-start; }
+.ft-layout-frame { min-width: max-content; }
+.ft-layout-label { position: relative; z-index: 0; display: flex; align-items: baseline; gap: 1em; padding: 0.4em 0.5em 0.4em var(--ft-label-inset); font-weight: 600; font-size: var(--ft-size-name); white-space: nowrap; }
+.ft-layout-frame-org > .ft-layout-label { font-size: var(--ft-size-org); }
+.ft-layout-unit { margin-left: auto; font-weight: normal; font-size: var(--ft-size-unit); }
+.ft-layout-split > .ft-layout-label { background: var(--ft-frame-fill); color: var(--ft-frame-text); border-bottom: 1px solid var(--ft-line-block); }
+.ft-layout-box, .ft-layout-columns { display: grid; grid-template-columns: max-content auto; }
+.ft-layout-box { border: 1px solid var(--ft-line-band); }
+.ft-layout-box > .ft-layout-label, .ft-layout-columns > .ft-layout-label { border-right: 1px solid var(--ft-line-name); }
+.ft-layout-box > .ft-layout-label { background: var(--ft-frame-fill); color: var(--ft-frame-text); }
+.ft-layout-box > .ft-layout-stack { gap: 0; }
+.ft-layout-table { border: 1px solid var(--ft-line-outer); width: 100%; }
+.ft-layout-table .ft-corner-label,
+.ft-table.ft-layout-table thead th.ft-org-head { font-size: var(--ft-size-column); font-weight: normal; color: var(--ft-head-muted); text-align: left; }
+.ft-corner-label { display: block; }
+.ft-scroll.ft-layout-scroll { border: 0; }
+.ft-block-unit { text-align: right; color: var(--ft-muted); padding: 0.25em 0.5em; font-size: var(--ft-size-unit); }
+.ft-hierarchy-name { z-index: 1; background: var(--ft-bg); vertical-align: top; text-align: left; font-size: var(--ft-size-name); border-right: 1px solid var(--ft-line-name); }
+.ft-table.ft-layout-table thead tr:first-child th { box-shadow: none; }
+.ft-layout-label:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+
+.ft-landing {
+    padding: 1em;
+    overflow: auto;
+
+    .ft-landing-note {
+        color: var(--ft-muted);
+    }
+}
+
+.ft-caption {
+    display: flex;
+    // 比較の選択が増えると 1 行に入らないので、狭いビジュアルでは折り返す（まとまりごと）
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3em 1em;
+    padding: 0 0.25em 0.4em;
+    white-space: nowrap;
+
+    .ft-title {
+        font-weight: 600;
+    }
+
+    .ft-events {
+        color: var(--ft-muted);
+    }
+
+    .ft-unit {
+        margin-left: auto;
+        color: var(--ft-muted);
+    }
+}
+
+.ft-notice {
+    color: var(--ft-muted);
+    padding: 0 0.25em 0.4em;
+}
+
+/*
+ * 表の外枠は、表を包むスクロールの箱に引く（スクロールしても左と上の線が残る）。箱は表の大きさに縮め、ビジュアルより大きければ
+ * ビジュアルの大きさで止めてスクロールする
+ */
+.ft-scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    align-self: flex-start;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: auto;
+    border: 1px solid var(--ft-line-outer);
+}
+
+.ft-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-variant-numeric: tabular-nums;
+
+    th,
+    td {
+        // 余白は詰める
+        padding: 0.15em 0.5em;
+        white-space: nowrap;
+    }
+
+    /*
+     * 列の見出しは 2 行まとめて上に残す。行ごとに top をずらすと、字の大きさの違うセルで位置がずれ、
+     * 下にスクロールしたとき線が段違いになる
+     */
+    thead {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    thead th {
+        background: var(--ft-head-bg);
+        color: var(--ft-head-text);
+        font-weight: 600;
+        // 見出しの行の高さは字に合わせて詰める。
+        line-height: 1.25;
+    }
+
+    // Desktop はページに合わせてビジュアルを拡大するので、スクロールの端数で見出しが数 px 下がり、上の隙間から下の行が透ける。
+    // 見出しの上へ白を伸ばして覆う（スクロールしていないときは、表の外なので ft-scroll に切られて見えない）
+    thead tr:first-child th {
+        box-shadow: 0 -8px 0 var(--ft-head-bg);
+    }
+
+    thead tr:nth-child(2) th {
+        border-bottom: 1px solid var(--ft-line-head);
+        font-weight: normal;
+        color: var(--ft-head-muted);
+    }
+
+    .ft-corner {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        // 行の名前の列と数字の列のあいだの縦線（行の名前の列と同じ）
+        border-right: 1px solid var(--ft-line-name);
+        // 見出しと表のあいだの線を、行の名前の列の下にも引く（2 段目の見出しの線と同じ。無いと、数字の列と組織の列の下にだけ線があった）
+        border-bottom: 1px solid var(--ft-line-head);
+        vertical-align: middle;
+    }
+
+    .ft-period {
+        text-align: center;
+        border-bottom: 1px solid var(--ft-line-row);
+        font-size: var(--ft-size-period);
+    }
+
+    // 列の見出しは真ん中。
+    // 文字サイズは主の列と比較の列で別々（書式ペインの「主の列の見出し」「比較の列の見出し」）
+    .ft-colhead {
+        text-align: center;
+        vertical-align: middle;
+        font-size: var(--ft-size-compareHead);
+    }
+
+    .ft-colhead.ft-col-main {
+        font-size: var(--ft-size-column);
+    }
+
+    // 主の見出し（実績・最新見込みなど）は縦横の真ん中
+    .ft-colhead.ft-col-main {
+        text-align: center;
+        vertical-align: middle;
+    }
+
+    // 期間の区切り。期間の最初の列（表の最初の期間は除く）の左に縦の線
+    .ft-period-start {
+        border-left: 1px solid var(--ft-line-period);
+    }
+
+    // 月ごとにイベントが違う列（つないだ主・古い計画へ落とした比較）。点線で、ツールチップに内訳があると分かるようにする
+    .ft-colhead-mixed > div:first-child {
+        text-decoration: underline dotted;
+        cursor: help;
+    }
+}
+
+.ft-name {
+    position: sticky;
+    left: 0;
+    background: var(--ft-bg);
+    text-align: left;
+    // 行の名前・主の数字・比較の数字（2 段なら 2 段のまとまり）は、どれも縦の真ん中
+    vertical-align: middle;
+    font-weight: normal;
+    font-size: var(--ft-size-name);
+    // 行の名前の列と数字の列のあいだの縦線
+    border-right: 1px solid var(--ft-line-name);
+    z-index: 1;
+}
+
+// 単位を左上の角に置くとき。行の名前の列の上に、見出しの下の線に寄せる
+.ft-corner-unit {
+    display: block;
+    text-align: left;
+    font-weight: normal;
+    // 補足なので列の見出しよりひと回り小さく
+    font-size: calc(var(--ft-size-column) * 0.85);
+    color: var(--ft-head-muted);
+}
+
+.ft-value {
+    text-align: right;
+    vertical-align: middle;
+
+    .ft-sub {
+        font-size: var(--ft-size-sub);
+    }
+}
+
+td.ft-col-main {
+    font-size: var(--ft-size-main);
+}
+
+/*
+ * 2 段の比較のセルがある表は、どの行も 2 段の高さにそろえる（1 段の行も同じ高さ。字はどれも縦の真ん中）。セルの高さは行の最低の高さに
+ * なる。主の数字が 2 段より大きければ、どの行も主の数字の高さになる。空けた行は除く
+ */
+.ft-two-lines tbody .ft-row:not(.ft-row-blank) td.ft-value {
+    height: calc((var(--ft-size-compare) + var(--ft-size-sub)) * 1.35);
+}
+
+td.ft-col-diff,
+td.ft-col-compare {
+    font-size: var(--ft-size-compare);
+}
+
+/*
+ * 行の上の線は、行の境目ごとに種類を 1 つ決めて、名前の列（ft-name-line・ft-box-line）から数字の列の右端まで同じ線で引く（App.tsx の
+ * isBoxEdge）。強い順に、セグメントの切れ目・段階（二重線）・小計・囲みの箱の始まりか終わり・それ以外（行の間の点線）。後に書いた規則が勝つ
+ * ので、弱い順に書く。表の最初の行の上には引かない
+ */
+.ft-row {
+    th,
+    td {
+        border-top: 1px solid var(--ft-line-row);
+    }
+}
+
+.ft-row-boxedge {
+    th,
+    td {
+        border-top: 1px solid var(--ft-line-band);
+    }
+}
+
+tbody .ft-row:first-child {
+    th,
+    td {
+        border-top-color: transparent;
+    }
+}
+
+/*
+ * 太字は段階の行（利益・合計）の名前と数字、小計・見出しの行の名前だけ。小計・見出しの行の数字は明細と同じ太さ
+ */
+.ft-row-step th,
+.ft-row-step td,
+.ft-row-subtotal th,
+.ft-row-heading th {
+    font-weight: 600;
+}
+
+.ft-row-sumline,
+.ft-row-midstep {
+    th,
+    td {
+        border-top: 1px solid var(--ft-line-subtotal);
+    }
+}
+
+/* 最後の段階の行（当期純利益・資産合計など）の上は二重線。途中の段階（ft-row-midstep）は小計の線 */
+.ft-row-total {
+    th,
+    td {
+        border-top: 3px double var(--ft-line-total);
+    }
+}
+
+.ft-row-breakdown {
+    color: var(--ft-muted);
+
+    // 「うち」は小さい字だけ（枠を付けると表の上のボタンに似て押せそうに見えた）
+    .ft-tag {
+        margin-right: 0.35em;
+        font-size: 0.8em;
+    }
+}
+
+.ft-row-blank {
+    th,
+    td {
+        border-top-color: transparent;
+    }
+}
+
+/*
+ * 囲み（区分・中分類の箱）。セグメントの箱と同じく、段ごとの縦線と、行の間の線で箱にする。行の名前の列の横線は、行のセルの線を消して、上の行と共通する一番近いまとまりの
+ * 縦線から引く（ft-name-line）
+ */
+.ft-box,
+.ft-seg-box {
+    position: absolute;
+    bottom: 0;
+    z-index: 0;
+    box-sizing: border-box;
+    border-left: 1px solid var(--ft-line-band);
+    pointer-events: none;
+}
+
+.ft-seg-box {
+    border-left-color: var(--ft-line-block);
+}
+
+// 箱の上の辺（高さ 0 の線。塗りの上に重ねる）。区分の箱の線の種類は行で決まる（下の ft-name-line と同じ）。セグメントの箱の線は
+// ブロックの切れ目なのでセグメントの箱の線
+.ft-box-line,
+.ft-seg-box-line {
+    position: absolute;
+    height: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.ft-box-line {
+    border-top: 1px solid var(--ft-line-row);
+}
+
+.ft-seg-box-line {
+    border-top: 1px solid var(--ft-line-block);
+}
+
+/*
+ * 名前のセル・セグメントのセルは上の枠線を持たず、行の間の線は中の線（ft-name-line・ft-box-line・ft-seg-line）がセルの上の端から引く
+ * （App.tsx の NestedBox）。枠線の分は上の余白に足して、字の高さを数字の列とそろえる
+ */
+.ft-table tbody th.ft-name,
+.ft-table tbody th.ft-org {
+    border-top-width: 0;
+    padding-top: calc(0.15em + 1px);
+}
+
+.ft-table tbody th.ft-org,
+.ft-table tbody th.ft-hierarchy-name { padding-left: var(--ft-label-inset); }
+
+.ft-table tbody .ft-row-total th.ft-name {
+    padding-top: calc(0.15em + 3px);
+}
+
+.ft-name-line {
+    position: absolute;
+    right: 0;
+    height: 0;
+    z-index: 1;
+    border-top: 1px solid var(--ft-line-row);
+    pointer-events: none;
+}
+
+// 名前の列の線も、数字の列と同じ種類（上の .ft-row〜.ft-row-block と同じ順）
+.ft-row-boxedge .ft-name-line,
+.ft-row-boxedge .ft-box-line {
+    border-top: 1px solid var(--ft-line-band);
+}
+
+.ft-row-sumline .ft-name-line,
+.ft-row-sumline .ft-box-line,
+.ft-row-midstep .ft-name-line,
+.ft-row-midstep .ft-box-line {
+    border-top: 1px solid var(--ft-line-subtotal);
+}
+
+.ft-row-total .ft-name-line,
+.ft-row-total .ft-box-line {
+    border-top: 3px double var(--ft-line-total);
+}
+
+.ft-row-block .ft-name-line,
+.ft-row-block .ft-box-line {
+    border-top: 1px solid var(--ft-line-block);
+}
+
+.ft-row-blank .ft-name-line,
+.ft-row-blank .ft-box-line,
+tbody .ft-row:first-child .ft-name-line,
+tbody .ft-row:first-child .ft-box-line,
+tbody .ft-row:first-child .ft-seg-box-line {
+    display: none;
+}
+
+/* 囲みの帯。行の見出しのセル（sticky で位置を持つ）の中に、段ごとに重ねる */
+.ft-band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 0;
+}
+
+// 行の名前の横の単位
+.ft-name-unit {
+    margin-left: 0.2em;
+    font-size: 0.8em;
+    font-weight: normal;
+    opacity: 0.7;
+}
+
+.ft-name-text {
+    position: relative;
+    z-index: 1;
+}
+
+
+.ft-events {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4em;
+    color: var(--ft-muted);
+
+    .ft-event {
+        color: var(--ft-text);
+    }
+}
+
+.ft-select {
+    // 選んだ中身の幅に合わせる。既定の幅の見積もりは和文の字を狭く見て「つなぐ（確度の順）」の末尾が切れた
+    field-sizing: content;
+    font: inherit;
+    color: var(--ft-text);
+    background: var(--ft-bg);
+    border: 1px solid var(--ft-line-row);
+    border-radius: 2px;
+    padding: 0 0.2em;
+}
+
+/* 表の上のバーの「比較」：全期間の列のシナリオの名前。押すと比較の列を選ぶダイアログ（主の選択と同じ見た目） */
+.ft-compare-open {
+    font: inherit;
+    color: var(--ft-text);
+    background: var(--ft-bg);
+    border: 1px solid var(--ft-line-row);
+    border-radius: 2px;
+    padding: 0 0.3em;
+    cursor: pointer;
+}
+
+/* 比較の列を選ぶダイアログ（バーと期間の見出しの ▾ で同じ形）の 1 行：列の名前、シナリオ、見せ方 */
+.ft-compare-slot {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.4em;
+    padding: 0.2em 0.8em;
+
+    select {
+        min-width: 0;
+    }
+}
+
+.ft-compare-slot-name {
+    color: var(--ft-muted);
+}
+
+// 「全期間と同じ」のあいだは全期間の列を押せない形で見せる
+.ft-compare-locked select {
+    color: #a19f9d;
+}
+
+.ft-compare-hint {
+    margin-top: 0.3em;
+    padding-top: 0.3em;
+    border-top: 1px solid #edebe9;
+    color: var(--ft-muted);
+    font-size: 0.9em;
+}
+
+.ft-name-head {
+    font-weight: 600;
+}
+
+/*
+ * 組織の列。組織の名前をその組織の行にまとめて縦にかけ、行の見出しと一緒に左に残す（left は App.tsx が幅を測って渡す）。
+ * 組織のブロックの境は、行の間の線より濃い実線
+ */
+.ft-org {
+    position: sticky;
+    background: var(--ft-bg);
+    text-align: left;
+    vertical-align: top;
+    font-weight: 600;
+    font-size: var(--ft-size-org);
+    // ブロックの切れ目の横線は ::before で字下げの位置から引く（下の .ft-row-block）
+    border-top: 1px solid transparent;
+    // 組織の列と行の名前のあいだの縦線は、行の名前と数字のあいだと同じ
+    border-right: 1px solid var(--ft-line-name);
+    z-index: 1;
+}
+
+/*
+ * セグメントの箱。1 列に畳み、段ごとに字下げして、囲む親の段ごとに縦線を引く。
+ * ブロックの切れ目の横線は、すぐ外の親の縦線から右へ引く（数字の列は端から端まで）
+ */
+.ft-seg-rail {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid var(--ft-line-block);
+    pointer-events: none;
+}
+
+.ft-org-line {
+    white-space: nowrap;
+}
+
+.ft-table thead th.ft-org-head {
+    text-align: left;
+    vertical-align: middle;
+    font-weight: normal;
+    font-size: var(--ft-size-org);
+    color: var(--ft-head-muted);
+    border-bottom: 1px solid var(--ft-line-head);
+}
+
+.ft-row-block {
+    th,
+    td {
+        border-top: 1px solid var(--ft-line-block);
+    }
+
+    th.ft-org {
+        border-top-color: transparent;
+    }
+
+    .ft-seg-line {
+        position: absolute;
+        top: 0;
+        left: var(--ft-seg-line, 0px);
+        right: 0;
+        border-top: 1px solid var(--ft-line-block);
+        pointer-events: none;
+    }
+}
+
+tbody .ft-row-block:first-child .ft-seg-line {
+    display: none;
+}
+
+tbody .ft-row-block:first-child {
+    th,
+    td {
+        border-top-color: transparent;
+    }
+}
+
+/* 開き閉じのしるし。字と同じ大きさで、押せる所だけ手の形 */
+.ft-toggle {
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin-right: 0.3em;
+    font: inherit;
+    // 塗った小計の行では白抜きの字と同じ色にする
+    color: inherit;
+    opacity: 0.75;
+    cursor: pointer;
+}
+
+/* 組織の名前は、その組織の行が見えているあいだ列の見出しの下に残す（top は App.tsx が見出しの高さを測って渡す） */
+.ft-org-label {
+    position: sticky;
+}
+
+/* すべて開く・すべて閉じる。表の上の行に、主と比較のメニューのあとに小さく置く */
+.ft-folds {
+    display: inline-flex;
+    gap: 0.4em;
+
+    .ft-fold-all {
+        font: inherit;
+        font-size: 0.85em;
+        color: var(--ft-muted);
+        background: var(--ft-bg);
+        border: 1px solid var(--ft-line-row);
+        border-radius: 2px;
+        padding: 0 0.4em;
+        cursor: pointer;
+    }
+}
+
+/* セグメントの列が広すぎて左に残さないとき（行の見出しだけを残す）。中の縦線・横線の基準にするので relative */
+.ft-table th.ft-org-free {
+    position: relative;
+}
+
+/*
+ * 選択。選んだもののほかに白い半透明の覆いを重ねて薄くする。透明度（opacity）にすると、上と左に残す見出しが透けて
+ * 下の行・横の列の数字が重なって見えた。行の見出しは sticky なのでそのまま覆いの基準になる。値のセルと列の見出しは relative にする
+ */
+.ft-dim::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    // App.tsx の DIM_WHITE と合わせる
+    background: rgba(255, 255, 255, 0.65);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* 値のセルは z-index で重なりの文脈を作り、覆いをセルの中に閉じ込める（無いと、スクロールで上と左に残す見出しの上に覆いが重なった） */
+td.ft-dim {
+    position: relative;
+    z-index: 0;
+}
+
+thead th.ft-dim {
+    position: relative;
+}
+
+.ft-pickable,
+.ft-pickable-row .ft-name,
+.ft-pickable-row .ft-value {
+    cursor: pointer;
+}
+
+.ft-org-selected {
+    box-shadow: inset 0 0 0 2px #118dff;
+}
+
+/*
+ * キーボードで移ったセルの枠（マウスで押したときは出さない）。枠を outline にすると選択の覆い（::after）の下になって薄くなるので、
+ * 覆いより上の ::before に描く。値のセルは重なりの文脈を作って、枠を上と左に残す見出しの上に出さない
+ */
+.ft-table [data-cell]:focus {
+    outline: none;
+}
+
+.ft-table td[data-cell]:focus-visible {
+    position: relative;
+    z-index: 0;
+}
+
+/*
+ * 位置を持たないセル（列の見出し・左に残さない組織の列）は、枠の基準にするため relative にする。z-index で重なりの文脈を作り、
+ * 枠を左上の角・上と左に残す見出しの上に出さない（無いと、スクロールしたとき枠が残す見出しの上を横切った）
+ */
+.ft-table thead th.ft-period:focus-visible,
+.ft-table thead th.ft-colhead:focus-visible,
+.ft-table th.ft-org-free[data-cell]:focus-visible {
+    position: relative;
+    z-index: 0;
+}
+
+.ft-table [data-cell]:focus-visible::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    /* 黒と白の二重にする（帯の色で塗った行の上でも見える） */
+    box-shadow:
+        inset 0 0 0 2px var(--ft-text),
+        inset 0 0 0 4px var(--ft-bg);
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* Windows のハイコントラスト（forced-colors）では box-shadow が消えるので、フォーカスは outline で見せる */
+@media (forced-colors: active) {
+    .ft-table [data-cell]:focus-visible {
+        outline: 2px solid Highlight;
+        outline-offset: -2px;
+    }
+}
+
+/*
+ * 期間の見出しの ▾（その期間の比較対象と見せ方を選ぶ）。期間の名前の右に置き、同じ幅の空きを左にも置いて名前を真ん中に保つ。
+ * 見出しの選択（月で絞る）とは別に押す。列の見出しや数字の右端には関わらない
+ */
+// 期間の名前と ▾ を真ん中に並べる。inline-flex だと行の中の置き場所（文字の下の線に合わせる）の分だけ下に空きができ、行が高くなった
+.ft-period-label {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.2em;
+}
+
+.ft-colmenu-spacer {
+    display: inline-block;
+    font-size: 0.95em;
+    width: 1.1em;
+}
+
+.ft-colmenu-open {
+    display: inline-block;
+    width: 1.1em;
+    font: inherit;
+    font-size: 0.95em;
+    line-height: 1.2;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--ft-head-muted);
+    cursor: pointer;
+
+    &:hover {
+        color: var(--ft-text);
+        background: #edebe9;
+    }
+}
+
+/* 見せる科目：表の上のバーのボタンと、区分・中分類ごとに科目を選ぶダイアログ */
+// 期間を選ぶボタンは印を分ける（見せる科目のダイアログが、期間のボタンを自分の開くボタンとみなして閉じなかった）
+.ft-pick-open,
+.ft-period-open {
+    font: inherit;
+    font-size: 0.85em;
+    color: var(--ft-muted);
+    background: var(--ft-bg);
+    border: 1px solid var(--ft-line-row);
+    border-radius: 2px;
+    padding: 0 0.4em;
+    cursor: pointer;
+}
+
+.ft-pick-pop {
+    position: absolute;
+    z-index: 20;
+    // 位置は開いたボタンのすぐ下（PickDialog）。高さは中身に合わせ、ビジュアルの中に収める（maxHeight）
+    width: min(24em, calc(100% - 0.5em));
+    box-sizing: border-box;
+    overflow-y: auto;
+    padding: 0.25em 0 0.5em;
+    background: var(--ft-bg);
+    border: 1px solid var(--ft-line-row);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    font-size: 0.9em;
+
+    button {
+        font: inherit;
+        cursor: pointer;
+    }
+}
+
+.ft-pick-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0.3em 0.8em 0.3em;
+    font-weight: 600;
+}
+
+.ft-pick-close,
+.ft-pick-actions button {
+    font-size: 0.9em;
+    font-weight: normal;
+    color: var(--ft-muted);
+    background: var(--ft-bg);
+    border: 1px solid var(--ft-line-row);
+    border-radius: 2px;
+    padding: 0 0.4em;
+}
+
+.ft-pick-parent {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    padding: 0.25em 0.8em;
+    border: none;
+    background: transparent;
+    color: var(--ft-text);
+
+    &:hover,
+    &:focus-visible {
+        background: #edebe9;
+        outline: none;
+    }
+}
+
+.ft-pick-mark {
+    display: inline-block;
+    width: 1.1em;
+    color: var(--ft-muted);
+}
+
+.ft-pick-count {
+    margin-left: 0.6em;
+    color: var(--ft-muted);
+    font-size: 0.85em;
+}
+
+.ft-pick-body {
+    padding: 0 0.8em 0.4em 1.9em;
+}
+
+.ft-pick-modes,
+.ft-pick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2em 0.8em;
+    padding: 0.15em 0;
+}
+
+.ft-pick-mode,
+.ft-pick-account {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+    cursor: pointer;
+}
+
+.ft-pick-account {
+    padding: 0.1em 0;
+}
+
+.ft-pick-actions {
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid #edebe9;
+    margin-bottom: 0.2em;
+}
+
+@media (forced-colors: active) {
+    .ft-pick-parent:focus-visible {
+        outline: 2px solid Highlight;
+        outline-offset: -2px;
+    }
+}
+
+/* 出す期間のダイアログ：年度の中の 1 行（通期・累計、上期・下期、四半期とその月） */
+.ft-period-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.1em 0.9em;
+    padding: 0.1em 0;
+}
+
+.ft-period-top {
+    padding-top: 0.1em;
+    padding-left: 0.8em;
+    border-bottom: 1px solid #edebe9;
+    margin-bottom: 0.2em;
+}
+
+// 数字の後ろの単位（h・円/h・pt）は少し小さく、数字とのあいだを少し空ける（App.tsx の withSuffix）
+.ft-suffix {
+    margin-left: 0.1em;
+    font-size: 0.82em;
+}
+
+// 上端のボタンの行（開き閉じ・期間を選ぶ・科目を選ぶ）。年度から下（ft-sheet）と分け、表を切り取りやすくする（App.tsx）
+.ft-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3em 0.5em;
+    padding: 0 0.25em 0.5em;
+    white-space: nowrap;
+}
+
+// 年度・主・比較・単位と表（画像としてコピーはこの中だけを描く）
+.ft-sheet {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    min-height: 0;
+}
+
+// 下に置いた合計は、その下でまとまりを締める。境界は上下のセルで重ねて引かない。
+.ft-table .ft-row-end {
+    > td { border-top: 1px solid var(--ft-line-row); }
+    > th.ft-name, > td { border-bottom: 1px solid var(--ft-line-subtotal); }
+    .ft-name-line, .ft-box-line { border-top: 1px solid var(--ft-line-row); }
+    > th.ft-name { padding-top: calc(0.15em + 1px); }
+}
+.ft-table .ft-row-end + .ft-row {
+    > td, > th.ft-hierarchy-name { border-top-width: 0; }
+    .ft-name-line, .ft-box-line { display: none; }
+}
+// 最終結果を区切る二重線は上側。直前の小計の下線と同じ境界を二度描かない。
+.ft-table .ft-row-end:has(+ .ft-row-end.ft-row-total),
+.ft-table .ft-row-end:has(+ .ft-row-start),
+.ft-table .ft-row-end:has(+ .ft-row-block),
+.ft-table .ft-row-end:has(+ .ft-row-hierarchy-start) {
+    > th.ft-name, > td { border-bottom: 0; }
+}
+.ft-table .ft-row-end.ft-row-total {
+    > td { border-top: 3px double var(--ft-line-total); }
+    > th.ft-name, > td { border-bottom: 0; }
+    > th.ft-name { padding-top: calc(0.15em + 3px); }
+    .ft-name-line, .ft-box-line { display: block; border-top: 3px double var(--ft-line-total); }
+}
+.ft-table.ft-layout-table:has(tbody > .ft-row-end:not(.ft-row-total):last-child) { border-bottom: 0; }
+.ft-layout-table .ft-row-collapsed > td { font-weight: 600; }
+.ft-layout-table tbody > .ft-row-collapsed:first-child > td { border-top-width: 0; }
+
+// 上合計はまとまりの開始側を区切る。先頭は列見出しの下線だけにする。
+.ft-table .ft-row-start:not(:first-child) {
+    > td { border-top: 1px solid var(--ft-line-subtotal); }
+    .ft-name-line, .ft-box-line { display: block; border-top: 1px solid var(--ft-line-subtotal); }
+}
+.ft-table .ft-row-start:first-child > td { border-top-width: 0; }
+
+// 集計の強調は計算種別や開閉状態で変えない。
+.ft-layout-table .ft-row-expanded > th.ft-name,
+.ft-layout-table .ft-row-expanded > td { font-weight: 600; }
+
+// 横積みでは新しく始まる親セルから右だけを区切り、継続中の上位セルを横断しない。
+.ft-layout-table .ft-row-hierarchy-start:not(:first-child) {
+    > th.ft-hierarchy-name, > td { border-top: 1px solid var(--ft-line-subtotal); }
+    .ft-name-line, .ft-box-line { display: block; border-top: 1px solid var(--ft-line-subtotal); }
+}
+
+// 事業境界は次のブロックの上辺だけで描き、左の囲みと数値列を同じ高さにする。
+.ft-layout-table .ft-row-block:not(:first-child) {
+    > td { border-top: 1px solid var(--ft-line-block); }
+    .ft-name-line, .ft-box-line { display: block; border-top: 1px solid var(--ft-line-block); }
+}

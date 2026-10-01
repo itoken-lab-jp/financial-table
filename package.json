@@ -1,0 +1,26 @@
+{
+  "name": "financial-table",
+  "version": "1.0.2.0",
+  "description": "実績・予算・見通しを科目・事業の階層で比較する予実表。小計・利益・比率の計算行と時間などの指標を設定でき、損益計算書・貸借対照表・管理会計に使える",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "package": "pbiviz package --skip-api",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "powerbi-visuals-api": "5.11.1",
+    "powerbi-visuals-utils-formattingmodel": "6.0.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "powerbi-visuals-tools": "7.2.1",
+    "typescript": "5.5.4"
+  }
+}
