@@ -24,7 +24,7 @@ import { ComparePatch, PeriodPatch, PickPatch, VisualState } from "./visualState
 import { CompareDialog } from "./CompareDialog";
 import { PeriodDialog } from "./PeriodDialog";
 import { PickDialog } from "./PickDialog";
-import { UNIT_PLACES } from "./settings";
+import { UNIT_PLACES, COLUMN_PADDINGS, ROW_HEIGHTS } from "./settings";
 
 export interface AppProps {
     viewModel: ViewModel;
@@ -583,7 +583,11 @@ export function App({
             const key = cell.dataset.valueColumn!;
             widths.set(key, Math.max(widths.get(key) ?? 0, width));
         }
-        for (const cell of cells) cell.style.setProperty("--ft-tail-width", `${Math.ceil(widths.get(cell.dataset.valueColumn!) ?? 0)}px`);
+        // 「数値」カードの「単位の字の幅をそろえる」を切ると、そろえない（単位の字の無い行の右に空きを出さない）
+        for (const cell of cells) {
+            if (viewModel.style.alignTails) cell.style.setProperty("--ft-tail-width", `${Math.ceil(widths.get(cell.dataset.valueColumn!) ?? 0)}px`);
+            else cell.style.removeProperty("--ft-tail-width");
+        }
         // 同じ構成の分割表は、名前・数値の列幅を共有する。テキストの実測値を使い、縮小しない。
         const tables = Array.from(rootRef.current?.querySelectorAll<HTMLTableElement>(".ft-layout-table") ?? []);
         // 前回の固定位置を外してから自然なセル位置を測る。ブラウザは結合セルや罫線の分だけ列幅を広げることがある。
@@ -677,6 +681,10 @@ export function App({
         // 表の中の文字サイズ・見出しの背景・罫線の色は visual.less が変数で受ける
         ...Object.fromEntries(Object.entries(style.sizes).map(([key, size]) => [`--ft-size-${key}`, `${size}pt`])),
         "--ft-size-unit": `${style.fontSize}pt`,
+        "--ft-row-pad": ROW_HEIGHTS[style.rowHeight].pad,
+        "--ft-col-pad": COLUMN_PADDINGS[style.columnPadding],
+        "--ft-row-line": ROW_HEIGHTS[style.rowHeight].line,
+        "--ft-row-two": String(ROW_HEIGHTS[style.rowHeight].two),
         ...Object.fromEntries(Object.entries(style.lines).map(([key, color]) => [`--ft-line-${key}`, color])),
         "--ft-head-bg": style.headBackground,
         "--ft-head-text": style.headText,
@@ -713,7 +721,7 @@ export function App({
     return (
         <div
             ref={rootRef}
-            className={`ft-root${viewModel.style.boldAggregates ? " ft-bold-aggregates" : ""}`}
+            className={`ft-root${viewModel.style.aggregateDouble ? " ft-aggregate-double" : ""}${viewModel.style.boldAggregates ? " ft-bold-aggregates" : ""}${viewModel.style.breakdown.muted ? " ft-breakdown-muted" : ""}${Object.entries(viewModel.style.bold).filter(([, m]) => m !== "auto").map(([k, m]) => ` ft-bold-${k}-${m}`).join("")}`}
             style={rootStyle}
             onFocusCapture={e => {
                 const target = e.target as HTMLElement;
@@ -1307,7 +1315,7 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
                 : <th className="ft-corner" data-width-key="n0" rowSpan={2} colSpan={plan.nameColumns} {...focusProps(picking, cellKey.corner)}>
                     <span className={cornerUnit ? "ft-corner-unit" : "ft-corner-label"}>{cornerUnit || "項目"}</span>
                 </th>)}
-            {viewModel.periods.map((p, i) => <th key={p.key} className={`ft-period ft-period-${p.kind}${i > 0 && viewModel.style.periodLines ? " ft-period-start" : ""}`} colSpan={p.span}
+            {viewModel.periods.map((p, i) => <th key={p.key} className={`ft-period ft-period-${p.kind}${i > 0 && viewModel.style.periodLines ? " ft-period-start" : ""}${i > 0 && p.kind !== "month" ? " ft-period-agg" : ""}`} colSpan={p.span}
                 {...focusProps(picking, cellKey.period(p.key))} {...pickProps(picking, periodTarget(viewModel, p.key))}
                 {...(openMenu ? { "data-period": p.key, "aria-haspopup": "dialog" as const } : {})}>
                 {openMenu ? <span className="ft-period-label"><span className="ft-colmenu-spacer" aria-hidden="true" />{p.label}
@@ -1318,7 +1326,7 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
         </tr><tr>{!viewModel.hideNames && cornerTitle && <th className="ft-corner" data-width-key="n0" colSpan={plan.nameColumns} {...focusProps(picking, cellKey.corner)}>
                 <span className={cornerUnit ? "ft-corner-unit" : "ft-corner-label"}>{cornerUnit || "項目"}</span>
             </th>}{viewModel.columns.map((c, i) => <th key={`${c.periodKey}:${c.slot ?? "main"}`} data-width-key={`v${i}`}
-            className={`ft-colhead ft-col-${c.kind}${starts.has(i) ? " ft-period-start" : ""}`}
+            className={`ft-colhead ft-col-${c.kind}${starts.has(i) ? " ft-period-start" : ""}${starts.has(i) && c.periodKind !== "month" ? " ft-period-agg" : ""}`}
             {...focusProps(picking, cellKey.column(i))} {...pickProps(picking, periodTarget(viewModel, c.periodKey))} {...tooltipProps(c.tooltip, tooltip)}
             {...(openMenu && c.slot !== undefined ? { "data-period": c.periodKey, "data-slot": c.slot, "aria-haspopup": "dialog" as const } : {})}>
             <div>{c.header}</div>{c.sub && <div className="ft-colhead-sub">{c.sub}</div>}
@@ -1423,7 +1431,7 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
                 )}
                 <span className="ft-name-text">
                     <span className="ft-toggle-slot">{toggleRow && <Toggle open={row.open!} above={row.aggregatePosition === "bottom" || (row.aggregatePosition === undefined && row.toggleAbove)} label={row.name} onClick={toggleRow} />}</span>
-                    {row.type === "breakdown" && <span className="ft-tag">うち</span>}
+                    {row.type === "breakdown" && viewModel.style.breakdown.tag && <span className="ft-tag">うち</span>}
                     {row.type === "blank" ? " " : row.name}
                     {row.unit && <span className="ft-name-unit">{row.unit}</span>}
                 </span>
@@ -1681,18 +1689,19 @@ function ValueCell({
     columnIndex: number;
 }): React.JSX.Element {
     const color = cell.tone === "good" ? viewModel.style.good : cell.tone === "bad" ? viewModel.style.bad : undefined;
-    // 内訳（うち）の値は角括弧で囲み、合計に足さない行だと分かるようにする
-    const wrap = (text: string) => (breakdown && text && kind === "main" ? `[${text}]` : text);
+    // 内訳（うち）の値は角括弧で囲み、合計に足さない行だと分かるようにする（「行」カードの「うちの行」で切れる）
+    const bracket = breakdown && kind === "main" && viewModel.style.breakdown.brackets;
+    const wrap = (text: string) => (bracket && text ? `[${text}]` : text);
     return (
         <td
             data-value-column={columnIndex}
             data-width-key={`v${columnIndex}`}
-            className={`ft-value ft-col-${kind ?? "main"}${periodStart ? " ft-period-start" : ""}${dim ? " ft-dim" : ""}`}
+            className={`ft-value ft-col-${kind ?? "main"}${periodStart ? " ft-period-start" : ""}${periodStart && viewModel.columns[columnIndex]?.periodKind !== "month" ? " ft-period-agg" : ""}${dim ? " ft-dim" : ""}`}
             style={color ? { color } : undefined}
             {...tooltipProps(cell.tooltip, tooltip)}
             {...(pick as React.HTMLAttributes<HTMLTableCellElement>)}
         >
-            <div>{cell.parts ? <NumberParts parts={cell.parts} bracket={breakdown && kind === "main" && cell.text !== ""} /> : withSuffix(wrap(cell.text))}</div>
+            <div>{cell.parts ? <NumberParts parts={cell.parts} bracket={bracket && cell.text !== ""} /> : withSuffix(wrap(cell.text))}</div>
             {cell.sub !== undefined && <div className="ft-sub">{cell.subParts ? <NumberParts parts={cell.subParts} bracket={false} /> : withSuffix(cell.sub)}</div>}
         </td>
     );

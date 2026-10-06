@@ -233,12 +233,24 @@
                         }
                     }
                 },
+                "columnBold": {
+                    "displayName": "基準列の見出しの太字",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "compareHeadSize": {
                     "displayName": "比較列の見出し",
                     "type": {
                         "formatting": {
                             "fontSize": true
                         }
+                    }
+                },
+                "compareHeadBold": {
+                    "displayName": "比較列の見出しの太字",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "mainSize": {
@@ -249,6 +261,12 @@
                         }
                     }
                 },
+                "mainBold": {
+                    "displayName": "基準列の数字の太字",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "compareSize": {
                     "displayName": "比較列の数字",
                     "type": {
@@ -257,12 +275,24 @@
                         }
                     }
                 },
+                "compareBold": {
+                    "displayName": "比較列の数字の太字",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "subSize": {
                     "displayName": "2 段目の数字",
                     "type": {
                         "formatting": {
                             "fontSize": true
                         }
+                    }
+                },
+                "subBold": {
+                    "displayName": "2 段目の数字の太字",
+                    "type": {
+                        "enumeration": []
                     }
                 }
             }
@@ -347,6 +377,12 @@
                         "bool": true
                     }
                 },
+                "aggregateDouble": {
+                    "displayName": "集計の列の区切りを二重線",
+                    "type": {
+                        "bool": true
+                    }
+                },
                 "periodLine": {
                     "displayName": "期間の区切りの色",
                     "type": {
@@ -363,6 +399,12 @@
                         "formatting": {
                             "fontSize": true
                         }
+                    }
+                },
+                "periodBold": {
+                    "displayName": "期間の見出しの太字",
+                    "type": {
+                        "enumeration": []
                     }
                 }
             }
@@ -450,6 +492,12 @@
                                 "displayName": "左右分割"
                             }
                         ]
+                    }
+                },
+                "hideBlankRows": {
+                    "displayName": "値の無い行を隠す",
+                    "type": {
+                        "bool": true
                     }
                 },
                 "totalRow": {
@@ -550,6 +598,30 @@
                         }
                     }
                 },
+                "breakdownBrackets": {
+                    "displayName": "数字をかっこで囲む",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "breakdownMuted": {
+                    "displayName": "灰色にする",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "breakdownTag": {
+                    "displayName": "「うち」の字を付ける",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "othersCount": {
+                    "displayName": "その他の件数を出す",
+                    "type": {
+                        "bool": true
+                    }
+                },
                 "boldAggregates": {
                     "displayName": "集計の数字を太字",
                     "type": {
@@ -562,6 +634,12 @@
                         "formatting": {
                             "fontSize": true
                         }
+                    }
+                },
+                "nameBold": {
+                    "displayName": "行名の太字",
+                    "type": {
+                        "enumeration": []
                     }
                 }
             }
@@ -700,6 +778,12 @@
                         "formatting": {
                             "fontSize": true
                         }
+                    }
+                },
+                "orgBold": {
+                    "displayName": "セグメント名の太字",
+                    "type": {
+                        "enumeration": []
                     }
                 }
             }
@@ -2208,6 +2292,12 @@
                     "displayName": "単位の位置",
                     "type": {
                         "enumeration": []
+                    }
+                },
+                "alignTails": {
+                    "displayName": "単位の字の幅をそろえる",
+                    "type": {
+                        "bool": true
                     }
                 },
                 "ratioCap": {
@@ -3836,6 +3926,18 @@
                         "formatting": {
                             "fontSize": true
                         }
+                    }
+                },
+                "rowHeight": {
+                    "displayName": "行の高さ",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "columnPadding": {
+                    "displayName": "列の余白",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "headBackground": {

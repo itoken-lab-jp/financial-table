@@ -1,4 +1,5 @@
 import { INDICATOR_KEY } from "./data";
+import { UNDER_KEY } from "./picks";
 import { TOTAL_KEY, type DisplayRow, type RowModel } from "./rows";
 import type { TableRow } from "./viewModel";
 import type { HierarchyOptions, HierarchyStyle, SplitDirection } from "./hierarchySettings";
@@ -26,7 +27,8 @@ export function accountTree(model: RowModel, stepParents = true): AccountTree {
             }
         };
         // 科目・指標の行の子はうち（rows.ts）なので、いつも親の下に続ける（集計の行として下に回さない）
-        attach(def.children, def.type === "detail" || def.type === "breakdown" || def.type === "measure" ? node.following : node.children);
+        // 小計をうちにした行（UNDER_KEY）の子は、元の小計の中身なので子にする（開き閉じできる）
+        attach(def.children, def.type === "detail" || (def.type === "breakdown" && !def.code.startsWith(UNDER_KEY)) || def.type === "measure" ? node.following : node.children);
         // 合計行のうち（見る人が区分をうちにした行）は子にする（合計行の囲みの設定が、うちの行に効く）
         // 見る人がうちにした行（科目・小計）は子と同じ扱い（親の囲みと展開時の合計の位置が効く）。
         // 書式ペインで指標を「行のうち」に置いた行は、いつも親の下に続ける
@@ -46,8 +48,10 @@ export function accountTree(model: RowModel, stepParents = true): AccountTree {
     const order = new Map(model.display.map((r, i) => [r.def.code, i]));
     const first = (n: AccountNode): number => Math.min(order.get(n.row.def.code)!, ...n.children.map(first));
     // 見る人がうち・その他にして表から外した行は数えない（数えると、範囲が交差したと誤って知らせた）
+    // その他・うちにした小計の中身は、開くと見えるよう表に残すが、その他・うちの行の子なので数えない
+    const swallowed = new Set(Array.from(nodes.values()).filter(n => n.row.def.type === "others" || n.row.def.code.startsWith(UNDER_KEY)).flatMap(n => n.row.def.children));
     const coverage = (n: AccountNode): Set<string> => n.row.def.type === "step"
-        ? new Set(n.row.def.summands.map(s => s.code).filter(code => nodes.has(code))) : new Set([n.row.def.code]);
+        ? new Set(n.row.def.summands.map(s => s.code).filter(code => nodes.has(code) && !swallowed.has(code))) : new Set([n.row.def.code]);
     const warnings: string[] = [];
     // 範囲の小さい計算行から親にする（合計行を上に置くと表の先頭に来るので、並びの順だと合計行が先に区分を取り、計算行がその下に入った）
     const steps = Array.from(nodes.values()).filter(n => n.row.def.type === "step" && (stepParents || n.row.def.code === TOTAL_KEY));

@@ -60,7 +60,7 @@ import {
     hiddenRows,
     toggleablePaths,
 } from "./orgs";
-import { PickParent, RowPick, applyPicks, isAccountRow, pickParents } from "./picks";
+import { OTHERS_KEY, PickParent, RowPick, UNDER_KEY, applyPicks, isAccountRow, pickParents } from "./picks";
 import { RowNumberOverride, overrideKey, parentsOf, resolveRowNumbers, rowNumberOverrides, rowNumberTargets } from "./rowNumbers";
 import { CalcRowSpec, DisplayRow, IndicatorSpec, RowDef, RowType, TOTAL_KEY, buildRows } from "./rows";
 import { AmountSign, resolveSigns, toDebitPlus } from "./signs";
@@ -98,6 +98,13 @@ import {
     TOTAL_ROW,
     UNIT_PLACES,
     TITLE_PLACES,
+    ROW_HEIGHTS,
+    RowHeight,
+    BOLD_KEYS,
+    BoldKey,
+    BoldMode,
+    ColumnPadding,
+    COLUMN_PADDINGS,
     VisualFormattingSettingsModel,
     calcProp,
     rowNumberProp,
@@ -339,7 +346,7 @@ export function indicatorSettings(input: InputData, eventModel: EventModel): Ind
             queryName: indicator.queryName,
             code: indicator.code,
             after: saved.after || CALC_TABLE_END,
-            placement: saved.placement === INDICATOR_MODES.under ? INDICATOR_MODES.under : INDICATOR_MODES.after,
+            placement: saved.placement === INDICATOR_MODES.under || saved.placement === INDICATOR_MODES.hidden ? saved.placement : INDICATOR_MODES.after,
             aggregation: saved.aggregation === "stock" ? "stock" : "flow",
             format: saved.format ?? "",
             good: saved.good === "up" || saved.good === "down" ? saved.good : "neutral",
@@ -355,7 +362,7 @@ export function indicatorSpecs(settings: IndicatorSetting[], warn: (message: str
         code: s.code,
         name: s.name,
         target: s.after === CALC_TABLE_END ? null : s.after,
-        mode: s.placement === INDICATOR_MODES.under ? "under" : "after",
+        mode: s.placement === INDICATOR_MODES.under ? "under" : s.placement === INDICATOR_MODES.hidden ? "hidden" : "after",
         aggregation: s.aggregation === "stock" ? "stock" : "flow",
         format: indicatorFormat(s.format, s.name, warn),
         good: s.good === "up" ? 1 : s.good === "down" ? -1 : 0,
@@ -905,8 +912,13 @@ export function transform(
     const rowsClosedByDefault = tree !== null;
     const openRows = new Set(viewer.openRows);
     const foldKey = (prefix: string, code: string) => (tree ? `${prefix}\u0001${code}` : code);
+    // その他・小計をうちにした行は、既定で閉じる。行を既定で開く表（セグメントなし）では、見る人の「閉じた行」の記録を反転して読む（押すと開く）
+    const closedByDefault = new Set(foldableCodes.filter((code) => code.startsWith(OTHERS_KEY) || code.startsWith(UNDER_KEY)));
+    const closedRowsSet = new Set(viewer.closedRows);
     const closedIn = (prefix: string) =>
-        new Set(rowsClosedByDefault ? foldableCodes.filter((code) => !openRows.has(foldKey(prefix, code))) : viewer.closedRows);
+        new Set(rowsClosedByDefault
+            ? foldableCodes.filter((code) => !openRows.has(foldKey(prefix, code)))
+            : foldableCodes.filter((code) => closedRowsSet.has(code) !== closedByDefault.has(code)).concat(viewer.closedRows.filter((code) => !foldableCodes.includes(code))));
     const shownIn = (closedSet: Set<string>) => {
         const hiddenSet = hiddenRows(model.display, model.attached, closedSet, model.following);
         return model.display.filter((d) => !hiddenSet.has(d.def.code));
@@ -975,7 +987,7 @@ export function transform(
             const { depth } = row;
             const { unit: rowUnit, sign: rowSign, word, currency: rowCurrency, format: ownFormat } = numbersOf(row.def.code);
             const suffix = rowSuffix(row.def.code);
-            const plain = othersNamed(row.def, hasRow);
+            const plain = othersNamed(row.def, hasRow, settings.rows.othersCount.value);
             // 行別の数値書式で書式を上書きした行（#,0h）は、その書式で出す（金額の行だけ）
             const formatted = ownFormat && plain.format.kind === "amount" ? { ...plain, format: ownFormat } : plain;
             // 単位を数字のあとに置くとき、金額の行は数字に単位の字を付ける（ツールチップは円まで出すので付けない）
@@ -1093,11 +1105,20 @@ export function transform(
     {
         const options = (kind: "account" | "org", id: string, level: number) => hierarchyOptions({ ...settings.rows, ...settings.segments } as unknown as HierarchyDefaults, hierarchySaved, kind, id, level);
         const codes = tree && settings.segments.hideEmptyAccounts.value ? codesByOrg(tree.root, input.facts) : null;
+        // 表に出す月（前年同期を比べるなら 12 か月前も）。「値の無い行を隠す」が切なら null
+        const shownMonths = settings.rows.hideBlankRows.value
+            ? new Set(periodColumns.flatMap(p => usedCompares.includes(PRIOR_YEAR) ? [...p.months, ...p.months.map(m => m - 12)] : p.months))
+            : null;
         const block = (node?: OrgNode): LayoutPlan => {
             const prefix = node ? node.path ?? "\u0000" : "";
             const ownCalc = !node || node === tree?.root ? calc : new Calculator(model, debitFacts.filter(f => containsOrg(node, f.org)));
             const present = node && codes ? codes.get(node.path) ?? new Set<string>() : null;
             const empty = present ? emptyAccountRows(model.display, model.attached, code => present.has(code), model.rows) : new Set<string>();
+            // 「行」カードの「値の無い行を隠す」：表に出す月にファクトの無い行を外す（区分・中分類・その他・うちはセグメントの空の行と同じ扱い）
+            if (shownMonths) {
+                const inShown = new Set(input.facts.filter(f => shownMonths.has(f.month) && (!node || containsOrg(node, f.org))).map(f => f.code));
+                for (const code of emptyAccountRows(model.display, model.attached, code => inShown.has(code), model.rows)) empty.add(code);
+            }
             const shown = model.display.filter(r => !empty.has(r.def.code));
             const full = shown.length ? shown : model.display;
             const values = tableRows(ownCalc, prefix, node?.label ?? null, !node || node === tree?.root, full,
@@ -1153,7 +1174,8 @@ export function transform(
         folds: foldsOf(
             tree ? toggleablePaths(tree.root) : [],
             tree ? allNodes(tree.root).flatMap((node) => foldableCodes.map((code) => foldKey(node.path ?? "\u0000", code))) : foldableCodes,
-            rowsClosedByDefault
+            rowsClosedByDefault,
+            closedByDefault
         ),
         rowStateKey: rowsClosedByDefault ? "openRows" : "closedRows",
         picks: pickChoices.length > 0 ? { parents: pickChoices, current: viewer.picks } : null,
@@ -1203,6 +1225,8 @@ export interface TableStyle {
     lines: typeof DEFAULT_LINE_COLORS;
     /** 期間のあいだに縦の線を引くか */
     periodLines: boolean;
+    /** 集計の列（四半期・半期・通期・累計・合計）の前の区切りを二重線にするか */
+    aggregateDouble: boolean;
     /** 「単位：百万円」を置く所 */
     unitPlace: UnitPlace;
     /** 年度（表の題）を左上の角に置くか（既定は表の上） */
@@ -1211,6 +1235,16 @@ export interface TableStyle {
     bandFill: boolean;
     /** 区分・中分類の行の数字も太字にするか（既定は計算行の数字だけ太字） */
     boldAggregates: boolean;
+    /** 行の高さ（「表全体」カード） */
+    rowHeight: RowHeight;
+    /** 数字のあとの単位の字の幅を列の中でそろえるか（「数値」カード） */
+    alignTails: boolean;
+    /** 文字の要素ごとの太さ（各カードの「…の太字」） */
+    bold: Record<BoldKey, BoldMode>;
+    /** 列の余白（「表全体」カード） */
+    columnPadding: ColumnPadding;
+    /** うちの行の見せ方：基準の数字をかっこで囲む・灰色にする・「うち」の字を付ける（「行」カードの「うちの行」） */
+    breakdown: { brackets: boolean; muted: boolean; tag: boolean };
     segmentFill: boolean;
     segmentColors: string[];
 }
@@ -1258,10 +1292,20 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
             outer: color(table.outerLine, DEFAULT_LINE_COLORS.outer),
         },
         periodLines: periods.periodLines.value,
+        aggregateDouble: periods.aggregateDouble.value,
         unitPlace: unitPlaceOf(dropdownValue(settings.numbers.unitPlace, UNIT_PLACES.right)),
         titleInCorner: dropdownValue(periods.titlePlace, TITLE_PLACES.top) === TITLE_PLACES.corner,
         bandFill: settings.rows.bandFill.value,
         boldAggregates: settings.rows.boldAggregates.value,
+        rowHeight: rowHeightOf(dropdownValue(settings.table.rowHeight, "normal")),
+        alignTails: settings.numbers.alignTails.value,
+        bold: Object.fromEntries(BOLD_KEYS.map((key) => {
+            const card = {"org":"segments","name":"rows","period":"periods","column":"comparison","compareHead":"comparison","main":"comparison","compare":"comparison","sub":"comparison"}[key] as "segments" | "rows" | "periods" | "comparison";
+            const value = dropdownValue((settings[card] as unknown as Record<string, Parameters<typeof dropdownValue>[0]>)[`${key}Bold`], "auto");
+            return [key, value === "on" || value === "off" ? value : "auto"];
+        })) as Record<BoldKey, BoldMode>,
+        columnPadding: columnPaddingOf(dropdownValue(settings.table.columnPadding, "normal")),
+        breakdown: { brackets: settings.rows.breakdownBrackets.value, muted: settings.rows.breakdownMuted.value, tag: settings.rows.breakdownTag.value },
         segmentFill: settings.segments.segmentFill.value,
         segmentColors: settings.segments.segmentColors(),
     };
@@ -1271,6 +1315,14 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
 /** 塗った所の上の字の色：明るい塗りならテーマの字の色、暗い塗りなら白（contrastingText と同じ明るさの境） */
 export function textOn(fill: string, theme: Pick<Theme, "text">): string {
     return contrastingText(fill) === "#FFFFFF" ? "#FFFFFF" : theme.text;
+}
+
+function rowHeightOf(value: string): RowHeight {
+    return value in ROW_HEIGHTS ? (value as RowHeight) : "normal";
+}
+
+function columnPaddingOf(value: string): ColumnPadding {
+    return value in COLUMN_PADDINGS ? (value as ColumnPadding) : "normal";
 }
 
 function unitPlaceOf(value: string): UnitPlace {
@@ -1284,9 +1336,10 @@ function ratioCapOf(settings: VisualFormattingSettingsModel): number {
 }
 
 /** 「その他」の行の名前（まとめた科目の数。組織のブロックでは、その組織にデータのある科目だけを数える） */
-function othersNamed(def: RowDef, has: (code: string) => boolean): RowDef {
+function othersNamed(def: RowDef, has: (code: string) => boolean, count = true): RowDef {
     if (def.type !== "others") return def;
-    return { ...def, name: `その他（${def.summands.filter((s) => has(s.code)).length}件）` };
+    // 件数は「行」カードの「その他の件数を出す」で切れる
+    return { ...def, name: count ? `その他（${def.summands.filter((s) => has(s.code)).length}件）` : "その他" };
 }
 
 /** 「その他」にまとめた科目の名前（ツールチップ。多ければ先頭だけ） */
@@ -1301,14 +1354,17 @@ function allNodes(node: OrgNode): OrgNode[] {
     return [node, ...node.children.flatMap(allNodes)];
 }
 
-/** すべて開く・すべて閉じるの保存値（行は既定から切り替えた行なので、既定が閉じなら開くときに全部を入れる） */
-function foldsOf(orgs: string[], rows: string[], rowsClosedByDefault: boolean): ViewModel["folds"] {
+/**
+ * すべて開く・すべて閉じるの保存値（行は既定から切り替えた行なので、既定が閉じなら開くときに全部を入れる）。
+ * 行を既定で開く表でも、その他・うちにした小計（closedByDefault）は既定で閉じ、「閉じた行」の記録を反転して読むので、開くときに入れ、閉じるときに外す
+ */
+function foldsOf(orgs: string[], rows: string[], rowsClosedByDefault: boolean, closedByDefault: Set<string>): ViewModel["folds"] {
     if (orgs.length === 0 && rows.length === 0) return null;
     return {
         orgs,
         rows,
-        openAll: { openOrgs: orgs, ...(rowsClosedByDefault ? { openRows: rows } : { closedRows: [] }) },
-        closeAll: { openOrgs: [], ...(rowsClosedByDefault ? { openRows: [] } : { closedRows: rows }) },
+        openAll: { openOrgs: orgs, ...(rowsClosedByDefault ? { openRows: rows } : { closedRows: rows.filter((code) => closedByDefault.has(code)) }) },
+        closeAll: { openOrgs: [], ...(rowsClosedByDefault ? { openRows: [] } : { closedRows: rows.filter((code) => !closedByDefault.has(code)) }) },
     };
 }
 

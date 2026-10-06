@@ -131,7 +131,8 @@ export interface IndicatorSpec {
     /** 置く場所の行（CalcChoices.places の value）。null は表の最後 */
     target: string | null;
     /** after：置く場所の行（とその下の行）の後ろ。under：置く場所の行の「うち」（親の行と同じ見せ方で、集計・書式・良し悪しも親に合わせる） */
-    mode: "after" | "under";
+    /** after：行の後ろ。under：行のうち。hidden：表に出さず、計算行の分子・分母にだけ使う */
+    mode: "after" | "under" | "hidden";
     /** 後ろに置くときの期間の集計（合計・期末） */
     aggregation: "flow" | "stock";
     /** 後ろに置くときの書式（空は金額） */
@@ -691,13 +692,15 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
 
     // ---- 指標の行：書式ペインのメジャーごとの置く場所に置く。置く場所が別の指標なら、その指標を置いてから置く
     const indicatorNames = new Map((opts.indicators ?? []).map((spec) => [spec.code, spec.name]));
+    /** 表に出さない指標のコード（行の定義はあるが並びに無いので、置く場所にできない） */
+    const hiddenCodes = new Set<string>();
     /** 置く場所のキー → 行のコード。区分は区分の値の行（足さない区分は見出し） */
     const placeOf = (key: string): string | undefined => {
         if (key.startsWith(SECTION_KEY)) {
             const label = key.slice(SECTION_KEY.length);
             return sectionValue.get(label) ?? sectionHead.get(label);
         }
-        return rows.has(key) ? key : undefined;
+        return rows.has(key) && !hiddenCodes.has(key) ? key : undefined;
     };
     /** 置く場所の名前（警告に出す。書式ペインの選択肢の名前にそろえる） */
     const placeLabel = (key: string) =>
@@ -775,8 +778,16 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         afterTail.set(parent.code, row.code);
         following.set(parent.code, [...(following.get(parent.code) ?? []), row.code]);
     };
+    // 表に出さない指標：行の定義だけ作り（値は計算行が読む）、並びには入れない。置く場所は見ない
+    const hiddenIndicators: RowDef[] = [];
+    for (const spec of emitted.length > 0 ? (opts.indicators ?? []).filter((s) => s.mode === "hidden") : []) {
+        if (rows.has(spec.code)) continue;
+        hiddenCodes.add(spec.code);
+        hiddenIndicators.push(add({ code: spec.code, name: spec.name, type: "measure", sign: 1, good: spec.good, aggregation: spec.aggregation, format: spec.format }));
+        noteName(spec.name, spec.code);
+    }
     // 表が空（フィルターで科目が無い）なら、指標も出さず、知らせない（計算行と同じ）
-    let pending = emitted.length > 0 ? [...(opts.indicators ?? [])] : [];
+    let pending = emitted.length > 0 ? (opts.indicators ?? []).filter((s) => s.mode !== "hidden") : [];
     while (pending.length > 0) {
         const waiting: IndicatorSpec[] = [];
         for (const spec of pending) {
@@ -792,6 +803,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             if (target !== undefined) placeIndicator(spec, target);
             // 置く場所の指標をまだ置いていない（後ろの指標のうち・後ろに置いた）なら、次の回で置く
             else if (pending.some((p) => p !== spec && p.code === spec.target)) waiting.push(spec);
+            else if (hiddenCodes.has(spec.target)) warn(`指標「${spec.name}」の挿入位置「${placeLabel(spec.target)}」は表に出さない指標なので、置けない。出さなかった`);
             else warn(`指標「${spec.name}」の挿入位置「${placeLabel(spec.target)}」が表に無い。出さなかった`);
         }
         if (waiting.length === pending.length) {
@@ -840,7 +852,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     const valueLabel = new Map(Array.from(sectionValue, ([label, code]) => [code, label] as const));
     const headLabel = new Map(Array.from(sectionHead, ([label, code]) => [code, label] as const));
     const nameCount = new Map<string, number>();
-    for (const { def } of display) if (hasValue(def.type)) nameCount.set(def.name, (nameCount.get(def.name) ?? 0) + 1);
+    for (const def of [...display.map((d) => d.def), ...hiddenIndicators]) if (hasValue(def.type)) nameCount.set(def.name, (nameCount.get(def.name) ?? 0) + 1);
     /** 同じ名前の行に添える、行の出どころ（科目は科目コード、指標はメジャーの queryName） */
     const sourceOf = (code: string) =>
         code.startsWith(CALC_KEY)
@@ -857,7 +869,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     };
     const calcChoices: CalcChoices = {
         sections: emitted.map((sec) => ({ value: sec.label, displayName: sec.label })),
-        refs: display.filter(({ def }) => hasValue(def.type) && def.type !== "calc").map(({ def }) => choiceOf(def)),
+        refs: [...display.filter(({ def }) => hasValue(def.type) && def.type !== "calc").map(({ def }) => def), ...hiddenIndicators].map(choiceOf),
         places: display.filter(({ def }) => def.type !== "blank").map(({ def }) => choiceOf(def)),
     };
 

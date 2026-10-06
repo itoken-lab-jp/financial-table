@@ -126,20 +126,24 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
                 format: parent.format,
                 formula: null,
                 refs: [],
-                children: [],
+                // まとめた行は、その他の子として 1 段下に残す（その他を開くと中身が見える。既定は閉じる）
+                children: hidden,
                 summands: hidden.map((c) => ({ code: c, weight: 1 })),
             };
             rows.set(code, others);
+            const inside = display.filter((d) => removed.has(d.def.code)).map((d) => ({ ...d, depth: d.depth + 1 }));
             // 区分の中の最後（子と、その下の行の後ろ）
             const inBlock = new Set<string>();
             for (const child of kidsOf(parent)) subtree(child, inBlock);
+            display = display.filter((d) => !removed.has(d.def.code));
             let end = -1;
             display.forEach((d, i) => {
-                if (inBlock.has(d.def.code)) end = i;
+                if (inBlock.has(d.def.code) && !removed.has(d.def.code)) end = i;
             });
-            display.splice(end + 1, 0, { def: others, depth });
+            display.splice(end + 1, 0, { def: others, depth }, ...inside);
             // 区分・中分類の小計は子を組み直す。根の合計行は子を持たないので、まとめた「その他」だけを子にする（表の木で合計行の下に置く）
             rows.set(parent.code, { ...parent, children: [...(parent.type === "subtotal" ? parent.children.filter((c) => !removed.has(c)) : parent.children), code] });
+            continue;
         } else {
             // うち：選んだ科目（とその下の行）を親の行の下へ移し、うちの行にする。親の子からは科目を外す（囲みの帯を引かない）。
             // 親に残った子（中分類など）があれば、その後ろ（小計を上に置く表で、うちが親の帯の中に入らないように。指標のうちと同じ）
@@ -148,11 +152,17 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
                 const own = subtree(code);
                 const def0 = rows.get(code)!;
                 if (def0.type === "subtotal") {
-                    // 小計（区分・中分類）：小計の値を足す 1 行にする。中身（子・うち）は出さない
-                    for (const d of display) if (own.has(d.def.code)) removed.add(d.def.code);
-                    const def: RowDef = { ...def0, code: UNDER_KEY + code, type: "breakdown", children: [], summands: [{ code, weight: 1 }], continued: undefined };
+                    // 小計（区分・中分類）：小計の値を足す 1 行にし、中身（子とその下）はうちの行の子として 1 段下に残す（開くと見える。既定は閉じる）
+                    const origin = display.find((d) => d.def.code === code)?.depth ?? depth;
+                    const inside: DisplayRow[] = [];
+                    for (const d of display) {
+                        if (!own.has(d.def.code)) continue;
+                        removed.add(d.def.code);
+                        if (d.def.code !== code) inside.push({ ...d, depth: depth + (d.depth - origin) });
+                    }
+                    const def: RowDef = { ...def0, code: UNDER_KEY + code, type: "breakdown", children: def0.children, summands: [{ code, weight: 1 }], continued: undefined };
                     rows.set(def.code, def);
-                    moved.push({ def, depth });
+                    moved.push({ def, depth }, ...inside);
                     continue;
                 }
                 for (const d of display) {

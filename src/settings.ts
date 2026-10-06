@@ -110,6 +110,32 @@ const TITLE_PLACE_ITEMS: powerbi.IEnumMember[] = [
     { value: TITLE_PLACES.corner, displayName: "左上の角" },
 ];
 
+/** 行の高さ：セルの上下の余白・字の行の高さ・2 段の行の高さの倍率（visual.less の --ft-row-pad・--ft-row-line・--ft-row-two） */
+export const ROW_HEIGHTS = {
+    normal: { pad: "0.15em", line: "normal", two: 1.35 },
+    compact: { pad: "0.05em", line: "1.25", two: 1.2 },
+    tight: { pad: "0em", line: "1.1", two: 1.1 },
+} as const;
+export type RowHeight = keyof typeof ROW_HEIGHTS;
+/** 列の余白：セルの左右の余白（visual.less の --ft-col-pad） */
+export const COLUMN_PADDINGS = { normal: "0.5em", compact: "0.3em", tight: "0.15em" } as const;
+export type ColumnPadding = keyof typeof COLUMN_PADDINGS;
+const ROW_HEIGHT_ITEMS: powerbi.IEnumMember[] = [
+    { value: "normal", displayName: "標準" },
+    { value: "compact", displayName: "詰める" },
+    { value: "tight", displayName: "もっと詰める" },
+];
+
+/** 文字の要素ごとの太さ：既定（行の種類で変える）・太字・太字にしない */
+export const BOLD_KEYS = ["org", "name", "period", "column", "compareHead", "main", "compare", "sub"] as const;
+export type BoldKey = (typeof BOLD_KEYS)[number];
+export type BoldMode = "auto" | "on" | "off";
+const BOLD_ITEMS: powerbi.IEnumMember[] = [
+    { value: "auto", displayName: "既定" },
+    { value: "on", displayName: "太字" },
+    { value: "off", displayName: "太字にしない" },
+];
+
 export const FISCAL_START_ITEMS: powerbi.IEnumMember[] = Array.from({ length: 12 }, (_, i) => ({
     value: String(i + 1),
     displayName: `${i + 1}月`,
@@ -209,6 +235,41 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
         description: "期初予算差・見通し比などの列の見出し（2 行なら 2 行とも）",
         value: DEFAULT_TEXT_SIZES.compareHead,
     });
+    columnBold = new formattingSettings.ItemDropdown({
+        name: "columnBold",
+        displayName: "基準列の見出しの太字",
+        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
+        items: BOLD_ITEMS,
+        value: BOLD_ITEMS[0],
+    });
+    compareHeadBold = new formattingSettings.ItemDropdown({
+        name: "compareHeadBold",
+        displayName: "比較列の見出しの太字",
+        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
+        items: BOLD_ITEMS,
+        value: BOLD_ITEMS[0],
+    });
+    mainBold = new formattingSettings.ItemDropdown({
+        name: "mainBold",
+        displayName: "基準列の数字の太字",
+        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
+        items: BOLD_ITEMS,
+        value: BOLD_ITEMS[0],
+    });
+    compareBold = new formattingSettings.ItemDropdown({
+        name: "compareBold",
+        displayName: "比較列の数字の太字",
+        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
+        items: BOLD_ITEMS,
+        value: BOLD_ITEMS[0],
+    });
+    subBold = new formattingSettings.ItemDropdown({
+        name: "subBold",
+        displayName: "2 段目の数字の太字",
+        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
+        items: BOLD_ITEMS,
+        value: BOLD_ITEMS[0],
+    });
     mainSize = new formattingSettings.NumUpDown({ name: "mainSize", displayName: "基準列の数字", value: DEFAULT_TEXT_SIZES.main });
     compareSize = new formattingSettings.NumUpDown({
         name: "compareSize",
@@ -225,7 +286,7 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
     texts = new formattingSettings.Group({
         name: "comparisonText",
         displayName: "文字",
-        slices: [this.columnSize, this.compareHeadSize, this.mainSize, this.compareSize, this.subSize],
+        slices: [this.columnSize, this.columnBold, this.compareHeadSize, this.compareHeadBold, this.mainSize, this.mainBold, this.compareSize, this.compareBold, this.subSize, this.subBold],
     });
 
     groups = [this.general, this.twoRows, this.tones, this.texts];
@@ -326,7 +387,20 @@ export class PeriodsCardSettings extends formattingSettings.CompositeCard {
     });
 
     periodLines = new formattingSettings.ToggleSwitch({ name: "periodLines", displayName: "期間の区切り", description: "期間のあいだに縦の線を引く", value: true });
+    aggregateDouble = new formattingSettings.ToggleSwitch({
+        name: "aggregateDouble",
+        displayName: "集計の列の区切りを二重線",
+        description: "四半期・半期・通期・累計・合計の列の前の区切りを二重線にする（月の列との境目と、集計の列どうしの境目）。「期間の区切り」を入れているときに効く",
+        value: false,
+    });
     periodLine = new formattingSettings.ColorPicker({ name: "periodLine", displayName: "期間の区切りの色", value: { value: DEFAULT_LINE_COLORS.period } });
+    periodBold = new formattingSettings.ItemDropdown({
+        name: "periodBold",
+        displayName: "期間の見出しの太字",
+        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
+        items: BOLD_ITEMS,
+        value: BOLD_ITEMS[0],
+    });
     periodSize = new formattingSettings.NumUpDown({ name: "periodSize", displayName: "期間の見出しの文字", value: DEFAULT_TEXT_SIZES.period });
 
     year = new formattingSettings.Group({ name: "periodsYear", displayName: "年度", slices: [this.fiscalYear, this.fiscalStartMonth, this.yearLabel, this.titlePlace] });
@@ -335,7 +409,7 @@ export class PeriodsCardSettings extends formattingSettings.CompositeCard {
         displayName: "表示列",
         slices: [this.showMonths, this.showQuarters, this.showHalves, this.showYear, this.showYtd, this.scrollStart],
     });
-    look = new formattingSettings.Group({ name: "periodsLook", displayName: "区切りと文字", slices: [this.periodLines, this.periodLine, this.periodSize] });
+    look = new formattingSettings.Group({ name: "periodsLook", displayName: "区切りと文字", slices: [this.periodLines, this.aggregateDouble, this.periodLine, this.periodSize, this.periodBold] });
 
     groups = [this.year, this.columns, this.look];
 
@@ -421,11 +495,38 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         value: { value: DEFAULT_LINE_COLORS.total },
     });
 
+    hideBlankRows = new formattingSettings.ToggleSwitch({
+        name: "hideBlankRows",
+        displayName: "値の無い行を隠す",
+        description: "表に出している列（基準・比較のすべての期間）がどれも空の行を出さない。値が 0 の行は出す",
+        value: false,
+    });
+    breakdownBrackets = new formattingSettings.ToggleSwitch({
+        name: "breakdownBrackets",
+        displayName: "数字をかっこで囲む",
+        description: "うちの行の基準の数字を [ ] で囲み、親の合計に足さない行だと分かるようにする",
+        value: true,
+    });
+    breakdownMuted = new formattingSettings.ToggleSwitch({ name: "breakdownMuted", displayName: "灰色にする", description: "うちの行の名前と数字を薄い字にする", value: true });
+    breakdownTag = new formattingSettings.ToggleSwitch({ name: "breakdownTag", displayName: "「うち」の字を付ける", description: "うちの行の名前の前に小さく「うち」と付ける", value: true });
+    othersCount = new formattingSettings.ToggleSwitch({
+        name: "othersCount",
+        displayName: "その他の件数を出す",
+        description: "「その他（3件）」のように、まとめた行の数を名前に添える",
+        value: true,
+    });
     boldAggregates = new formattingSettings.ToggleSwitch({
         name: "boldAggregates",
         displayName: "集計の数字を太字",
         description: "区分・中分類の行の数字も太字にする。切ると、数字の太字は計算行（利益・合計）だけ",
         value: false,
+    });
+    nameBold = new formattingSettings.ItemDropdown({
+        name: "nameBold",
+        displayName: "行名の太字",
+        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
+        items: BOLD_ITEMS,
+        value: BOLD_ITEMS[0],
     });
     nameSize = new formattingSettings.NumUpDown({ name: "nameSize", displayName: "行名の文字", value: DEFAULT_TEXT_SIZES.name });
 
@@ -433,7 +534,7 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         name: "rowsLayout",
         displayName: "表示",
         description: "段・行ごとに変えるときは「段・行ごとの配置」カード",
-        slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot],
+        slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot, this.hideBlankRows],
     });
     order = new formattingSettings.Group({ name: "rowsOrder", displayName: "合計行", slices: [this.totalRow, this.totalName] });
     box = new formattingSettings.Group({
@@ -441,9 +542,14 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         displayName: "囲みの塗りと線",
         slices: [this.bandFill, this.bandColor, this.bandColor2, this.bandColor3, this.bandColor4, this.bandLine],
     });
-    look = new formattingSettings.Group({ name: "rowsLook", displayName: "行の線と文字", slices: [this.rowLine, this.subtotalLine, this.totalLine, this.boldAggregates, this.nameSize] });
+    breakdown = new formattingSettings.Group({
+        name: "rowsBreakdown",
+        displayName: "うち・その他の行",
+        slices: [this.breakdownBrackets, this.breakdownMuted, this.breakdownTag, this.othersCount],
+    });
+    look = new formattingSettings.Group({ name: "rowsLook", displayName: "行の線と文字", slices: [this.rowLine, this.subtotalLine, this.totalLine, this.boldAggregates, this.nameSize, this.nameBold] });
 
-    groups = [this.layout, this.order, this.box, this.look];
+    groups = [this.layout, this.order, this.box, this.breakdown, this.look];
 
     /** 段ごとの囲みの色（外側から） */
     bandColors(): string[] {
@@ -498,6 +604,13 @@ export class SegmentsCardSettings extends formattingSettings.CompositeCard {
         description: "セグメントの段ごとの縦線と、セグメントの切れ目の横線",
         value: { value: DEFAULT_LINE_COLORS.block },
     });
+    orgBold = new formattingSettings.ItemDropdown({
+        name: "orgBold",
+        displayName: "セグメント名の太字",
+        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
+        items: BOLD_ITEMS,
+        value: BOLD_ITEMS[0],
+    });
     orgSize = new formattingSettings.NumUpDown({ name: "orgSize", displayName: "セグメント名の文字", value: DEFAULT_TEXT_SIZES.org });
 
     order = new formattingSettings.Group({
@@ -508,7 +621,7 @@ export class SegmentsCardSettings extends formattingSettings.CompositeCard {
     box = new formattingSettings.Group({
         name: "segmentsBoxes",
         displayName: "箱と文字",
-        slices: [this.segmentFill, this.segmentColor, this.segmentColor2, this.segmentColor3, this.segmentColor4, this.blockLine, this.orgSize],
+        slices: [this.segmentFill, this.segmentColor, this.segmentColor2, this.segmentColor3, this.segmentColor4, this.blockLine, this.orgSize, this.orgBold],
     });
 
     groups = [this.order, this.box];
@@ -666,10 +779,11 @@ export class CalcRowsCardSettings extends formattingSettings.CompositeCard {
 }
 
 /** 指標の置き方：挿入位置の行の後ろか、行の「うち」か */
-export const INDICATOR_MODES = { after: "after", under: "under" } as const;
+export const INDICATOR_MODES = { after: "after", under: "under", hidden: "hidden" } as const;
 const INDICATOR_MODE_ITEMS: powerbi.IEnumMember[] = [
     { value: INDICATOR_MODES.after, displayName: "行の後ろ" },
     { value: INDICATOR_MODES.under, displayName: "行のうち（親の行と同じ見せ方）" },
+    { value: INDICATOR_MODES.hidden, displayName: "表に出さない（計算行で使う）" },
 ];
 const INDICATOR_AGGREGATION_ITEMS: powerbi.IEnumMember[] = [
     { value: "flow", displayName: "合計（四半期・通期で足す）" },
@@ -699,7 +813,7 @@ export interface IndicatorSetting {
 const INDICATOR_HELP = {
     after: "この行の後ろか、この行のうちに出す。区分は区分の合計行（区分の中の行の後ろ）。既定は表の最後",
     placement:
-        "うち：挿入位置の行の下に 1 段下げて出し、親の行と同じ向き・集計・書式・良し悪しで見せる（値の行のうちは、値の欄と同じ持ち方のメジャー。CALCULATE([値], 製品[区分] = \"新製品\") の形）。親の合計には足さない",
+        "表に出さない：行は出さず、計算行の分子・分母に選べる（率の分子と分母のメジャーを入れて、計算行の比率で率を作る。どの期間でも分子の合計 ÷ 分母の合計になる。人数のような分母も「期間の集計」は合計（延べ人数）にする。期末にすると、四半期の時間を最後の月の人数で割ってしまう）。うち：挿入位置の行の下に 1 段下げて出し、親の行と同じ向き・集計・書式・良し悪しで見せる（値の行のうちは、値の欄と同じ持ち方のメジャー。CALCULATE([値], 製品[区分] = \"新製品\") の形）。親の合計には足さない",
     aggregation: "四半期・通期の値。人数のような残高は期末",
     format: "空なら値の欄と同じ（表示単位で割る。EBITDA など）。#,0人・#,0.0h のように書くと数で出す（表示単位で割らない。字も出す）。0.0% は比率",
     good: "差の色の向き。既定は色を付けない",
@@ -730,12 +844,15 @@ export class IndicatorsCardSettings extends formattingSettings.CompositeCard {
             // 挿入位置の選択肢は表の行と表の最後（自分の行は入れない）。表に無い保存値（フィルターで行が消えたなど）は選択肢に残す
             const places_: powerbi.IEnumMember[] = [...places.filter((p) => p.value !== setting.code), { value: CALC_TABLE_END, displayName: "表の最後" }];
             if (!places_.some((p) => p.value === setting.after)) places_.push({ value: setting.after, displayName: `${missingLabel(setting.after)}（表に無い）` });
+            const hidden = setting.placement === INDICATOR_MODES.hidden;
             const slices: formattingSettings.Slice[] = [
-                dropdown("after", "挿入位置", places_, setting.after, INDICATOR_HELP.after),
+                // 表に出さない指標は置く場所が要らない
+                ...(hidden ? [] : [dropdown("after", "挿入位置", places_, setting.after, INDICATOR_HELP.after)]),
                 dropdown("placement", "配置", INDICATOR_MODE_ITEMS, setting.placement, INDICATOR_HELP.placement),
             ];
-            // うちは親の行に合わせるので、集計・書式・良し悪しの欄を出さない
-            if (setting.placement !== INDICATOR_MODES.under) {
+            // うちは親の行に合わせるので、集計・書式・良し悪しの欄を出さない。表に出さない指標は集計だけ（計算行の分子・分母の期間の足し方）
+            if (hidden) slices.push(dropdown("aggregation", "期間の集計", INDICATOR_AGGREGATION_ITEMS, setting.aggregation, INDICATOR_HELP.aggregation));
+            else if (setting.placement !== INDICATOR_MODES.under) {
                 slices.push(
                     dropdown("aggregation", "期間の集計", INDICATOR_AGGREGATION_ITEMS, setting.aggregation, INDICATOR_HELP.aggregation),
                     new formattingSettings.TextInput({ name: "format", displayName: "書式", description: INDICATOR_HELP.format, value: setting.format, placeholder: "#,0人・#,0.0h", selector }),
@@ -957,6 +1074,12 @@ export class NumbersCardSettings extends SimpleCard {
         items: UNIT_PLACE_ITEMS,
         value: UNIT_PLACE_ITEMS[0],
     });
+    alignTails = new formattingSettings.ToggleSwitch({
+        name: "alignTails",
+        displayName: "単位の字の幅をそろえる",
+        description: "数字のあとの単位の字（円・h・% など）の幅を列の中でそろえ、数字の右の端をそろえる。切ると単位の字の無い行の右に空きが出ないが、数字の右の端がずれる",
+        value: true,
+    });
 
     // options は付けない（素の numeric に付けると書式ペインが空になった記録がある）。範囲は viewModel でクランプする
     ratioCap = new formattingSettings.NumUpDown({
@@ -973,6 +1096,7 @@ export class NumbersCardSettings extends SimpleCard {
         this.precision,
         this.currency,
         this.unitPlace,
+        this.alignTails,
         this.negativeStyle,
         this.zeroStyle,
         this.diffZeroStyle,
@@ -1014,7 +1138,21 @@ export class TableCardSettings extends formattingSettings.CompositeCard {
         value: true,
     });
 
-    text = new formattingSettings.Group({ name: "tableText", displayName: "文字", slices: [this.fontFamily, this.fontSize] });
+    rowHeight = new formattingSettings.ItemDropdown({
+        name: "rowHeight",
+        displayName: "行の高さ",
+        description: "セルの上下の余白と字の行の高さを詰める",
+        items: ROW_HEIGHT_ITEMS,
+        value: ROW_HEIGHT_ITEMS[0],
+    });
+    columnPadding = new formattingSettings.ItemDropdown({
+        name: "columnPadding",
+        displayName: "列の余白",
+        description: "セルの左右の余白を詰める（基準と比較の列のあいだ・表の端）。列の幅は余白を含めて測り直す",
+        items: ROW_HEIGHT_ITEMS,
+        value: ROW_HEIGHT_ITEMS[0],
+    });
+    text = new formattingSettings.Group({ name: "tableText", displayName: "文字", slices: [this.fontFamily, this.fontSize, this.rowHeight, this.columnPadding] });
     head = new formattingSettings.Group({ name: "tableHead", displayName: "見出しと枠", slices: [this.headBackground, this.headLine, this.nameLine, this.outerLine] });
     copy = new formattingSettings.Group({ name: "tableCopy", displayName: "画像のコピー", slices: [this.copyButton] });
 

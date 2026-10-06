@@ -137,7 +137,8 @@
     th,
     td {
         // 余白は詰める
-        padding: 0.15em 0.5em;
+        padding: var(--ft-row-pad, 0.15em) var(--ft-col-pad, 0.5em);
+        line-height: var(--ft-row-line, normal);
         white-space: nowrap;
     }
 
@@ -211,6 +212,11 @@
         border-left: 1px solid var(--ft-line-period);
     }
 
+    // 「期間の列」カードの「集計の列の区切りを二重線」：四半期・半期・通期などの列の前は二重線
+    .ft-aggregate-double & .ft-period-start.ft-period-agg {
+        border-left: 3px double var(--ft-line-period);
+    }
+
     // 月ごとにイベントが違う列（つないだ主・古い計画へ落とした比較）。点線で、ツールチップに内訳があると分かるようにする
     .ft-colhead-mixed > div:first-child {
         text-decoration: underline dotted;
@@ -260,7 +266,7 @@ td.ft-col-main {
  * なる。主の数字が 2 段より大きければ、どの行も主の数字の高さになる。空けた行は除く
  */
 .ft-two-lines tbody .ft-row:not(.ft-row-blank) td.ft-value {
-    height: calc((var(--ft-size-compare) + var(--ft-size-sub)) * 1.35);
+    height: calc((var(--ft-size-compare) + var(--ft-size-sub)) * var(--ft-row-two, 1.35));
 }
 
 td.ft-col-diff,
@@ -320,14 +326,18 @@ tbody .ft-row:first-child {
     }
 }
 
-.ft-row-breakdown {
-    color: var(--ft-muted);
-
-    // 「うち」は小さい字だけ（枠を付けると表の上のボタンに似て押せそうに見えた）
-    .ft-tag {
-        margin-right: 0.35em;
-        font-size: 0.8em;
+.ft-breakdown-muted .ft-row-breakdown {
+    // 灰色にするのは、うちの行の名前と数字だけ（「行」カードの「うちの行」で切れる）。行全体に効かせると、同じ行に入るセグメントの名前（左の列）や横積みの親の名前まで灰色になった
+    > .ft-name,
+    > .ft-value {
+        color: var(--ft-muted);
     }
+}
+
+// 「うち」は小さい字だけ（枠を付けると表の上のボタンに似て押せそうに見えた）
+.ft-row-breakdown .ft-tag {
+    margin-right: 0.35em;
+    font-size: 0.8em;
 }
 
 .ft-row-blank {
@@ -380,14 +390,14 @@ tbody .ft-row:first-child {
 .ft-table tbody th.ft-name,
 .ft-table tbody th.ft-org {
     border-top-width: 0;
-    padding-top: calc(0.15em + 1px);
+    padding-top: calc(var(--ft-row-pad, 0.15em) + 1px);
 }
 
 .ft-table tbody th.ft-org,
 .ft-table tbody th.ft-hierarchy-name { padding-left: var(--ft-label-inset); }
 
 .ft-table tbody .ft-row-total th.ft-name {
-    padding-top: calc(0.15em + 3px);
+    padding-top: calc(var(--ft-row-pad, 0.15em) + 3px);
 }
 
 .ft-name-line {
@@ -910,7 +920,7 @@ thead th.ft-dim {
     > td { border-top: 1px solid var(--ft-line-row); }
     > th.ft-name, > td { border-bottom: 1px solid var(--ft-line-subtotal); }
     .ft-name-line, .ft-box-line { border-top: 1px solid var(--ft-line-row); }
-    > th.ft-name { padding-top: calc(0.15em + 1px); }
+    > th.ft-name { padding-top: calc(var(--ft-row-pad, 0.15em) + 1px); }
 }
 // 箱の中の行は、締めの線を名前のセルの枠線でなく、自分の段から右の線（ft-box-bottom）で引く。枠線だと外の箱の帯まで横切った
 .ft-table .ft-row-end > th.ft-name-inbox { border-bottom: 0; }
@@ -930,7 +940,9 @@ thead th.ft-dim {
 .ft-table .ft-row-end.ft-row-total .ft-box-bottom { display: none; }
 // 最後の合計（二重線）は下の線を引かないので、次の行（後ろに置いた指標など）は自分の上の線を引く。
 // 次の行が最後の合計なら、その二重線を残す（閉じた区分の下の線で消すと、当期純利益の上の二重線が消えた）
-.ft-table .ft-row-end:not(.ft-row-total) + .ft-row:not(.ft-row-total) {
+// 切れ目の行（セグメントの始まり・合計が上の行・横積みの始まり）は、上の行（行の終わり）が下の線を引かない（下の :has の決まり）ので、
+// 自分の上の線を残す。消すと、セグメントごとに閉じた合計の 1 行だけの表で、行の境目の線がどこにも無くなった
+.ft-table .ft-row-end:not(.ft-row-total) + .ft-row:not(.ft-row-total):not(.ft-row-block):not(.ft-row-start):not(.ft-row-hierarchy-start) {
     > td, > th.ft-hierarchy-name { border-top-width: 0; }
     .ft-name-line, .ft-box-line { display: none; }
 }
@@ -944,10 +956,15 @@ thead th.ft-dim {
 .ft-table .ft-row-end.ft-row-total {
     > td { border-top: 3px double var(--ft-line-total); }
     > th.ft-name, > td { border-bottom: 0; }
-    > th.ft-name { padding-top: calc(0.15em + 3px); }
+    > th.ft-name { padding-top: calc(var(--ft-row-pad, 0.15em) + 3px); }
     .ft-name-line, .ft-box-line { display: block; border-top: 3px double var(--ft-line-total); }
 }
-.ft-table.ft-layout-table:has(tbody > .ft-row-end:not(.ft-row-total):last-child) { border-bottom: 0; }
+// 表の最後の行が締めの行なら、締めの線は引かず、表の外枠で締める（外枠を消して締めの線に任せると、締めの線の無い左の列
+// （セグメント・行の名前）の下だけ線が切れ、色も外枠でなく小計の線になった）
+.ft-table.ft-layout-table tbody > .ft-row-end:last-child {
+    > th.ft-name, > td { border-bottom: 0; }
+    .ft-box-bottom { display: none; }
+}
 .ft-layout-table tbody > .ft-row-collapsed:first-child > td { border-top-width: 0; }
 
 // 上合計はまとまりの開始側を区切る。先頭は列見出しの下線だけにする。
@@ -976,3 +993,21 @@ thead th.ft-dim {
     > td { border-top: 1px solid var(--ft-line-block); }
     .ft-name-line, .ft-box-line { display: block; border-top: 1px solid var(--ft-line-block); }
 }
+
+// 文字の要素ごとの太さ（各カードの「…の太字」）。既定（行の種類で変える強弱）より強く効かせる
+.ft-bold-org-on :is(.ft-org, .ft-org .ft-org-line, .ft-layout-frame-org > .ft-layout-label) { font-weight: 600 !important; }
+.ft-bold-org-off :is(.ft-org, .ft-org .ft-org-line, .ft-layout-frame-org > .ft-layout-label) { font-weight: 400 !important; }
+.ft-bold-name-on :is(th.ft-name, .ft-hierarchy-name, .ft-layout-frame-account > .ft-layout-label) { font-weight: 600 !important; }
+.ft-bold-name-off :is(th.ft-name, .ft-hierarchy-name, .ft-layout-frame-account > .ft-layout-label) { font-weight: 400 !important; }
+.ft-bold-period-on :is(thead th.ft-period) { font-weight: 600 !important; }
+.ft-bold-period-off :is(thead th.ft-period) { font-weight: 400 !important; }
+.ft-bold-column-on :is(thead th.ft-colhead.ft-col-main) { font-weight: 600 !important; }
+.ft-bold-column-off :is(thead th.ft-colhead.ft-col-main) { font-weight: 400 !important; }
+.ft-bold-compareHead-on :is(thead th.ft-colhead:not(.ft-col-main)) { font-weight: 600 !important; }
+.ft-bold-compareHead-off :is(thead th.ft-colhead:not(.ft-col-main)) { font-weight: 400 !important; }
+.ft-bold-main-on :is(td.ft-value.ft-col-main) { font-weight: 600 !important; }
+.ft-bold-main-off :is(td.ft-value.ft-col-main) { font-weight: 400 !important; }
+.ft-bold-compare-on :is(td.ft-value:not(.ft-col-main) > div:first-child) { font-weight: 600 !important; }
+.ft-bold-compare-off :is(td.ft-value:not(.ft-col-main) > div:first-child) { font-weight: 400 !important; }
+.ft-bold-sub-on :is(.ft-sub) { font-weight: 600 !important; }
+.ft-bold-sub-off :is(.ft-sub) { font-weight: 400 !important; }

@@ -4,7 +4,7 @@
     "displayName": "予実表 by itoken lab",
     "guid": "FinancialTable9CA0EEA776CC47ECB46F79375662A93C",
     "visualClassName": "Visual",
-    "version": "2.0.0.0",
+    "version": "2.1.0.0",
     "description": "実績・予算・見通しを科目・事業の階層で比較する予実表。小計・利益・比率の計算行と時間などの指標を設定でき、損益計算書・貸借対照表・管理会計に使える",
     "supportUrl": "https://github.com/itoken-lab-jp/financial-table/issues",
     "gitHubUrl": "https://github.com/itoken-lab-jp/financial-table"
@@ -22,5 +22,5 @@
   "capabilities": "capabilities.json",
   "dependencies": null,
   "stringResources": [],
-  "version": "2.0.0.0"
+  "version": "2.1.0.0"
 }
