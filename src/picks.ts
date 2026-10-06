@@ -4,7 +4,7 @@
  *
  * - どちらでも合計は変わらない。親の小計は、選んだかにかかわらず区分の科目すべてを足したまま（summands は変えない）
  * - 親になれるのは、子を持つ節点すべて（区分・中分類の小計と、根の合計行）。子は親に足す科目か小計（区分・中分類）
- *   （区分と残高・フローの違う科目は選ばずにいつも出す）。小計をうちにした行は、その小計の値を 1 行で見せる（中身は出さない）
+ *   （区分と残高・フローの違う科目は選ばずにいつも出す）。小計をうちにした行は、その小計の値を 1 行で見せ、中身は開くと見える（中身への選択も効く）
  * - 保存するのは選んだ科目。あとから出てきた科目は選ばなかった側に入る（見たい科目だけの形を崩さない）
  * - 行の組み立て（rows.ts）のあとに、表示の並びだけを組み直す。書式ペインの選択肢（計算行・指標の置く場所）は選択で変えない
  */
@@ -107,8 +107,11 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
         const chosen = new Set(pick.codes);
         const selected = pickable.filter((code) => chosen.has(code));
         const hidden = pickable.filter((code) => !chosen.has(code));
-        const parentAt = display.findIndex((d) => d.def.code === parent.code);
-        if (parentAt < 0) continue;
+        // 親の小計を先にうちにしていれば（UNDER_KEY の行に置き換わっている）、その行を親にする。中身はうちの行の子として残っている
+        const under = rows.get(UNDER_KEY + parent.code);
+        const host = display.some((d) => d.def.code === parent.code) ? parent : under;
+        const parentAt = host ? display.findIndex((d) => d.def.code === host.code) : -1;
+        if (!host || parentAt < 0) continue;
         const depth = display[parentAt].depth + 1;
         const removed = new Set<string>();
         for (const code of hidden) subtree(code, removed);
@@ -143,6 +146,7 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
             display.splice(end + 1, 0, { def: others, depth }, ...inside);
             // 区分・中分類の小計は子を組み直す。根の合計行は子を持たないので、まとめた「その他」だけを子にする（表の木で合計行の下に置く）
             rows.set(parent.code, { ...parent, children: [...(parent.type === "subtotal" ? parent.children.filter((c) => !removed.has(c)) : parent.children), code] });
+            if (host !== parent) rows.set(host.code, { ...host, children: [...host.children.filter((c) => !removed.has(c)), code] });
             continue;
         } else {
             // うち：選んだ科目（とその下の行）を親の行の下へ移し、うちの行にする。親の子からは科目を外す（囲みの帯を引かない）。
@@ -178,15 +182,16 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
             const kept = display.filter((d) => !removed.has(d.def.code));
             const rest = new Set<string>();
             for (const child of kidsOf(parent)) if (!pickable.includes(child)) subtree(child, rest);
-            let at = kept.findIndex((d) => d.def.code === parent.code);
+            let at = kept.findIndex((d) => d.def.code === host.code);
             kept.forEach((d, i) => {
                 if (rest.has(d.def.code) && i > at) at = i;
             });
             kept.splice(at + 1, 0, ...moved);
             display = kept;
-            const under = selected.map((code) => (rows.get(code)?.type === "subtotal" ? UNDER_KEY + code : code));
-            attached.set(parent.code, [...under, ...(attached.get(parent.code) ?? [])]);
+            const underCodes = selected.map((code) => (rows.get(code)?.type === "subtotal" ? UNDER_KEY + code : code));
+            attached.set(host.code, [...underCodes, ...(attached.get(host.code) ?? [])]);
             if (parent.type === "subtotal") rows.set(parent.code, { ...parent, children: parent.children.filter((c) => !pickable.includes(c)) });
+            if (host !== parent) rows.set(host.code, { ...host, children: host.children.filter((c) => !pickable.includes(c)) });
             continue;
         }
         display = display.filter((d) => !removed.has(d.def.code));

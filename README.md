@@ -23,7 +23,7 @@ Power BIに追加して使う、実績・予算・見通しを比較する無料
 
 ## インストール
 
-1. [Releases](https://github.com/itoken-lab-jp/financial-table/releases)の最新版を開き、「Assets」の `financial-table-2.1.0.0.pbiviz` をダウンロードします。これがビジュアル本体です。「Source code」のzipは改造する人向けで、取り込みには使いません。
+1. [Releases](https://github.com/itoken-lab-jp/financial-table/releases)の最新版を開き、「Assets」の `financial-table-2.1.1.0.pbiviz` をダウンロードします。これがビジュアル本体です。「Source code」のzipは改造する人向けで、取り込みには使いません。
 2. Power BI Desktopの「視覚化」ペインで「…」を押し、「ビジュアルをファイルからインポート」を選びます。
 3. 取り込んだ「予実表 by itoken lab」のアイコンを押し、レポートに置きます。
 
