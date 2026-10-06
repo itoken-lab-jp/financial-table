@@ -1,5 +1,5 @@
 /**
- * 行ごとの数値の書式と、セルの文字。
+ * 行別の数値書式の書式と、セルの文字。
  *
  * 科目の表の「書式」の列：
  * - 空（または「金額」）… 金額。表示単位（万・億など）で割る。桁は書式ペインの小数点以下の桁数
@@ -96,7 +96,8 @@ export const PLAIN_SIGN: SignOptions = { negative: NEGATIVE_STYLES.minus, zero: 
 function signed(value: number, format: RowFormat, unit: AmountUnit, style: Partial<SignStyle>, percentSuffix: string): string {
     switch (format.kind) {
         case "amount":
-            return formatSigned(value, unit.divisor, String(format.decimals ?? unit.decimals), style);
+            // 字は単位を数字のあとに置くとき（1,234百万円）だけ。ふつうの金額は字を持たない
+            return formatSigned(value, unit.divisor, String(format.decimals ?? unit.decimals), style, format.suffix);
         case "percent":
             return `${format.prefix}${formatSigned(value * 100, 1, String(format.decimals ?? 1), style, percentSuffix + format.suffix)}`;
         case "number":

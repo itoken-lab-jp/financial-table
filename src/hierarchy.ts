@@ -1,4 +1,5 @@
-import type { DisplayRow, RowModel } from "./rows";
+import { INDICATOR_KEY } from "./data";
+import { TOTAL_KEY, type DisplayRow, type RowModel } from "./rows";
 import type { TableRow } from "./viewModel";
 import type { HierarchyOptions, HierarchyStyle, SplitDirection } from "./hierarchySettings";
 import type { OrgCell } from "./orgs";
@@ -7,7 +8,11 @@ import type { OrgCell } from "./orgs";
 export interface AccountNode { row: DisplayRow; children: AccountNode[]; following: AccountNode[] }
 export interface AccountTree { roots: AccountNode[]; parents: string[]; warnings: string[] }
 
-export function accountTree(model: RowModel): AccountTree {
+/**
+ * stepParents：計算行（売上総利益・営業利益…）を、足す範囲の区分の親にするか。する（横積みで親の名前を左に並べる形）と、損益計算書は段階利益の入れ子になる。
+ * しないと、計算行は区分と並ぶ 1 行（1.x と同じ見え方。閉じても区分が残る）。根の合計行は、いつも区分の親
+ */
+export function accountTree(model: RowModel, stepParents = true): AccountTree {
     const nodes = new Map(model.display.map(row => [row.def.code, { row, children: [], following: [] } as AccountNode]));
     const owned = new Set<string>();
     for (const node of nodes.values()) {
@@ -20,8 +25,14 @@ export function accountTree(model: RowModel): AccountTree {
                 owned.add(code);
             }
         };
-        attach(def.children, node.children);
-        attach(model.attached.get(def.code) ?? [], def.type === "step" || def.type === "subtotal" ? node.following : node.children);
+        // 科目・指標の行の子はうち（rows.ts）なので、いつも親の下に続ける（集計の行として下に回さない）
+        attach(def.children, def.type === "detail" || def.type === "breakdown" || def.type === "measure" ? node.following : node.children);
+        // 合計行のうち（見る人が区分をうちにした行）は子にする（合計行の囲みの設定が、うちの行に効く）
+        // 見る人がうちにした行（科目・小計）は子と同じ扱い（親の囲みと展開時の合計の位置が効く）。
+        // 書式ペインで指標を「行のうち」に置いた行は、いつも親の下に続ける
+        const attached = model.attached.get(def.code) ?? [];
+        attach(attached.filter(code => !code.startsWith(INDICATOR_KEY)), node.children);
+        attach(attached.filter(code => code.startsWith(INDICATOR_KEY)), node.following);
         attach(model.following.get(def.code) ?? [], node.following);
     }
     // 合計の直後に置いた率は、その合計と一緒に移動する。参照する分子だけでは置き場所を決めない。
@@ -31,19 +42,26 @@ export function accountTree(model: RowModel): AccountTree {
             if (anchor && !owned.has(node.row.def.code)) { anchor.following.push(node); owned.add(node.row.def.code); }
         } else anchor = node.row.def.type === "step" || node.row.def.type === "subtotal" ? node : undefined;
     }
-    let roots = Array.from(nodes.values()).filter(n => !owned.has(n.row.def.code) && n.row.def.type !== "step");
+    let roots = Array.from(nodes.values()).filter(n => !owned.has(n.row.def.code) && (n.row.def.type !== "step" || (!stepParents && n.row.def.code !== TOTAL_KEY)));
     const order = new Map(model.display.map((r, i) => [r.def.code, i]));
     const first = (n: AccountNode): number => Math.min(order.get(n.row.def.code)!, ...n.children.map(first));
+    // 見る人がうち・その他にして表から外した行は数えない（数えると、範囲が交差したと誤って知らせた）
     const coverage = (n: AccountNode): Set<string> => n.row.def.type === "step"
-        ? new Set(n.row.def.summands.map(s => s.code)) : new Set([n.row.def.code]);
+        ? new Set(n.row.def.summands.map(s => s.code).filter(code => nodes.has(code))) : new Set([n.row.def.code]);
     const warnings: string[] = [];
-    for (const step of Array.from(nodes.values()).filter(n => n.row.def.type === "step")) {
-        const wanted = coverage(step);
-        const selected = roots.filter(n => Array.from(coverage(n)).every(code => wanted.has(code)));
+    // 範囲の小さい計算行から親にする（合計行を上に置くと表の先頭に来るので、並びの順だと合計行が先に区分を取り、計算行がその下に入った）
+    const steps = Array.from(nodes.values()).filter(n => n.row.def.type === "step" && (stepParents || n.row.def.code === TOTAL_KEY));
+    steps.sort((a, b) => coverage(a).size - coverage(b).size || (a.row.def.code === TOTAL_KEY ? 1 : 0) - (b.row.def.code === TOTAL_KEY ? 1 : 0));
+    for (const step of steps) {
+        // 自分のうちにした行（合計行のうち）は、もう子なので範囲に数えない
+        const own = new Set([...step.children, ...step.following].map(c => c.row.def.code));
+        const wanted = new Set(Array.from(coverage(step)).filter(code => !own.has(code)));
+        // 計算行を親にしないときは、合計行も計算行を子にしない（閉じても計算行は区分と並んで残る）
+        const selected = roots.filter(n => (stepParents || n.row.def.type !== "step") && Array.from(coverage(n)).every(code => wanted.has(code)));
         const found = new Set(selected.flatMap(n => Array.from(coverage(n))));
         // 交差する計算範囲は木にできない。計算行を独立したまま残し、明細は複製しない。
         if (wanted.size > 0 && found.size === wanted.size) {
-            step.children = selected;
+            step.children = [...step.children, ...selected];
             roots = roots.filter(n => !selected.includes(n));
         } else if (wanted.size > 0) {
             warnings.push(`「${step.row.def.name}」の計算範囲がほかの合計と交差するため、独立した計算行として表示しました`);
@@ -51,7 +69,10 @@ export function accountTree(model: RowModel): AccountTree {
         roots.push(step);
         roots.sort((a, b) => first(a) - first(b));
     }
-    const parents = Array.from(nodes.values()).filter(n => n.children.length > 0).map(n => n.row.def.code);
+    // 子は表の並び順（見る人がまとめた「その他」を後から足しても、並びの位置に置く）
+    for (const node of nodes.values()) node.children.sort((a, b) => first(a) - first(b));
+    // 合計行は、うちだけでも配置（囲み）の対象にする（見る人が区分をうちにすると子が無くなる）
+    const parents = Array.from(nodes.values()).filter(n => n.children.length > 0 || (n.row.def.code === TOTAL_KEY && n.following.length > 0)).map(n => n.row.def.code);
     return { roots, parents, warnings };
 }
 
@@ -83,8 +104,9 @@ export function tablePlan(key: string, rows: TableRow[]): LayoutPlan {
 export function compactOrgBoxes(plan: LayoutPlan): LayoutPlan {
     if (plan.kind === "frame" && plan.style === "columns") return compactOrgColumns(plan);
     const compatible = (p: LayoutPlan): boolean => p.kind === "table" || (p.kind === "stack" ? !p.preserveTables && p.direction === "vertical" && p.children.every(compatible)
-        : p.header.kind === "org" && (p.style === "box" || p.key.endsWith(":total")) && compatible(p.content));
-    if (plan.kind !== "frame" || plan.header.kind !== "org" || plan.style !== "box" || !compatible(plan)) return plan;
+        : p.header.kind === "org" && (p.style === "box" || p.style === "plain" || p.key.endsWith(":total")) && compatible(p.content));
+    // 囲みと囲みなしのセグメントは 1 つの表にまとめる（囲みなしは箱の塗りと線を引かないだけ）
+    if (plan.kind !== "frame" || plan.header.kind !== "org" || (plan.style !== "box" && plan.style !== "plain") || !compatible(plan)) return plan;
     const rows: TableRow[] = [];
     const cells = new Map<string, OrgCell>();
     let orgHeader: LayoutHeader | undefined;
@@ -103,19 +125,21 @@ export function compactOrgBoxes(plan: LayoutPlan): LayoutPlan {
         const toggle = p.header.fold !== undefined ? { path: p.header.fold, open: p.header.open! } : null;
         if (!parent) {
             const cell: OrgCell = { label: p.header.label, path: p.header.org ?? null, column: 0, colSpan: 1,
-                rowSpan: rows.length - start, toggle, total: p.key.endsWith(":total"), depth, rails };
+                rowSpan: rows.length - start, toggle, total: p.key.endsWith(":total"),
+                // 囲みなしは字下げも箱もしない（科目の囲みなしと同じ平らな名前の列）
+                ...(plan.style === "plain" ? { depth: 0, rails: [], plain: true } : { depth, rails }) };
             rows[start] = { ...rows[start], orgCells: [cell] };
             cells.set(p.header.key, cell);
         } else {
             const total = cells.get(`${p.header.key}:total`);
             if (total) {
-                total.toggle = toggle; total.label = p.header.label; total.depth = depth; total.rails = rails;
+                total.toggle = toggle; total.label = p.header.label; total.depth = plan.style === "plain" ? 0 : depth; total.rails = plan.style === "plain" ? [] : rails;
                 total.ownAbove = rows[start].orgCells?.[0] !== total;
             }
             else if (root) orgHeader = p.header;
             else {
                 const first = rows[start].orgCells?.[0];
-                if (first) first.heads = [{ label: p.header.label, path: p.header.org ?? null, depth, toggle }, ...(first.heads ?? [])];
+                if (first) first.heads = [{ label: p.header.label, path: p.header.org ?? null, depth: plan.style === "plain" ? 0 : depth, toggle }, ...(first.heads ?? [])];
             }
         }
     };
@@ -172,9 +196,25 @@ export function accountPlan(
         const opt = options(node, level);
         if (node.children.length && opt.total !== "none") own.aggregatePosition = opt.total;
         const after = node.following.flatMap(n => flatten(n, level, column, indent + (n.row.def.type === "breakdown" ? 1 : 0)));
+        /**
+         * うちを持つ行は、うちと一緒に 1 つの箱にする（1.x の囲みと同じ。うちの行だけがずれた箱にならない）。箱に入れるのは自分の直接のうちだけで、
+         * 後ろに置いた率・指標は箱の外に続ける（後ろの指標が持つうちまで数えると、営業利益が率・指標ごと箱になった）
+         */
+        const withBreakdowns = (head: TableRow[]): TableRow[] => {
+            const breakdowns = node.following.filter(n => n.row.def.type === "breakdown");
+            if (opt.style !== "box" || breakdowns.length === 0) return [...head, ...after];
+            const inBox = breakdowns.flatMap(n => flatten(n, level, column, indent + 1));
+            const rest = node.following.filter(n => n.row.def.type !== "breakdown").flatMap(n => flatten(n, level, column, indent));
+            const block = [...head, ...inBox];
+            return [...block.map((r, i) => ({ ...r, bands: [{ level: indent, head: r.code === own.code, first: i === 0, last: i === block.length - 1,
+                afterHead: i > 0 && block[i - 1].code === own.code }, ...r.bands] })), ...rest];
+        };
         if (!node.children.length || closed.has(own.code)) {
-            if (node.children.length && opt.style === "box") own.bands = [{ level: indent, head: true, first: true, last: true, afterHead: false }];
-            return [own, ...after];
+            if (node.children.length && opt.style === "box") {
+                own.bands = [{ level: indent, head: true, first: true, last: true, afterHead: false }];
+                return [own, ...after];
+            }
+            return withBreakdowns([own]);
         }
         const box = opt.style === "box";
         const horizontal = opt.style === "columns";

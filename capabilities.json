@@ -3,66 +3,66 @@
         {
             "name": "account",
             "kind": "Grouping",
-            "displayName": "科目",
-            "description": "科目の階層を上から入れる：区分 → 中分類（任意）→ 科目名。一番上が区分（区分ごとに小計を付ける）、一番下が科目（行に出す名前）。並びはモデルの「列で並べ替え」の順（区分・中分類・科目名それぞれに設定する）。セグメントごとに科目の顔ぶれが違って届いた順では決まらない所は、並びの欄で決める。区分の名前には意味を持たせない（向きは貸方フラグ、残高は残高フラグから）"
+            "displayName": "行",
+            "description": "行の階層を上の段から入れる（任意。1〜5 段）。例：区分 → 中分類 → 科目名、商品分類 → 商品。一番下の段が行に出す名前で、上の段ごとに小計の行を付ける（一番上の段は区分）。1 段だけなら行ごとに区分になり、入れなければ値をすべて足した合計の 1 行になる。並びはモデルの「列で並べ替え」の順（段ごとに設定する）。それで決まらない所は「行の順序」の欄で決める。区分の名前には意味を持たせない（向きは貸方フラグ、残高は残高フラグから）"
         },
         {
-            "displayName": "科目コード",
-            "description": "科目マスタのコード（任意）。行を見分けるキー（無ければ区分・中分類・科目名をキーにする）",
+            "displayName": "行コード",
+            "description": "行を見分けるコード（任意。科目コード・商品コードなど）。無ければ上の段からの名前の道筋で見分ける",
             "name": "accountCode",
             "kind": "Grouping"
         },
         {
-            "displayName": "並び",
-            "description": "科目の並びの数値（任意）。並びはモデルの「列で並べ替え」の順で、この欄はその順で決まらない所（セグメントやシナリオごとに科目の顔ぶれが違うとき）だけを決める。決まらない所があれば表の上で知らせるので、そのときに入れる",
+            "displayName": "行の順序",
+            "description": "行の並びの数値（任意）。並びはモデルの「列で並べ替え」の順で、この欄はそれで決まらない所（セグメントやシナリオごとに行の顔ぶれが違うとき）だけを決める。決まらない所があれば表の上で知らせるので、そのときに入れる",
             "name": "accountOrder",
             "kind": "Grouping"
         },
         {
             "displayName": "残高フラグ",
-            "description": "ON の科目は残高（期末の値）で、四半期・通期で足さずに期間の最後の月の値を出す（貸借対照表の科目）。空ならフロー。区分と残高・フローの違う科目は区分の合計には足さない",
+            "description": "会計の表で、貸借対照表の行に 1（true）を入れる（任意）。1 の行は残高（その時点の値）で、四半期・通期で月を足さずに期間の最後の月の値を出し、差に色を付けない。0（false）か空なら期間の値として月を足す。区分と残高・期間の値の違う行は区分の合計に足さない",
             "name": "balanceFlag",
             "kind": "Grouping"
         },
         {
             "displayName": "貸方フラグ",
-            "description": "必須。ON の科目は正常な残高が貸方（収益・負債・純資産）、OFF は借方（費用・資産）。空は OFF でなく区分の向きを継ぐ（区分の科目がどれも空なら向きが分からず、区分を足さない）。区分の向きは区分の中の科目の値の多数で決め、区分と逆の科目（減価償却累計額・貸倒引当金・自己株式・売上値引）は ▲ で見せる。良し悪しは、貸方のフローは増えると良い、借方のフローは増えると悪い、残高は色なし",
+            "description": "会計の表のときだけ入れる（任意）。入れなければ、届いた値のまま足し、差がプラスなら良いとする。1（true）は正常な残高が貸方の行（収益・負債・純資産）、0（false）は借方の行（費用・資産）。空は 0 でなく区分の向きを継ぐ（区分の行がどれも空なら、区分は届いた値のまま足す）。区分の向きは区分の中の行の値の多数で決め、区分と逆の行（減価償却累計額・貸倒引当金・自己株式・売上値引）は ▲ で見せる。良し悪しは、貸方のフローは増えると良い、借方のフローは増えると悪い、残高は色なし",
             "name": "creditFlag",
             "kind": "Grouping"
         },
         {
             "displayName": "月",
-            "description": "月の列（日付か 2025-04 の形の文字）。四半期・半期・年度・累計はビジュアルが月から組む。前年同期も月の値から取るので、比べる前年の月も入る範囲にする",
+            "description": "月の列（任意。日付か 2025-04 の形の文字）。四半期・半期・年度・累計はビジュアルが月から組む。前年同期も月の値から取るので、比べる前年の月も入る範囲にする。入れなければ全期間の 1 列になる",
             "name": "period",
             "kind": "Grouping"
         },
         {
             "displayName": "シナリオ",
-            "description": "実績・予算・見通しなどの名前の列（縦持ち）。無ければ、値の欄に入れたメジャーの名前をシナリオにする（横持ち。比較順は書式ペインでメジャーごとに決める）",
+            "description": "実績・予算・見通しなどの名前の列（縦持ち）。無ければ、値の欄に入れたメジャーの名前をシナリオにする（横持ち。シナリオの順序は書式ペインでメジャーごとに決める）",
             "name": "event",
             "kind": "Grouping"
         },
         {
-            "displayName": "比較順",
-            "description": "シナリオの確かさの順。数か日付（ファイルの更新日など）で、大きい・新しいほど確か（例：期初予算 1・修正予算 2・見通し 3・実績 4）。最新見込みで先に採り、比較の既定は一番小さいシナリオ。前年実績のように比べるだけのシナリオは空にする",
+            "displayName": "シナリオの順序",
+            "description": "シナリオの順序。予算 1・見通し 2・実績 3 のように、後ろほど確かになる数か日付（ファイルの更新日など）を入れる。最新見込みは月ごとに後ろのシナリオから採り、比較の既定は先頭のシナリオ。前年実績のように比べるだけのシナリオは空にする",
             "name": "eventOrder",
             "kind": "Grouping"
         },
         {
             "displayName": "セグメント",
-            "description": "事業・部門など（任意）。最大 3 段（会社 → 事業 → 部門など）で、段を重ねるときは上の段から入れる（道筋でセグメントを見分ける）。表はセグメントごとのブロックと、それを足した計のブロックを並べ、セグメントの名前を左の列に出す（見る人が開き閉じする）。最新見込みと比較は、一番下の段のセグメントごとに月の数字のあるシナリオを採ってから足す。セグメントの合計の行（全社の行）は持たず、セグメントの足し算にする",
+            "description": "事業・部門など（任意）。最大 3 段（会社 → 事業 → 部門など）で、段を重ねるときは上の段から入れる（道筋でセグメントを見分ける）。表はセグメントごとのブロックと、それを足した計のブロックを並べ、セグメントの名前を左の列に出す（見る人が開き閉じする）。最新見込みと比較は、一番下の段のセグメントごとに月の数字のあるシナリオを採ってから足す。セグメントの合計行（全社の行）は持たず、セグメントの足し算にする",
             "name": "organization",
             "kind": "Grouping"
         },
         {
             "displayName": "値",
-            "description": "科目ごとの値のメジャー（財務の値。人数・時間などの量は指標へ）。シナリオの列を使わないときは、実績・予算のように複数入れると、メジャーの名前がシナリオになる",
+            "description": "行ごとの値のメジャー（人数・時間などの量で金額と単位の違うものは指標へ）。シナリオの列を使わないときは、実績・予算のように複数入れると、メジャーの名前がシナリオになる",
             "name": "amount",
             "kind": "Measure"
         },
         {
             "displayName": "指標",
-            "description": "表に行として足すメジャー（人数・時間・台数などの量、EBITDA のような会社独自の行、「うち」）。セグメント × シナリオ × 月の値（科目を外した値）を読む。置く場所・期間の集計・書式・良し悪しは書式ペインの「指標」でメジャーごとに決める",
+            "description": "表に行として足すメジャー（人数・時間・台数などの量、EBITDA のような会社独自の行、「うち」）。セグメント × シナリオ × 月の値（行の欄を外した値）を読む。挿入位置・期間の集計・書式・良し悪しは書式ペインの「指標」でメジャーごとに決める",
             "name": "indicator",
             "kind": "Measure"
         }
@@ -81,7 +81,7 @@
                         "max": 1
                     },
                     "account": {
-                        "max": 3
+                        "max": 5
                     },
                     "accountCode": {
                         "max": 1
@@ -185,18 +185,84 @@
     ],
     "objects": {
         "comparison": {
-            "displayName": "主と比較",
+            "displayName": "シナリオの列",
             "properties": {
                 "main": {
-                    "displayName": "主",
+                    "displayName": "基準",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffSwap": {
-                    "displayName": "2 段の上下を入れ替える",
+                    "displayName": "2 段の上下入れ替え",
                     "type": {
                         "bool": true
+                    }
+                },
+                "toneMode": {
+                    "displayName": "差の色",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good": {
+                    "displayName": "良い差",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "bad": {
+                    "displayName": "悪い差",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "columnSize": {
+                    "displayName": "基準列の見出し",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "compareHeadSize": {
+                    "displayName": "比較列の見出し",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "mainSize": {
+                    "displayName": "基準列の数字",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "compareSize": {
+                    "displayName": "比較列の数字",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "subSize": {
+                    "displayName": "2 段目の数字",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
                     }
                 }
             }
@@ -205,13 +271,7 @@
             "displayName": "シナリオ（メジャーごと）",
             "properties": {
                 "order": {
-                    "displayName": "比較順",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "sign": {
-                    "displayName": "符号の持ち方",
+                    "displayName": "シナリオの順序",
                     "type": {
                         "enumeration": []
                     }
@@ -219,10 +279,10 @@
             }
         },
         "periods": {
-            "displayName": "期間",
+            "displayName": "期間の列",
             "properties": {
                 "fiscalStartMonth": {
-                    "displayName": "期首の月",
+                    "displayName": "期首月",
                     "type": {
                         "enumeration": []
                     }
@@ -234,7 +294,13 @@
                     }
                 },
                 "yearLabel": {
-                    "displayName": "年度の呼び方",
+                    "displayName": "年度の表記",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "titlePlace": {
+                    "displayName": "年度の位置",
                     "type": {
                         "enumeration": []
                     }
@@ -270,20 +336,33 @@
                     }
                 },
                 "scrollStart": {
-                    "displayName": "スクロールの最初の位置",
+                    "displayName": "初期スクロール位置",
                     "type": {
                         "enumeration": []
                     }
-                }
-            }
-        },
-        "display": {
-            "displayName": "表示",
-            "properties": {
-                "copyButton": {
-                    "displayName": "画像のコピー",
+                },
+                "periodLines": {
+                    "displayName": "期間の区切り",
                     "type": {
                         "bool": true
+                    }
+                },
+                "periodLine": {
+                    "displayName": "期間の区切りの色",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "periodSize": {
+                    "displayName": "期間の見出しの文字",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
                     }
                 }
             }
@@ -291,40 +370,98 @@
         "rows": {
             "displayName": "行",
             "properties": {
-                "amountSign": {
-                    "displayName": "符号の持ち方",
+                "accountStyle": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "accountTotal": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "accountDirection": {
+                    "displayName": "分割の向き",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "stepParents": {
+                    "displayName": "計算行を親にする",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "accountRoot": {
+                    "displayName": "最上位の配置",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "joined",
+                                "displayName": "連続した表"
+                            },
+                            {
+                                "value": "vertical",
+                                "displayName": "縦分割"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右分割"
+                            }
+                        ]
+                    }
+                },
+                "totalRow": {
+                    "displayName": "合計行",
                     "type": {
                         "enumeration": []
                     }
                 },
-                "parentPosition": {
-                    "displayName": "小計の位置",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "orgTotalPosition": {
-                    "displayName": "セグメントの小計の位置",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "rootName": {
-                    "displayName": "合計の名前",
+                "totalName": {
+                    "displayName": "合計行の名前",
                     "type": {
                         "text": true
-                    }
-                },
-                "hideEmptyAccounts": {
-                    "displayName": "データの無い科目を隠す",
-                    "type": {
-                        "bool": true
-                    }
-                },
-                "bands": {
-                    "displayName": "囲み",
-                    "type": {
-                        "bool": true
                     }
                 },
                 "bandFill": {
@@ -373,6 +510,134 @@
                         }
                     }
                 },
+                "bandLine": {
+                    "displayName": "囲み線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "rowLine": {
+                    "displayName": "行間の線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "subtotalLine": {
+                    "displayName": "小計の上線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "totalLine": {
+                    "displayName": "段階利益の二重線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "boldAggregates": {
+                    "displayName": "集計の数字を太字",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "nameSize": {
+                    "displayName": "行名の文字",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                }
+            }
+        },
+        "segments": {
+            "displayName": "セグメント",
+            "properties": {
+                "orgStyle": {
+                    "displayName": "表示",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "plain",
+                                "displayName": "囲みなし"
+                            },
+                            {
+                                "value": "box",
+                                "displayName": "囲み"
+                            },
+                            {
+                                "value": "split",
+                                "displayName": "分割"
+                            },
+                            {
+                                "value": "columns",
+                                "displayName": "横積み"
+                            }
+                        ]
+                    }
+                },
+                "orgTotal": {
+                    "displayName": "展開時の合計",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "none",
+                                "displayName": "なし（畳むと集計を表示）"
+                            },
+                            {
+                                "value": "top",
+                                "displayName": "上"
+                            },
+                            {
+                                "value": "bottom",
+                                "displayName": "下"
+                            }
+                        ]
+                    }
+                },
+                "orgDirection": {
+                    "displayName": "分割の向き",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "vertical",
+                                "displayName": "縦"
+                            },
+                            {
+                                "value": "horizontal",
+                                "displayName": "左右"
+                            }
+                        ]
+                    }
+                },
+                "rootName": {
+                    "displayName": "合計の名前",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "hideEmptyAccounts": {
+                    "displayName": "データなしの行を非表示",
+                    "type": {
+                        "bool": true
+                    }
+                },
                 "segmentFill": {
                     "displayName": "セグメントの塗り",
                     "type": {
@@ -418,115 +683,32 @@
                             }
                         }
                     }
-                }
-            }
-        },
-        "eventSigns": {
-            "displayName": "シナリオごとの符号の持ち方",
-            "properties": {
-                "event1": {
-                    "displayName": "シナリオ 1",
+                },
+                "blockLine": {
+                    "displayName": "セグメントの囲み線",
                     "type": {
-                        "enumeration": []
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
                     }
                 },
-                "sign1": {
-                    "displayName": "符号の持ち方 1",
+                "orgSize": {
+                    "displayName": "セグメント名の文字",
                     "type": {
-                        "enumeration": []
-                    }
-                },
-                "event2": {
-                    "displayName": "シナリオ 2",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "sign2": {
-                    "displayName": "符号の持ち方 2",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "event3": {
-                    "displayName": "シナリオ 3",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "sign3": {
-                    "displayName": "符号の持ち方 3",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "event4": {
-                    "displayName": "シナリオ 4",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "sign4": {
-                    "displayName": "符号の持ち方 4",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "event5": {
-                    "displayName": "シナリオ 5",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "sign5": {
-                    "displayName": "符号の持ち方 5",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "event6": {
-                    "displayName": "シナリオ 6",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "sign6": {
-                    "displayName": "符号の持ち方 6",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "event7": {
-                    "displayName": "シナリオ 7",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "sign7": {
-                    "displayName": "符号の持ち方 7",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "event8": {
-                    "displayName": "シナリオ 8",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "sign8": {
-                    "displayName": "符号の持ち方 8",
-                    "type": {
-                        "enumeration": []
+                        "formatting": {
+                            "fontSize": true
+                        }
                     }
                 }
             }
         },
-        "sectionNumbers": {
-            "displayName": "区分ごとの数値",
+        "rowNumbers": {
+            "displayName": "行別の数値書式",
             "properties": {
-                "section1": {
-                    "displayName": "区分 1",
+                "target1": {
+                    "displayName": "対象 1",
                     "type": {
                         "enumeration": []
                     }
@@ -544,31 +726,43 @@
                     }
                 },
                 "negativeStyle1": {
-                    "displayName": "マイナスの書き方 1",
+                    "displayName": "マイナスの表記 1",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle1": {
-                    "displayName": "0 の書き方 1",
+                    "displayName": "0 の表記 1",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle1": {
-                    "displayName": "差が 0 の書き方 1",
+                    "displayName": "差 0 の表記 1",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero1": {
-                    "displayName": "丸めて 0 のマイナス 1",
+                    "displayName": "丸めた 0 の符号 1",
                     "type": {
                         "enumeration": []
                     }
                 },
-                "section2": {
-                    "displayName": "区分 2",
+                "format1": {
+                    "displayName": "書式 1",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "currency1": {
+                    "displayName": "単位文字 1",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "target2": {
+                    "displayName": "対象 2",
                     "type": {
                         "enumeration": []
                     }
@@ -586,31 +780,43 @@
                     }
                 },
                 "negativeStyle2": {
-                    "displayName": "マイナスの書き方 2",
+                    "displayName": "マイナスの表記 2",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle2": {
-                    "displayName": "0 の書き方 2",
+                    "displayName": "0 の表記 2",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle2": {
-                    "displayName": "差が 0 の書き方 2",
+                    "displayName": "差 0 の表記 2",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero2": {
-                    "displayName": "丸めて 0 のマイナス 2",
+                    "displayName": "丸めた 0 の符号 2",
                     "type": {
                         "enumeration": []
                     }
                 },
-                "section3": {
-                    "displayName": "区分 3",
+                "format2": {
+                    "displayName": "書式 2",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "currency2": {
+                    "displayName": "単位文字 2",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "target3": {
+                    "displayName": "対象 3",
                     "type": {
                         "enumeration": []
                     }
@@ -628,31 +834,43 @@
                     }
                 },
                 "negativeStyle3": {
-                    "displayName": "マイナスの書き方 3",
+                    "displayName": "マイナスの表記 3",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle3": {
-                    "displayName": "0 の書き方 3",
+                    "displayName": "0 の表記 3",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle3": {
-                    "displayName": "差が 0 の書き方 3",
+                    "displayName": "差 0 の表記 3",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero3": {
-                    "displayName": "丸めて 0 のマイナス 3",
+                    "displayName": "丸めた 0 の符号 3",
                     "type": {
                         "enumeration": []
                     }
                 },
-                "section4": {
-                    "displayName": "区分 4",
+                "format3": {
+                    "displayName": "書式 3",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "currency3": {
+                    "displayName": "単位文字 3",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "target4": {
+                    "displayName": "対象 4",
                     "type": {
                         "enumeration": []
                     }
@@ -670,31 +888,43 @@
                     }
                 },
                 "negativeStyle4": {
-                    "displayName": "マイナスの書き方 4",
+                    "displayName": "マイナスの表記 4",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle4": {
-                    "displayName": "0 の書き方 4",
+                    "displayName": "0 の表記 4",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle4": {
-                    "displayName": "差が 0 の書き方 4",
+                    "displayName": "差 0 の表記 4",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero4": {
-                    "displayName": "丸めて 0 のマイナス 4",
+                    "displayName": "丸めた 0 の符号 4",
                     "type": {
                         "enumeration": []
                     }
                 },
-                "section5": {
-                    "displayName": "区分 5",
+                "format4": {
+                    "displayName": "書式 4",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "currency4": {
+                    "displayName": "単位文字 4",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "target5": {
+                    "displayName": "対象 5",
                     "type": {
                         "enumeration": []
                     }
@@ -712,31 +942,43 @@
                     }
                 },
                 "negativeStyle5": {
-                    "displayName": "マイナスの書き方 5",
+                    "displayName": "マイナスの表記 5",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle5": {
-                    "displayName": "0 の書き方 5",
+                    "displayName": "0 の表記 5",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle5": {
-                    "displayName": "差が 0 の書き方 5",
+                    "displayName": "差 0 の表記 5",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero5": {
-                    "displayName": "丸めて 0 のマイナス 5",
+                    "displayName": "丸めた 0 の符号 5",
                     "type": {
                         "enumeration": []
                     }
                 },
-                "section6": {
-                    "displayName": "区分 6",
+                "format5": {
+                    "displayName": "書式 5",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "currency5": {
+                    "displayName": "単位文字 5",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "target6": {
+                    "displayName": "対象 6",
                     "type": {
                         "enumeration": []
                     }
@@ -754,31 +996,43 @@
                     }
                 },
                 "negativeStyle6": {
-                    "displayName": "マイナスの書き方 6",
+                    "displayName": "マイナスの表記 6",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle6": {
-                    "displayName": "0 の書き方 6",
+                    "displayName": "0 の表記 6",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle6": {
-                    "displayName": "差が 0 の書き方 6",
+                    "displayName": "差 0 の表記 6",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero6": {
-                    "displayName": "丸めて 0 のマイナス 6",
+                    "displayName": "丸めた 0 の符号 6",
                     "type": {
                         "enumeration": []
                     }
                 },
-                "section7": {
-                    "displayName": "区分 7",
+                "format6": {
+                    "displayName": "書式 6",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "currency6": {
+                    "displayName": "単位文字 6",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "target7": {
+                    "displayName": "対象 7",
                     "type": {
                         "enumeration": []
                     }
@@ -796,31 +1050,43 @@
                     }
                 },
                 "negativeStyle7": {
-                    "displayName": "マイナスの書き方 7",
+                    "displayName": "マイナスの表記 7",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle7": {
-                    "displayName": "0 の書き方 7",
+                    "displayName": "0 の表記 7",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle7": {
-                    "displayName": "差が 0 の書き方 7",
+                    "displayName": "差 0 の表記 7",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero7": {
-                    "displayName": "丸めて 0 のマイナス 7",
+                    "displayName": "丸めた 0 の符号 7",
                     "type": {
                         "enumeration": []
                     }
                 },
-                "section8": {
-                    "displayName": "区分 8",
+                "format7": {
+                    "displayName": "書式 7",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "currency7": {
+                    "displayName": "単位文字 7",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "target8": {
+                    "displayName": "対象 8",
                     "type": {
                         "enumeration": []
                     }
@@ -838,33 +1104,45 @@
                     }
                 },
                 "negativeStyle8": {
-                    "displayName": "マイナスの書き方 8",
+                    "displayName": "マイナスの表記 8",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle8": {
-                    "displayName": "0 の書き方 8",
+                    "displayName": "0 の表記 8",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle8": {
-                    "displayName": "差が 0 の書き方 8",
+                    "displayName": "差 0 の表記 8",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero8": {
-                    "displayName": "丸めて 0 のマイナス 8",
+                    "displayName": "丸めた 0 の符号 8",
                     "type": {
                         "enumeration": []
+                    }
+                },
+                "format8": {
+                    "displayName": "書式 8",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "currency8": {
+                    "displayName": "単位文字 8",
+                    "type": {
+                        "text": true
                     }
                 }
             }
         },
         "calcRows": {
-            "displayName": "計算の行",
+            "displayName": "計算行",
             "properties": {
                 "kind1": {
                     "displayName": "種類",
@@ -879,13 +1157,13 @@
                     }
                 },
                 "from1": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after1": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -927,13 +1205,13 @@
                     }
                 },
                 "from2": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after2": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -975,13 +1253,13 @@
                     }
                 },
                 "from3": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after3": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1023,13 +1301,13 @@
                     }
                 },
                 "from4": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after4": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1071,13 +1349,13 @@
                     }
                 },
                 "from5": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after5": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1119,13 +1397,13 @@
                     }
                 },
                 "from6": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after6": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1167,13 +1445,13 @@
                     }
                 },
                 "from7": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after7": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1215,13 +1493,13 @@
                     }
                 },
                 "from8": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after8": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1263,13 +1541,13 @@
                     }
                 },
                 "from9": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after9": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1311,13 +1589,13 @@
                     }
                 },
                 "from10": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after10": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1359,13 +1637,13 @@
                     }
                 },
                 "from11": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after11": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1407,13 +1685,13 @@
                     }
                 },
                 "from12": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after12": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1455,13 +1733,13 @@
                     }
                 },
                 "from13": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after13": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1503,13 +1781,13 @@
                     }
                 },
                 "from14": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after14": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1551,13 +1829,13 @@
                     }
                 },
                 "from15": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after15": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1599,13 +1877,13 @@
                     }
                 },
                 "from16": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after16": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1647,13 +1925,13 @@
                     }
                 },
                 "from17": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after17": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1695,13 +1973,13 @@
                     }
                 },
                 "from18": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after18": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1743,13 +2021,13 @@
                     }
                 },
                 "from19": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after19": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1791,13 +2069,13 @@
                     }
                 },
                 "from20": {
-                    "displayName": "どこから",
+                    "displayName": "開始位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "after20": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1832,13 +2110,13 @@
             "displayName": "指標",
             "properties": {
                 "after": {
-                    "displayName": "置く場所",
+                    "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "placement": {
-                    "displayName": "置き方",
+                    "displayName": "配置",
                     "type": {
                         "enumeration": []
                     }
@@ -1872,6 +2150,12 @@
         "numbers": {
             "displayName": "数値",
             "properties": {
+                "amountSign": {
+                    "displayName": "符号の持ち方",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "unitType": {
                     "displayName": "表示単位",
                     "type": {
@@ -1891,37 +2175,37 @@
                     }
                 },
                 "currency": {
-                    "displayName": "通貨の字",
+                    "displayName": "単位文字",
                     "type": {
                         "text": true
                     }
                 },
                 "negativeStyle": {
-                    "displayName": "マイナスの書き方",
+                    "displayName": "マイナスの表記",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "zeroStyle": {
-                    "displayName": "0 の書き方",
+                    "displayName": "0 の表記",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "diffZeroStyle": {
-                    "displayName": "差が 0 の書き方",
+                    "displayName": "差 0 の表記",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "negativeZero": {
-                    "displayName": "丸めて 0 のマイナスに符号を残す",
+                    "displayName": "丸めた 0 の符号",
                     "type": {
                         "bool": true
                     }
                 },
                 "unitPlace": {
-                    "displayName": "単位の置き場所",
+                    "displayName": "単位の位置",
                     "type": {
                         "enumeration": []
                     }
@@ -1934,244 +2218,17 @@
                 }
             }
         },
-        "colors": {
-            "displayName": "色",
-            "properties": {
-                "toneMode": {
-                    "displayName": "差の色",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
-                "good": {
-                    "displayName": "良い差",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "bad": {
-                    "displayName": "悪い差",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "headBackground": {
-                    "displayName": "見出しの背景",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "lines": {
-            "displayName": "罫線",
-            "properties": {
-                "row": {
-                    "displayName": "行の間の点線",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "subtotal": {
-                    "displayName": "小計の上の線",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "total": {
-                    "displayName": "段階の上の二重線",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "head": {
-                    "displayName": "見出しの下の線",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "block": {
-                    "displayName": "セグメントの箱の線",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "band": {
-                    "displayName": "囲みの線",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "nameEdge": {
-                    "displayName": "行の名前と数字のあいだの線",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "outer": {
-                    "displayName": "表の外枠",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                },
-                "periods": {
-                    "displayName": "期間の区切り",
-                    "type": {
-                        "bool": true
-                    }
-                },
-                "period": {
-                    "displayName": "期間の区切りの色",
-                    "type": {
-                        "fill": {
-                            "solid": {
-                                "color": true
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "text": {
-            "displayName": "文字",
-            "properties": {
-                "fontFamily": {
-                    "displayName": "フォント",
-                    "type": {
-                        "formatting": {
-                            "fontFamily": true
-                        }
-                    }
-                },
-                "fontSize": {
-                    "displayName": "表の上の文字サイズ",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                },
-                "orgSize": {
-                    "displayName": "セグメントの名前",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                },
-                "nameSize": {
-                    "displayName": "行の名前",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                },
-                "periodSize": {
-                    "displayName": "期間の見出し",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                },
-                "columnSize": {
-                    "displayName": "主の列の見出し",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                },
-                "compareHeadSize": {
-                    "displayName": "比較の列の見出し",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                },
-                "mainSize": {
-                    "displayName": "主の数字",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                },
-                "compareSize": {
-                    "displayName": "比較の数字",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                },
-                "subSize": {
-                    "displayName": "2 段目の数字",
-                    "type": {
-                        "formatting": {
-                            "fontSize": true
-                        }
-                    }
-                }
-            }
-        },
         "visualState": {
             "displayName": "内部状態 (保存用)",
             "properties": {
                 "main": {
-                    "displayName": "主 (見る人)",
+                    "displayName": "基準 (見る人)",
                     "type": {
                         "text": true
                     }
                 },
                 "mainBase": {
-                    "displayName": "主 (選んだときの書式)",
+                    "displayName": "基準 (選んだときの書式)",
                     "type": {
                         "text": true
                     }
@@ -2201,7 +2258,7 @@
                     }
                 },
                 "picks": {
-                    "displayName": "見せる科目 (見る人)",
+                    "displayName": "見せる行 (見る人)",
                     "type": {
                         "text": true
                     }
@@ -2257,152 +2314,8 @@
                 }
             }
         },
-        "hierarchy": {
-            "displayName": "階層の表示",
-            "properties": {
-                "enabled": {
-                    "displayName": "階層ごとの配置を使う",
-                    "type": {
-                        "bool": true
-                    }
-                },
-                "accountStyle": {
-                    "displayName": "科目の表示",
-                    "type": {
-                        "enumeration": [
-                            {
-                                "value": "plain",
-                                "displayName": "囲みなし"
-                            },
-                            {
-                                "value": "box",
-                                "displayName": "囲み"
-                            },
-                            {
-                                "value": "split",
-                                "displayName": "分割"
-                            },
-                            {
-                                "value": "columns",
-                                "displayName": "横積み"
-                            }
-                        ]
-                    }
-                },
-                "accountTotal": {
-                    "displayName": "科目の展開時の合計",
-                    "type": {
-                        "enumeration": [
-                            {
-                                "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
-                            },
-                            {
-                                "value": "top",
-                                "displayName": "上"
-                            },
-                            {
-                                "value": "bottom",
-                                "displayName": "下"
-                            }
-                        ]
-                    }
-                },
-                "accountDirection": {
-                    "displayName": "科目の分割方向",
-                    "type": {
-                        "enumeration": [
-                            {
-                                "value": "vertical",
-                                "displayName": "縦"
-                            },
-                            {
-                                "value": "horizontal",
-                                "displayName": "左右"
-                            }
-                        ]
-                    }
-                },
-                "orgStyle": {
-                    "displayName": "セグメントの表示",
-                    "type": {
-                        "enumeration": [
-                            {
-                                "value": "plain",
-                                "displayName": "囲みなし"
-                            },
-                            {
-                                "value": "box",
-                                "displayName": "囲み"
-                            },
-                            {
-                                "value": "split",
-                                "displayName": "分割"
-                            },
-                            {
-                                "value": "columns",
-                                "displayName": "横積み"
-                            }
-                        ]
-                    }
-                },
-                "orgTotal": {
-                    "displayName": "セグメントの展開時の合計",
-                    "type": {
-                        "enumeration": [
-                            {
-                                "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
-                            },
-                            {
-                                "value": "top",
-                                "displayName": "上"
-                            },
-                            {
-                                "value": "bottom",
-                                "displayName": "下"
-                            }
-                        ]
-                    }
-                },
-                "orgDirection": {
-                    "displayName": "セグメントの分割方向",
-                    "type": {
-                        "enumeration": [
-                            {
-                                "value": "vertical",
-                                "displayName": "縦"
-                            },
-                            {
-                                "value": "horizontal",
-                                "displayName": "左右"
-                            }
-                        ]
-                    }
-                },
-                "accountRoot": {
-                    "displayName": "科目の最上位の並び",
-                    "type": {
-                        "enumeration": [
-                            {
-                                "value": "joined",
-                                "displayName": "連続した表"
-                            },
-                            {
-                                "value": "vertical",
-                                "displayName": "縦分割"
-                            },
-                            {
-                                "value": "horizontal",
-                                "displayName": "左右分割"
-                            }
-                        ]
-                    }
-                }
-            }
-        },
         "hierarchyOverrides": {
-            "displayName": "階層・要素ごとの配置",
+            "displayName": "段・行ごとの配置",
             "properties": {
                 "target1": {
                     "displayName": "階層または要素",
@@ -3902,6 +3815,73 @@
                                 "displayName": "左右"
                             }
                         ]
+                    }
+                }
+            }
+        },
+        "table": {
+            "displayName": "表全体",
+            "properties": {
+                "fontFamily": {
+                    "displayName": "フォント",
+                    "type": {
+                        "formatting": {
+                            "fontFamily": true
+                        }
+                    }
+                },
+                "fontSize": {
+                    "displayName": "表の上の文字サイズ",
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "headBackground": {
+                    "displayName": "見出しの背景",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "headLine": {
+                    "displayName": "見出しの下線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "nameLine": {
+                    "displayName": "左列の区切り線",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "outerLine": {
+                    "displayName": "表の外枠",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "copyButton": {
+                    "displayName": "画像のコピー",
+                    "type": {
+                        "bool": true
                     }
                 }
             }

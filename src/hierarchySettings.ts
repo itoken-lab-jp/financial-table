@@ -18,21 +18,19 @@ export const TOTAL_ITEMS: powerbi.IEnumMember[] = [
 export const DIRECTION_ITEMS: powerbi.IEnumMember[] = [{ value: "vertical", displayName: "縦" }, { value: "horizontal", displayName: "左右" }];
 const inherit = { value: "inherit", displayName: "既定に合わせる" };
 const none = { value: "", displayName: "指定なし" };
-const dropdown = (name: string, displayName: string, items: powerbi.IEnumMember[], value = String(items[0].value)) =>
-    new f.ItemDropdown({ name, displayName, items, value: items.find(i => i.value === value) ?? items[0] });
+export const dropdown = (name: string, displayName: string, items: powerbi.IEnumMember[], value = String(items[0].value), description?: string) =>
+    new f.ItemDropdown({ name, displayName, description, items, value: items.find(i => i.value === value) ?? items[0] });
+export const ROOT_ITEMS: powerbi.IEnumMember[] = [{ value: "joined", displayName: "連続した表" }, ...DIRECTION_ITEMS.map(i => ({ ...i, displayName: `${i.displayName}分割` }))];
 
-export class HierarchySettings extends f.SimpleCard {
-    name = "hierarchy";
-    displayName = "階層の表示";
-    enabled = new f.ToggleSwitch({ name: "enabled", displayName: "階層ごとの配置を使う", value: false });
-    accountStyle = dropdown("accountStyle", "科目の表示", STYLE_ITEMS, "box");
-    accountTotal = dropdown("accountTotal", "科目の展開時の合計", TOTAL_ITEMS, "bottom");
-    accountDirection = dropdown("accountDirection", "科目の分割方向", DIRECTION_ITEMS);
-    accountRoot = dropdown("accountRoot", "科目の最上位の並び", [{ value: "joined", displayName: "連続した表" }, ...DIRECTION_ITEMS.map(i => ({ ...i, displayName: `${i.displayName}分割` }))]);
-    orgStyle = dropdown("orgStyle", "セグメントの表示", STYLE_ITEMS, "split");
-    orgTotal = dropdown("orgTotal", "セグメントの展開時の合計", TOTAL_ITEMS, "bottom");
-    orgDirection = dropdown("orgDirection", "セグメントの分割方向", DIRECTION_ITEMS);
-    slices = [this.enabled, this.accountStyle, this.accountTotal, this.accountDirection, this.accountRoot, this.orgStyle, this.orgTotal, this.orgDirection];
+/** 科目・セグメントの表示の既定（「科目の行」「セグメントの行」のカードの項目）。段・行ごとの上書きは HierarchyOverrides */
+export interface HierarchyDefaults {
+    accountStyle: f.ItemDropdown;
+    accountTotal: f.ItemDropdown;
+    accountDirection: f.ItemDropdown;
+    accountRoot: f.ItemDropdown;
+    orgStyle: f.ItemDropdown;
+    orgTotal: f.ItemDropdown;
+    orgDirection: f.ItemDropdown;
 }
 
 class HierarchyItem extends f.SimpleCard {
@@ -53,11 +51,11 @@ class HierarchyItem extends f.SimpleCard {
 }
 export class HierarchyOverrides extends f.CompositeCard {
     name = "hierarchyOverrides";
-    displayName = "階層・要素ごとの配置";
-    description = "階層の既定を要素ごとに上書き。同じ対象を複数指定した場合は後の設定を優先。分割方向は対象の子の並び方";
+    displayName = "段・行ごとの配置";
+    description = "「行」「セグメント」の表示・合計・分割の向きを、段か行ごとに上書きする。同じ対象を複数指定した場合は後の設定を優先。分割の向きは対象の子の並び方";
     items = Array.from({ length: HIERARCHY_SLOTS }, (_, i) => new HierarchyItem(i + 1));
     groups = [new f.Group({ name: "entries", displayName: "個別設定", slices: [],
-        container: new f.Container({ displayName: "編集する設定", containerItems: this.items }) })];
+        container: new f.Container({ displayName: "編集対象", containerItems: this.items }) })];
     apply(data?: HierarchyFormat): void {
         this.items.forEach((item, i) => {
             const saved = data?.saved[i];
@@ -80,7 +78,7 @@ export function readHierarchyOverrides(objects: powerbi.DataViewObjects | undefi
     });
 }
 
-export function hierarchyOptions(settings: HierarchySettings, overrides: HierarchyOverride[], kind: "account" | "org", id: string, level: number): HierarchyOptions {
+export function hierarchyOptions(settings: HierarchyDefaults, overrides: HierarchyOverride[], kind: "account" | "org", id: string, level: number): HierarchyOptions {
     const read = (select: f.ItemDropdown, items: powerbi.IEnumMember[], fallback: string) => {
         const value = String(select.value.value);
         return items.some(i => i.value === value) ? value : fallback;

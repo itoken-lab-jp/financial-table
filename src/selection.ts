@@ -7,7 +7,7 @@
  * - Ctrl（Mac は ⌘）で足し引き。同じものだけを選んでいるときにもう一度押すと解く。表の空いた所を押しても解く
  * - 形の違うもの（行と組織の名前、組織の段の深さが違うものなど）は Ctrl でも足さず、押したものに置き換える。選択 ID の列の組み合わせが
  *   混ざると、ほかのビジュアルが「サポートされていないクロス強調表示」になった（2026-09-27 Desktop）
- * - 選んだもののほかを薄くする（計算の行・指標の行は選べない。薄くもしない＝Profitbase の合計の行と同じ）
+ * - 選んだもののほかを薄くする（計算行・指標の行は選べない。薄くもしない＝Profitbase の合計行と同じ）
  *
  * 選択 ID（Power BI）は visual.ts が SelectionNodes（data.ts）から作る。ここは何を選んだかと、どこを明るく残すかだけ
  */
@@ -106,7 +106,7 @@ export function periodActive(selection: SelectTarget[], periodKey: string): bool
     return selection.some((t) => (t.kind === "period" || t.kind === "cell" ? t.periodKey === periodKey : true));
 }
 
-/** 選べない行（計算の行・指標）の見出しは薄くしない。ただし組織を選んでいれば、ほかの組織のブロックの行は薄くする */
+/** 選べない行（計算行・指標）の見出しは薄くしない。ただし組織を選んでいれば、ほかの組織のブロックの行は薄くする */
 export function plainRowActive(selection: SelectTarget[], org: string | null): boolean {
     const orgs = selection.filter((t): t is Extract<SelectTarget, { kind: "org" }> => t.kind === "org");
     return orgs.length === 0 || orgs.some((t) => inOrg(org, t.path));

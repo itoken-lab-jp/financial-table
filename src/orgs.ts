@@ -13,8 +13,8 @@
  * 計の置き場所は区分と独立に選べる・左の列に縦にかける・一番上の段まで開く・閉じた組織は計の表
  */
 import { ORG_SEPARATOR } from "./data";
-import { isAccountRow } from "./picks";
-import { DisplayRow } from "./rows";
+import { UNDER_KEY, isAccountRow } from "./picks";
+import { DisplayRow, RowDef } from "./rows";
 
 export const NO_ORG_LABEL = "（セグメントなし）";
 /** 一番上の段を束ねた計の名前の既定 */
@@ -57,6 +57,8 @@ export interface OrgCell {
     /** 自分の箱の帯が上のブロックから続いてくる（小計が下の親の小計）・下のブロックへ続く（小計が上）。帯の幅には横線を引かない */
     ownAbove?: boolean;
     ownBelow?: boolean;
+    /** 囲みなし：箱の塗りと線を引かない（名前と字下げだけ） */
+    plain?: boolean;
     /** 囲む親の段のうち、すぐ上のブロックがその親の小計（小計が上）の段。帯の上の辺を引く */
     afterHead?: number[];
     heads?: OrgHeadLine[];
@@ -245,10 +247,17 @@ export function codesByOrg(root: OrgNode, facts: ReadonlyArray<{ code: string; o
 /**
  * その組織にデータの無い科目の行。値が 0 かではなく、その組織に
  * その科目のファクトがあるかで決める（データがあって値が 0 の科目は残す）。科目が全部隠れた区分・中分類の行、隠れた科目のうち・子も隠す。
- * 計算の行・指標・後ろに置いた指標は残す
+ * 計算行・指標・後ろに置いた指標は残す
  */
-export function emptyAccountRows(display: DisplayRow[], attached: ReadonlyMap<string, string[]>, has: (code: string) => boolean): Set<string> {
-    const byCode = new Map(display.map((d) => [d.def.code, d.def]));
+export function emptyAccountRows(
+    display: DisplayRow[],
+    attached: ReadonlyMap<string, string[]>,
+    has: (code: string) => boolean,
+    defs?: ReadonlyMap<string, RowDef>
+): Set<string> {
+    const shown = new Map(display.map((d) => [d.def.code, d.def]));
+    // 並びに無い行（小計をうちにして中身を出さない行など）も、行の定義から引く
+    const byCode = { get: (code: string) => shown.get(code) ?? defs?.get(code), has: (code: string) => shown.has(code) || (defs?.has(code) ?? false) };
     const memo = new Map<string, boolean>();
     const empty = (code: string): boolean => {
         const known = memo.get(code);
@@ -256,8 +265,11 @@ export function emptyAccountRows(display: DisplayRow[], attached: ReadonlyMap<st
         const def = byCode.get(code);
         let result = false;
         if (isAccountRow(def)) result = !has(code);
+        // 見る人が小計をうちにした行：元の小計が空なら空
+        else if (def?.type === "breakdown" && code.startsWith(UNDER_KEY)) result = def.summands.length > 0 && def.summands.every((s) => empty(s.code));
         // 見る人が選ばなかった科目をまとめた「その他」：まとめた科目がどれも空
-        else if (def?.type === "others") result = def.summands.every((s) => !has(s.code));
+        // まとめた行が小計（中分類）なら、その小計が空か
+        else if (def?.type === "others") result = def.summands.every((s) => (byCode.has(s.code) ? empty(s.code) : !has(s.code)));
         else if (def && (def.type === "subtotal" || def.type === "heading")) {
             // 区分・中分類：子の科目・中分類と、足す行（見る人がその他・うちにして並びから外した科目も）がどれも空。指標の子・うちは数えない。
             // 足す行を見ないと、うちにした科目だけが空の区分が、ほかの科目にデータがあっても消えた

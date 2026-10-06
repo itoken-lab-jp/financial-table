@@ -530,8 +530,11 @@ export function App({
     // 右の端に浮いた）。表の幅はレイアウトの px（offsetWidth）。狭すぎる表でも題名とメニューが入る幅は残す。
     // 単位を左上の角に置くときは、バーはビジュアルの幅いっぱいに使う（表の幅で折り返すと、狭い表でボタンが 1 つずつ行に残った）
     const [tableWidth, setTableWidth] = React.useState(0);
+    // スクロールすると、表の左と上の枠線は流れて消えるので、スクロールの箱の縁に線を引く（visual.less の .ft-scrolled-x・-y）
+    const [scrolled, setScrolled] = React.useState({ x: false, y: false });
     React.useLayoutEffect(() => {
-        const width = keyboard.table.current?.offsetWidth ?? 0;
+        const content = scrollStart.ref.current?.firstElementChild as HTMLElement | null | undefined;
+        const width = keyboard.table.current?.offsetWidth ?? content?.offsetWidth ?? 0;
         if (width !== tableWidth) setTableWidth(width);
     });
     // バーの「比較」のダイアログも、選ぶたびにボタンの名前が伸び縮みしてバーが折り返すと、ボタンの位置が変わる。表を組み直したら
@@ -642,7 +645,8 @@ export function App({
             const sticky = namesWidth < viewport.width * 0.65;
             for (const cell of Array.from(table.querySelectorAll<HTMLElement>("th[data-width-key]"))) {
                 if (cell.dataset.widthKey?.startsWith("v")) continue;
-                cell.style.left = sticky ? `${offsets.get(cell.dataset.widthKey!) ?? 0}px` : "";
+                // 1px 左（スクロールの箱の縁の内側）で止める。Desktop の端数の倍率で、縁の線とのあいだに隙間ができて下の字が透けた（visual.less の .ft-scrolled-x）
+                cell.style.left = sticky ? `${(offsets.get(cell.dataset.widthKey!) ?? 0) - 1}px` : "";
                 cell.style.position = sticky ? "sticky" : "relative";
             }
         }
@@ -687,6 +691,10 @@ export function App({
         style.periodLines ? viewModel.columns.flatMap((c, i) => (i > 0 && viewModel.columns[i - 1].periodKey !== c.periodKey ? [i] : [])) : []
     );
     const unitInCorner = style.unitPlace === UNIT_PLACES.corner;
+    // 表が 1 つ（分けていない）なら、単位は年度と同じ行の右に置く。分けた表は、表ごと（見出しの帯）に置く
+    // 年度を左上の角に置くときは、表の上に出さない（行の名前の列が無い表は、角が無いので表の上）
+    const headingTitle = style.titleInCorner && !viewModel.hideNames ? "" : viewModel.title;
+    const headingUnit = !unitInCorner && viewModel.layout?.kind === "table" && style.unitPlace === UNIT_PLACES.right ? viewModel.unitCaption : "";
 
     if (viewModel.landing.length > 0) {
         return (
@@ -697,7 +705,7 @@ export function App({
                         <li key={m}>{m}</li>
                     ))}
                 </ul>
-                <p className="ft-landing-note">科目の欄に区分 → 中分類（任意）→ 科目名を上から入れ（並びはモデルの「列で並べ替え」の順）、貸方フラグ、カレンダーの月、シナリオを入れ、値のメジャーを値の欄に入れます。区分の小計はビジュアルが組み、段階利益・合計・率は書式ペインの「計算の行」で足します</p>
+                <p className="ft-landing-note">値のメジャーを値の欄に入れると、合計の 1 行が出ます。行の欄に区分 → 中分類 → 科目名のような段を上から入れると行に分かれ、月の欄で期間の列、貸方フラグで収益と費用の向きがそろいます。区分の小計はビジュアルが組み、段階利益・合計・率は書式ペインの「計算行」で足します</p>
             </div>
         );
     }
@@ -705,7 +713,7 @@ export function App({
     return (
         <div
             ref={rootRef}
-            className="ft-root"
+            className={`ft-root${viewModel.style.boldAggregates ? " ft-bold-aggregates" : ""}`}
             style={rootStyle}
             onFocusCapture={e => {
                 const target = e.target as HTMLElement;
@@ -730,7 +738,7 @@ export function App({
             }}
         >
             {/*
-              ボタン（開き閉じ・期間を選ぶ・科目を選ぶ）は上端の行に分け、年度・主・比較・単位は表のすぐ上に置く。表を資料に貼る人が、2 行目から下を
+              ボタン（開き閉じ・期間を選ぶ・行を選ぶ）は上端の行に分け、年度・主・比較・単位は表のすぐ上に置く。表を資料に貼る人が、2 行目から下を
               切り取れば表だけになる（「表で使う文字（年度とか）は表と近づけて、ボタンは上端に行を分けて、画像を切り取りやすいような
               レイアウトに」）。画像としてコピーも ft-sheet（年度から下）だけを描く
             */}
@@ -769,14 +777,13 @@ export function App({
                                 setPickAt((open) => (open !== null ? null : below(button)));
                             }}
                         >
-                            科目を選ぶ
+                            行を選ぶ
                         </button>
                     )}
                 </div>
             )}
             <div className="ft-sheet">
                 <div className="ft-caption" style={!unitInCorner && tableWidth > 0 ? { maxWidth: Math.max(tableWidth, CAPTION_MIN_WIDTH) } : undefined}>
-                    <span className="ft-title">{viewModel.title}</span>
                     {viewModel.menu && <Menu menu={viewModel.menu} onChooseMain={onChooseMain} />}
                     {viewModel.menu && (
                         <CompareButton
@@ -796,17 +803,27 @@ export function App({
                     )}
                     {!unitInCorner && !viewModel.layout && <span className="ft-unit">{viewModel.unitCaption}</span>}
                 </div>
+                {(headingTitle || headingUnit) && (
+                    // 年度と単位は表のすぐ上の 1 行に、年度を左・単位を右に置く（表を切り取ると、表の題として一緒に入る）
+                    <div className="ft-heading" style={tableWidth > 0 ? { maxWidth: Math.max(tableWidth, CAPTION_MIN_WIDTH) } : undefined}>
+                        <span className="ft-title">{headingTitle}</span>
+                        {headingUnit && <span className="ft-unit">{headingUnit}</span>}
+                    </div>
+                )}
                 {viewModel.notice && <div className="ft-notice">{viewModel.notice}</div>}
                 <div
-                    className={`ft-scroll${viewModel.layout ? " ft-layout-scroll" : ""}`}
+                    className={`ft-scroll${viewModel.layout ? " ft-layout-scroll" : ""}${scrolled.x ? " ft-scrolled-x" : ""}${scrolled.y ? " ft-scrolled-y" : ""}`}
                     ref={scrollStart.ref}
-                    onScroll={() => {
+                    onScroll={(e) => {
                         scrollStart.onScroll();
+                        const x = e.currentTarget.scrollLeft > 0;
+                        const y = e.currentTarget.scrollTop > 0;
+                        if (x !== scrolled.x || y !== scrolled.y) setScrolled({ x, y });
                         // 表を動かしたら、見出しから離れた ▾ のメニューを閉じる
                         if (columnMenu) closeColumnMenu(false);
                     }}
                 >
-                    {viewModel.layout ? <LayoutView plan={viewModel.layout} viewModel={viewModel} viewport={viewport} tooltip={tooltip}
+                    {viewModel.layout ? <LayoutView plan={viewModel.layout} unitInBand={!!headingUnit} viewModel={viewModel} viewport={viewport} tooltip={tooltip}
                         selection={selection} onSelect={onSelect} onContextMenu={onContextMenu} onClearSelection={onClearSelection}
                         onToggleOrg={onToggleOrg} onToggleRow={onToggleRow} onChooseCompare={onChooseCompare}
                         openMenu={hasColumnMenu ? openColumnMenu : undefined} toggleMenu={toggleColumnMenu} activeMenu={columnMenu ?? undefined} /> : <table
@@ -832,9 +849,11 @@ export function App({
                                         {name}
                                     </th>
                                 ))}
-                                <th className="ft-corner" rowSpan={2} style={{ left: lefts.at(viewModel.orgColumns.length) }} {...focusProps(picking, cellKey.corner)}>
-                                    {unitInCorner && <span className="ft-corner-unit">{viewModel.unitCaption}</span>}
-                                </th>
+                                {!viewModel.hideNames && (
+                                    <th className="ft-corner" rowSpan={2} style={{ left: lefts.at(viewModel.orgColumns.length) }} {...focusProps(picking, cellKey.corner)}>
+                                        {unitInCorner && <span className="ft-corner-unit">{viewModel.unitCaption}</span>}
+                                    </th>
+                                )}
                                 {viewModel.periods.map((p, i) => (
                                     <th
                                         key={p.key}
@@ -961,9 +980,9 @@ function Menu({
     const label = (value: string) => menu.mainItems.find((i) => i.value === value)?.label ?? value;
     return (
         <span className="ft-events">
-            <span>主</span>
+            <span>基準</span>
             {onChooseMain && menu.mainItems.length > 1 ? (
-                <select className="ft-select" aria-label="主" value={menu.main} onChange={(e) => onChooseMain(e.target.value)}>
+                <select className="ft-select" aria-label="基準" value={menu.main} onChange={(e) => onChooseMain(e.target.value)}>
                     {menu.mainItems.map((item) => (
                         <option key={item.value} value={item.value}>
                             {item.label}
@@ -1193,7 +1212,7 @@ interface RowProps {
     boxEdge: boolean;
 }
 
-/** 行の見出しを明るく残すか。選べない行（計算の行・指標）は薄くしない（組織を選んだときのほかの組織は薄くする） */
+/** 行の見出しを明るく残すか。選べない行（計算行・指標）は薄くしない（組織を選んだときのほかの組織は薄くする） */
 function nameActive(row: TableRow, selection: SelectTarget[]): boolean {
     const org = row.orgPath ?? null;
     return row.select ? rowActive(selection, row.key, org) : plainRowActive(selection, org);
@@ -1260,29 +1279,35 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
     const keyboard = useKeyboard(model, onClearSelection, onContextMenu, openMenu);
     const picking: Picking = { selection, onSelect, onContextMenu, periods: new Map(viewModel.periods.map(p => [p.key, p])),
         focused: keyboard.focused, onFocusCell: keyboard.onFocusCell, keyMenu: keyboard.keyMenu };
-    const starts = new Set(viewModel.columns.flatMap((c, i) => i && c.periodKey !== viewModel.columns[i - 1].periodKey ? [i] : []));
+    // 期間の区切り：期間の最初の列（表の最初の期間は除く）の左に縦の線（書式ペインで消せる）
+    const starts = new Set(viewModel.style.periodLines ? viewModel.columns.flatMap((c, i) => i && c.periodKey !== viewModel.columns[i - 1].periodKey ? [i] : []) : []);
     const cornerUnit = viewModel.style.unitPlace === UNIT_PLACES.corner ? viewModel.unitCaption : undefined;
+    const cornerTitle = viewModel.style.titleInCorner ? viewModel.title : "";
     return <table className={`ft-table ft-layout-table${viewModel.twoLines ? " ft-two-lines" : ""}`} data-layout={plan.key} data-column-shape={`${plan.nameColumns}:${plan.orgColumns ?? 0}`}
         role="grid" aria-label={viewModel.title || "財務諸表"} aria-multiselectable={onSelect ? true : undefined}
         ref={keyboard.table} {...keyboard.tableProps}>
         {!props.unitInBand && viewModel.unitCaption && viewModel.style.unitPlace === UNIT_PLACES.right && <caption className="ft-block-unit">{viewModel.unitCaption}</caption>}
         <colgroup>{model.orgColumns.map((_, i) => <col data-width-key={`o${i}`} key={`o${i}`} />)}
-            {Array.from({ length: plan.nameColumns }, (_, i) => <col data-width-key={`n${i}`} key={i} />)}
+            {Array.from({ length: viewModel.hideNames ? 0 : plan.nameColumns }, (_, i) => <col data-width-key={`n${i}`} key={i} />)}
             {viewModel.columns.map((_, i) => <col data-width-key={`v${i}`} key={`v${i}`} />)}</colgroup>
         <thead><tr>
-            {model.orgColumns.map((name, i) => {
-                const header = i === 0 ? plan.orgHeader : undefined;
+            {/* セグメントの列（横積みで段ごとに並ぶ）は、見出しを 1 つにまとめる（「セグメント」を段の数だけ並べない） */}
+            {model.orgColumns.length > 0 && (() => {
+                const header = plan.orgHeader;
                 const toggle = header?.fold !== undefined && onToggleOrg ? () => onToggleOrg(header.fold!) : undefined;
-                return <th key={i} data-width-key={`o${i}`} className="ft-corner ft-org-head" rowSpan={2}
-                    {...focusProps(picking, cellKey.orgHead(i))}
+                return <th data-width-key="o0" className="ft-corner ft-org-head" rowSpan={2} colSpan={model.orgColumns.length}
+                    {...focusProps(picking, cellKey.orgHead(0))}
                     {...pickProps(picking, null, toggle ? { open: header!.open!, toggle } : undefined)}>
-                    {toggle && <span className="ft-toggle-slot"><Toggle open={header!.open!} label={header!.label} onClick={toggle} /></span>}{name}
+                    {toggle && <span className="ft-toggle-slot"><Toggle open={header!.open!} label={header!.label} onClick={toggle} /></span>}{model.orgColumns[0]}
                 </th>;
-            })}
-            <th className="ft-corner" data-width-key="n0" rowSpan={2} colSpan={plan.nameColumns} {...focusProps(picking, cellKey.corner)}>
-                <span className={cornerUnit ? "ft-corner-unit" : "ft-corner-label"}>{cornerUnit || "項目"}</span>
-            </th>
-            {viewModel.periods.map(p => <th key={p.key} className={`ft-period ft-period-${p.kind}`} colSpan={p.span}
+            })()}
+            {/* 年度を左上の角に置くときは、角を 2 段に分け、上の段（期間の見出しと同じ段）に年度を置く */}
+            {!viewModel.hideNames && (cornerTitle
+                ? <th className="ft-corner ft-corner-title" colSpan={plan.nameColumns}>{cornerTitle}</th>
+                : <th className="ft-corner" data-width-key="n0" rowSpan={2} colSpan={plan.nameColumns} {...focusProps(picking, cellKey.corner)}>
+                    <span className={cornerUnit ? "ft-corner-unit" : "ft-corner-label"}>{cornerUnit || "項目"}</span>
+                </th>)}
+            {viewModel.periods.map((p, i) => <th key={p.key} className={`ft-period ft-period-${p.kind}${i > 0 && viewModel.style.periodLines ? " ft-period-start" : ""}`} colSpan={p.span}
                 {...focusProps(picking, cellKey.period(p.key))} {...pickProps(picking, periodTarget(viewModel, p.key))}
                 {...(openMenu ? { "data-period": p.key, "aria-haspopup": "dialog" as const } : {})}>
                 {openMenu ? <span className="ft-period-label"><span className="ft-colmenu-spacer" aria-hidden="true" />{p.label}
@@ -1290,7 +1315,9 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
                         open={props.activeMenu?.periodKey === p.key && props.activeMenu.returnTo.closest<HTMLTableElement>("table")?.dataset.layout === plan.key}
                         onToggle={cell => props.toggleMenu ? props.toggleMenu(cell, p.key) : openMenu(cell)} /></span> : p.label}
             </th>)}
-        </tr><tr>{viewModel.columns.map((c, i) => <th key={`${c.periodKey}:${c.slot ?? "main"}`} data-width-key={`v${i}`}
+        </tr><tr>{!viewModel.hideNames && cornerTitle && <th className="ft-corner" data-width-key="n0" colSpan={plan.nameColumns} {...focusProps(picking, cellKey.corner)}>
+                <span className={cornerUnit ? "ft-corner-unit" : "ft-corner-label"}>{cornerUnit || "項目"}</span>
+            </th>}{viewModel.columns.map((c, i) => <th key={`${c.periodKey}:${c.slot ?? "main"}`} data-width-key={`v${i}`}
             className={`ft-colhead ft-col-${c.kind}${starts.has(i) ? " ft-period-start" : ""}`}
             {...focusProps(picking, cellKey.column(i))} {...pickProps(picking, periodTarget(viewModel, c.periodKey))} {...tooltipProps(c.tooltip, tooltip)}
             {...(openMenu && c.slot !== undefined ? { "data-period": c.periodKey, "data-slot": c.slot, "aria-haspopup": "dialog" as const } : {})}>
@@ -1337,7 +1364,7 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
     const { bandColors, bandFill } = viewModel.style;
     const colorOf = (level: number) => bandColors[Math.min(level, bandColors.length - 1)];
     // 入れ子の箱（区分・中分類）の中の行か。箱の中の行は、囲む親の段ごとの帯と、自分の段の名前の所を箱として描く。
-    // 箱の外の行（計算の行・区分に入らない科目）は今までどおり行の線だけ
+    // 箱の外の行（計算行・区分に入らない科目）は今までどおり行の線だけ
     const inBox = row.bands.length > 0;
     // 塗るのはまとまりを締める行（区分・中分類の小計・見出し）の名前の所だけ。明細の行は地の色で、左の帯だけ親の段の色
     //
@@ -1371,11 +1398,11 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
                     {parent.name}
                 </th>;
             })}
-            <th
+            {!viewModel.hideNames && <th
                 scope="row"
                 data-width-key={`n${row.nameColumn ?? 0}`}
                 colSpan={row.nameSpan}
-                className={`ft-name${head && (row.type === "subtotal" || row.type === "heading") ? " ft-name-head" : ""}${headActive ? "" : " ft-dim"}`}
+                className={`ft-name${head && (row.type === "subtotal" || row.type === "heading") ? " ft-name-head" : ""}${inBox ? " ft-name-inbox" : ""}${headActive ? "" : " ft-dim"}`}
                 {...focusProps(picking, cellKey.name(row.key))}
                 {...pickProps(picking, rowTarget, toggleRow ? { open: row.open!, toggle: toggleRow } : undefined)}
                 style={{
@@ -1385,18 +1412,22 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
                 }}
             >
                 {inBox ? (
-                    <BoxMarks row={row} colorOf={bandFill ? colorOf : null} background={viewModel.style.background} border={border} />
+                    <>
+                        <BoxMarks row={row} colorOf={bandFill ? colorOf : null} background={viewModel.style.background} border={border} />
+                        {/* 下に置いた合計の締めの線は、自分の段から右だけ（外の箱の帯を横切らない） */}
+                        {row.aggregatePosition === "bottom" && <span className="ft-box-bottom" style={{ left: `${row.depth * INDENT_EM}em`, right: 0 }} />}
+                    </>
                 ) : (
                     // 線の種類は行で決まる（isBoxEdge）。上の行が箱の中なら箱の底の辺なので囲みの線になる
                     <span className="ft-name-line" style={{ left: 0, top: 0 }} />
                 )}
                 <span className="ft-name-text">
-                    <span className="ft-toggle-slot">{toggleRow && <Toggle open={row.open!} above={row.aggregatePosition === "bottom"} label={row.name} onClick={toggleRow} />}</span>
+                    <span className="ft-toggle-slot">{toggleRow && <Toggle open={row.open!} above={row.aggregatePosition === "bottom" || (row.aggregatePosition === undefined && row.toggleAbove)} label={row.name} onClick={toggleRow} />}</span>
                     {row.type === "breakdown" && <span className="ft-tag">うち</span>}
                     {row.type === "blank" ? " " : row.name}
                     {row.unit && <span className="ft-name-unit">{row.unit}</span>}
                 </span>
-            </th>
+            </th>}
             {row.cells.map((cell, i) => {
                 const column = viewModel.columns[i];
                 const period = column ? picking.periods.get(column.periodKey) : undefined;
@@ -1475,15 +1506,17 @@ function OrgHead({
               入れ子の箱：囲む親の段ごとに 1 段の幅の帯（親の箱の左の部分）、自分の段から右は名前の所。
               帯は親の箱がこのブロックで始まれば上の辺、終われば下の辺を引く。名前の所は左と上の辺（次のブロックが深ければ下の辺も）
             */}
+            {/* 囲みなしは塗りと帯を引かず、ブロックの切れ目の横線だけ引く */}
             <NestedBox
                 // ブロックの境目の横線は下のブロックだけが引く。帯の上の辺は、親の箱がこのブロックで始まる所だけ
-                strips={(cell.rails ?? []).map((d) => ({ level: d, topLine: cell.boxStart?.includes(d) ?? false }))}
+                strips={cell.plain ? [] : (cell.rails ?? []).map((d) => ({ level: d, topLine: cell.boxStart?.includes(d) ?? false }))}
                 depth={depth}
                 // 帯が上から続いてくる所（小計が下の親の小計）は、帯の幅に横線を引かない
-                ownStripTop={!cell.ownAbove}
-                colorOf={fill ? (d) => fill[Math.min(d, fill.length - 1)] : null}
+                ownStripTop={cell.plain || !cell.ownAbove}
+                colorOf={fill && !cell.plain ? (d) => fill[Math.min(d, fill.length - 1)] : null}
                 indent={SEGMENT_INDENT_EM}
                 border={1}
+                // 囲みなしは段が 0 なので、左の縦線も引かない（NestedBox は 0 段の左の辺を引かない）
                 className="ft-seg-box"
             />
             <div className="ft-org-label" style={{ top }}>

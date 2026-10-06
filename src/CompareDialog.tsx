@@ -142,7 +142,7 @@ export function CompareDialog({ title, items, slots, period, same, focusSlot, le
                         </div>
                     );
                 })}
-                {unavailable && <div className="ft-compare-hint">「今は使えない」は、主と同じか、表の年度にデータが無いシナリオ。主や年度を戻すと出る</div>}
+                {unavailable && <div className="ft-compare-hint">「今は使えない」は、基準と同じか、表の年度にデータが無いシナリオ。基準や年度を戻すと出る</div>}
                 <div className="ft-compare-hint">
                     {period === null
                         ? "期間ごとに変えるときは、期間の見出しの ▾ で選ぶ"

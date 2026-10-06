@@ -1,6 +1,6 @@
 {
   "name": "financial-table",
-  "version": "1.0.2.0",
+  "version": "2.0.0.0",
   "description": "実績・予算・見通しを科目・事業の階層で比較する予実表。小計・利益・比率の計算行と時間などの指標を設定でき、損益計算書・貸借対照表・管理会計に使える",
   "license": "MIT",
   "private": true,

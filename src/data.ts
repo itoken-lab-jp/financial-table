@@ -45,11 +45,18 @@ export const ROLES = {
 /** 科目の段より上の段（組織・イベント・比較順）。これより下の最初の段の小計が、組織 × イベント × 月の値 */
 const ABOVE_ACCOUNT = new Set<string>([ROLES.organization, ROLES.event, ROLES.eventOrder]);
 
+/** 月の欄を入れていないときの、すべての値を置く 1 つの月（表は「全期間」の 1 列。viewModel） */
+export const ALL_PERIODS_MONTH: MonthIndex = 0;
+
+/** 科目の欄も科目コードの欄も入れていないときの、値をすべて足す 1 つの科目のコードと名前 */
+export const TOTAL_ACCOUNT = "§all";
+export const TOTAL_ACCOUNT_NAME = "合計";
+
 /** 指標の行のコードの頭（後ろはメジャーの queryName）。行のキーと、書式ペインの置く場所・分子・分母の保存値に使う */
 export const INDICATOR_KEY = "§ind:";
 
 /**
- * 区分マスタの 1 行（科目の行を通して届く。読んだまま）。区分の属性だけを持つ。段階の行・率の行は書式ペインの「計算の行」
+ * 区分マスタの 1 行（科目の行を通して届く。読んだまま）。区分の属性だけを持つ。段階の行・率の行は書式ペインの「計算行」
  */
 export interface SectionRecord {
     order: number | null;
@@ -62,6 +69,11 @@ export interface AccountRecord {
     order: number | null;
     category: string | null;
     subCategory: string | null;
+    /**
+     * 科目名より上の段の値（上から。空の段は null）。段の数は科目の欄に入れた列の数 − 1 で、0 なら科目名だけの表。
+     * 無ければ category・subCategory から作る（rows.ts の groupsOf）
+     */
+    groups?: Array<string | null>;
     balanceFlag: string | null;
     /** 貸方フラグ：正常な残高が貸方の科目（収益・負債・純資産。評価勘定はその逆） */
     creditFlag: string | null;
@@ -82,7 +94,7 @@ export interface EventInfo {
     /** 届いた順。横持ちはメジャーの欄の並び（比較順の推測と、同じ比較順の並びに使う）。縦持ちでは意味を持たせない */
     seen: number;
     /** 横持ちのメジャー：書式ペインのメジャーごとの設定の保存先（queryName）と、保存した比較順・金額の持ち方（生のまま） */
-    measure?: { queryName: string; savedOrder: string | null; savedSign: string | null };
+    measure?: { queryName: string; savedOrder: string | null };
     /**
      * 系列：イベントの列と金額のメジャー 2 本以上を一緒に入れたときの、イベントが組になるメジャー（名前と金額の欄の並び）。
      * 既定・比較の落とし先は同じ系列の中だけで見る
@@ -437,6 +449,8 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
     };
     if (matrix.columns?.root) walkColumns(matrix.columns.root, undefined, 0, false);
     const periods = new Set(columnLeaves.filter((leaf) => !leaf.subtotal).map((leaf) => text(leaf.period ?? null) ?? ""));
+    /** 列の葉の月。月の欄が無ければ、すべて 1 つの月（全期間） */
+    const monthOfLeaf = (leaf: ColumnLeaf | undefined) => (hasPeriod ? toMonthDay(leaf?.period ?? null) : { month: ALL_PERIODS_MONTH, day: 0 });
 
     const eventSource: InputData["eventSource"] = eventLevel >= 0 ? "column" : amountSources.length > 1 ? "measures" : "single";
     const measureName = (a: number) => amountSources[a].displayName ?? `値${a + 1}`;
@@ -479,7 +493,7 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
                 order: null,
                 orderKind: null,
                 seen: a,
-                measure: { queryName: source.queryName ?? measureName(a), savedOrder: savedText(saved?.order), savedSign: savedText(saved?.sign) },
+                measure: { queryName: source.queryName ?? measureName(a), savedOrder: savedText(saved?.order) },
             });
         });
     }
@@ -525,11 +539,13 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
     const explicitOrders = new Map<string, number>();
     /** 科目のキー：科目コード。無ければ区分・中分類・科目名（同じ科目名が別の区分にあっても 1 行に足さない） */
     const keyOfPath = (): string | null => {
+        // 科目の欄も科目コードの欄も無い：値をすべて 1 つの科目に足す（表は「合計」の 1 行）
+        if (codeLevel < 0 && nameLevel < 0) return TOTAL_ACCOUNT;
         const code = at(codeLevel);
         if (code !== null) return code;
         const name = at(nameLevel);
         if (name === null) return null;
-        return [at(attributeLevels.category), at(attributeLevels.subCategory), name].filter((v): v is string => v !== null).join(" / ");
+        return [...accountLevels.slice(0, -1).map(at), name].filter((v): v is string => v !== null).join(" / ");
     };
     /** 届いた順を覚える（区分・中分類・科目の段ごと）。続きの回で重なって届いた葉も覚える（覚えないと、後の回の新しい科目に前後の足場が無い） */
     const noteOrder = (code: string) => {
@@ -585,6 +601,8 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
             if (num(cell.value) !== null) hasAmount = true;
             else if (!isBlank(cell.value)) dropped.notNumber++;
         }
+        // 組織・イベントより下の段が無い表は小計の節点が無いので、指標の値を葉で読む（葉が組織 × イベント × 月の値）
+        if (accountLevel < 0 && indicators.length > 0) readSubtotal(node);
         // 金額が 1 つも無い葉（指標だけが科目ごとに届いた葉）の科目は受け取らない。量の科目が空の行として出ないように
         if (!hasAmount) return;
         const code = keyOfPath();
@@ -594,10 +612,11 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
         }
         const record: AccountRecord = {
             code,
-            name: at(nameLevel) ?? code,
+            name: at(nameLevel) ?? (code === TOTAL_ACCOUNT ? TOTAL_ACCOUNT_NAME : code),
             order: null,
             category: at(attributeLevels.category),
             subCategory: at(attributeLevels.subCategory),
+            groups: accountLevels.slice(0, -1).map(at),
             balanceFlag: at(attributeLevels.balanceFlag),
             creditFlag: at(attributeLevels.creditFlag),
             section: { order: null },
@@ -623,7 +642,7 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
             const a = amountIndex[k] ?? -1;
             const value = num(cell.value);
             if (a < 0 || value === null) continue;
-            const monthDay = toMonthDay(leaf?.period ?? null);
+            const monthDay = monthOfLeaf(leaf);
             if (monthDay === null) {
                 unreadableMonth(leaf?.period);
                 continue;
@@ -655,7 +674,7 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
      * ）
      */
     const readSubtotal = (node: DataViewMatrixNode): void => {
-        const subtotalKey = `${pathText(path.slice(0, accountLevel))}\u0001§sub`;
+        const subtotalKey = `${pathText(accountLevel < 0 ? path : path.slice(0, accountLevel))}\u0001§sub`;
         const cells = node.values ?? {};
         const keys = Object.keys(cells);
         subtotalCount++;
@@ -675,7 +694,7 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
                 if (!isBlank(cell.value)) dropped.indicatorNotNumber++;
                 continue;
             }
-            const monthDay = toMonthDay(leaf?.period ?? null);
+            const monthDay = monthOfLeaf(leaf);
             if (monthDay === null) {
                 unreadableMonth(leaf?.period);
                 continue;
@@ -721,7 +740,10 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
             else readLeaf(child);
         }
     };
-    if (matrix.rows?.root) walkRows(matrix.rows.root);
+    const root = matrix.rows?.root;
+    // 行の段が 1 つも無い（値だけ・値と列だけ）ときは、根が葉になって値を持つ
+    if (root?.children && root.children.length > 0) walkRows(root);
+    else if (root?.values) readLeaf(root);
 
     // 小計を入れる設定：全体の行の小計・段ごとの小計と、科目の最初の段の小計（段の欄の selector で保存したもの）
     const orderGuessed = assignOrder(accounts, orderGroups, explicitOrders);
@@ -764,7 +786,7 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
         indicatorFacts: Array.from(indicatorMap.values()),
         indicatorLevel: {
             queryName: accountSource?.queryName ?? null,
-            subtotals: subtotalsSeen,
+            subtotals: subtotalsSeen || accountLevel < 0,
             enabled: subTotals?.rowSubtotals === true && subTotals?.perRowLevel === true && levelEnabled,
         },
         indicatorPresence: presence,
@@ -974,6 +996,7 @@ function sameDefinition(a: AccountRecord, b: AccountRecord): boolean {
         a.name === b.name &&
         a.category === b.category &&
         a.subCategory === b.subCategory &&
+        JSON.stringify(a.groups ?? []) === JSON.stringify(b.groups ?? []) &&
         a.balanceFlag === b.balanceFlag &&
         a.creditFlag === b.creditFlag
     );
@@ -983,7 +1006,7 @@ function sameDefinition(a: AccountRecord, b: AccountRecord): boolean {
  * 組ごとの届いた順（sequences。どれも全体の並びの一部を順に持つ）から、全体の並びを決める。組の中で隣り合う 2 つを「前 → 後ろ」の関係にし、
  * 関係に沿って前から並べる（位相ソート）。次に置けるものが 2 つ以上あるのは、届いた順では前後が決まらない所：key（並びの欄の値）の小さい方を
  * 先にし、key でも決まらなければ（同じ値か、どちらかに値が無い）最初に届いた方を先にして guessed で知らせる。関係が輪になった（組によって前後が逆）ときも知らせる。
- * 決まる所は、組の届く順に左右されない（組の順につなぐ形では、本社にだけある区分の位置が届く順で変わり、計算の行の
+ * 決まる所は、組の届く順に左右されない（組の順につなぐ形では、本社にだけある区分の位置が届く順で変わり、計算行の
  * 範囲と値まで変わった）
  */
 export function orderFromSequences(sequences: string[][], key: (value: string) => number = () => Number.POSITIVE_INFINITY): { order: string[]; guessed: boolean } {

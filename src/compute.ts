@@ -142,7 +142,8 @@ export class Calculator {
         const cached = this.seriesCache.get(cacheKey);
         if (cached) return cached;
         const result = new Map<Slot, Series>();
-        if (row.type === "subtotal" || row.type === "step" || row.type === "others") {
+        // 足す行を持つ行：小計・段階・その他と、小計をうちにした行（picks.ts の UNDER_KEY）
+        if (row.type === "subtotal" || row.type === "step" || row.type === "others" || (row.type === "breakdown" && row.summands.length > 0)) {
             if (stack.has(row.code)) return result;
             stack.add(row.code);
             for (const { code, weight } of row.summands) {

@@ -24,7 +24,7 @@ export interface PickDialogProps {
 
 const MODES: Array<{ mode: PickMode; label: string }> = [
     { mode: "others", label: "残りをその他にまとめる" },
-    { mode: "under", label: "選んだ科目をうちにする" },
+    { mode: "under", label: "選んだ行をうちにする" },
 ];
 
 export function PickDialog({ parents, current, left, top, onPick, onClose }: PickDialogProps): React.JSX.Element {
@@ -78,7 +78,7 @@ export function PickDialog({ parents, current, left, top, onPick, onClose }: Pic
             ref={ref}
             className="ft-pick-pop"
             role="dialog"
-            aria-label="見せる科目"
+            aria-label="見せる行"
             style={{ left: x, top, maxHeight: `calc(100% - ${top}px - 0.5em)` }}
             onKeyDown={(e) => {
                 if (e.key === "Escape") {
@@ -95,7 +95,7 @@ export function PickDialog({ parents, current, left, top, onPick, onClose }: Pic
             }}
         >
             <div className="ft-pick-title">
-                <span>見せる科目</span>
+                <span>見せる行</span>
                 <button type="button" className="ft-pick-close" onClick={() => onClose(true)}>
                     閉じる
                 </button>
@@ -127,7 +127,7 @@ export function PickDialog({ parents, current, left, top, onPick, onClose }: Pic
                         </button>
                         {expanded && (
                             <div id={listId} className="ft-pick-body">
-                                <div className="ft-pick-modes" role="radiogroup" aria-label={`${parent.name}の選ばなかった科目`}>
+                                <div className="ft-pick-modes" role="radiogroup" aria-label={`${parent.name}の選ばなかった行`}>
                                     {MODES.map(({ mode, label }) => (
                                         <label key={mode} className="ft-pick-mode">
                                             <input

@@ -13,7 +13,7 @@ import { EventInfo, InputData } from "./data";
 
 /** 書式ペインのメジャーごとの比較順の「比較だけ（比較順なし）」 */
 export const ORDER_NONE = "none";
-/** 書式ペインのメジャーごとの金額の持ち方の「表全体に合わせる」 */
+/** 書式ペインのメジャーごとの金額の持ち方の「表全体と同じ」 */
 export const SIGN_TABLE = "table";
 export const SIGN_VALUES = ["auto", "debit", "credit", "positive"];
 
@@ -25,8 +25,6 @@ export interface MeasureSetting {
     order: string;
     /** 比較順の選択肢（"1"〜メジャーの数。それより大きい値が保存されていれば、その値も） */
     orderChoices: string[];
-    /** 金額の持ち方（SIGN_TABLE か auto・debit・credit・positive）。保存が無ければ表全体に合わせる */
-    sign: string;
 }
 
 export interface EventModel {
@@ -41,8 +39,6 @@ export interface EventModel {
     warnings: string[];
     /** 横持ちのメジャーごとの設定（書式ペイン）。メジャーが 2 本以上の横持ちのときだけ */
     measureSettings: MeasureSetting[];
-    /** メジャーごとに選んだ金額の持ち方（表全体に合わせるものは入れない） */
-    measureSigns: Map<string, string>;
 }
 
 /** 名前の並び（比較順が同じ・無いときの並べ方だけに使う）。数字は数として比べる（第2回 < 第10回） */
@@ -95,26 +91,22 @@ export function resolveEvents(input: InputData): EventModel {
     const firstSeries = Math.min(...ordered.map((e) => e.series?.index ?? 0));
     const strongest = [...ordered].reverse().find((e) => (e.series?.index ?? 0) === firstSeries)?.name ?? null;
 
-    for (const name of input.orderConflicts.slice(0, 3)) warnings.push(`シナリオ「${name}」の比較順が行によって違う。最初に読めた値を使った`);
+    for (const name of input.orderConflicts.slice(0, 3)) warnings.push(`シナリオ「${name}」のシナリオの順序が行によって違う。最初に読めた値を使った`);
     if (input.unreadableOrders.length > 0) {
-        warnings.push(`比較順が数か日付として読めないシナリオがある（${input.unreadableOrders.slice(0, 3).join("・")}）。比較にだけ使った。比較順は数か日付にする`);
+        warnings.push(`シナリオの順序が数か日付として読めないシナリオがある（${input.unreadableOrders.slice(0, 3).join("・")}）。比較にだけ使った。シナリオの順序は数か日付にする`);
     }
-    if (new Set(ordered.map((e) => e.orderKind)).size > 1) warnings.push("比較順に数と日付が混ざっている。日付を数より大きい（確か）として並べた。どちらかにそろえる");
+    if (new Set(ordered.map((e) => e.orderKind)).size > 1) warnings.push("シナリオの順序に数と日付が混ざっている。日付を数より後ろ（確か）として並べた。どちらかにそろえる");
     // 同じ比較順は、同じ系列の中だけで見る（金額と数量の予算は、どちらもイベントの表の同じ比較順を持つ）
     const tied = ordered.filter((e) => ordered.some((o) => o !== e && o.order === e.order && o.series?.name === e.series?.name)).map((e) => e.name);
     if (tied.length > 0) {
         const by = input.eventSource === "column" ? "名前" : "欄の並び";
-        warnings.push(`比較順が同じシナリオがある（${tied.slice(0, 3).join("・")}）。${by}の後ろを確かとした。比較順を別の値にする`);
+        warnings.push(`シナリオの順序が同じシナリオがある（${tied.slice(0, 3).join("・")}）。${by}の後ろを確かとした。シナリオの順序を別の値にする`);
     }
     if (input.eventSource === "column" && input.has.eventOrder && multiple && ordered.length === 0) {
-        warnings.push("比較順のあるシナリオが無い（どれも空）。最新見込みは出さない。主に採るシナリオに比較順（数か日付。大きいほど確か）を入れる");
+        warnings.push("シナリオの順序のあるシナリオが無い（どれも空）。最新見込みは出さない。基準にするシナリオにシナリオの順序（数か日付。後ろほど確か）を入れる");
     }
 
     const count = events.length;
-    const signOf = (e: EventInfo) => {
-        const saved = e.measure?.savedSign ?? null;
-        return saved !== null && SIGN_VALUES.includes(saved) ? saved : SIGN_TABLE;
-    };
     const measureSettings: MeasureSetting[] =
         input.eventSource === "measures" && multiple
             ? events.map((e) => {
@@ -125,12 +117,9 @@ export function resolveEvents(input: InputData): EventModel {
                       queryName: e.measure?.queryName ?? e.name,
                       order: e.order === null ? ORDER_NONE : String(e.order),
                       orderChoices,
-                      sign: signOf(e),
                   };
               })
             : [];
-    // 書式ペインに出しているとき（メジャーが 2 本以上の横持ち）だけ効かせる。1 本に減らしたあとに残った保存値は、見えないので使わない
-    const measureSigns = new Map(measureSettings.filter((m) => m.sign !== SIGN_TABLE).map((m) => [m.name, m.sign]));
 
     return {
         events: sorted,
@@ -139,6 +128,5 @@ export function resolveEvents(input: InputData): EventModel {
         strongest,
         warnings,
         measureSettings,
-        measureSigns,
     };
 }

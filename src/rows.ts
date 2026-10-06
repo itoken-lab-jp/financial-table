@@ -3,8 +3,10 @@
  *
  * - 名前に意味を持たせない。区分の名前から型（売上高・流動資産…）を
  *   当てることはしない。区分の並びは区分マスタの区分の並び、無ければ科目の並び（区分の最初の科目）
- * - 区分の中は、中分類ごとの小計 → 科目。科目が 1 つで区分と同じ名前なら、小計を付けずにその行を区分の行にする
- * - 計算の行：段階利益・合計・比率は、すべて書式ペインの「計算の行」で足す。小計はどこからの区分から置く場所の区分まで、
+ * - 科目の段は何段でもよい（科目の欄に入れた列。科目名より上の段が groups）。一番上の段が区分、その下の段は段ごとの小計（中分類…）。
+ *   科目名だけ（groups が空）なら、科目ごとに区分になる。科目が 1 つで段と同じ名前なら、小計を付けずにその行を段の行にする
+ * - 向き（貸方フラグ）は任意。向きの分からない区分は、届いた値のまま足して色を付けない（止めない）
+ * - 計算行：段階利益・合計・比率は、すべて書式ペインの「計算行」で足す。小計はどこからの区分から置く場所の区分まで、
  *   比率は分子の行 ÷ 分母の行
  * - 指標の行：指標の欄のメジャーを、書式ペインのメジャーごとの置く場所に置く。行の後ろ（人数・時間・EBITDA
  *   のような会社独自の行。届いた値のまま、集計・書式・良し悪しはメジャーごとの設定）か、行の「うち」（親の行と同じ見せ方）。
@@ -18,7 +20,7 @@
  * - 比率の行は、分子と分母の行を期間で集計してから割る
  * - 並び：区分の中は科目の並び → コード。小計を科目の上か下に置くかは表全体で選ぶ。うちは親の行の下
  */
-import { AccountRecord, INDICATOR_KEY } from "./data";
+import { AccountRecord, INDICATOR_KEY, TOTAL_ACCOUNT } from "./data";
 import { Expr, FormulaError, parseFormula } from "./formula";
 import { AMOUNT_FORMAT, RowFormat, parseRowFormat } from "./numberFormat";
 
@@ -76,7 +78,7 @@ export interface AccountTraits {
 
 /** 書式ペインの選択肢。value は保存する値 */
 export interface CalcChoices {
-    /** 計算の行の置く場所・どこからの区分（表の並び） */
+    /** 計算行の置く場所・どこからの区分（表の並び） */
     sections: Array<{ value: string; displayName: string }>;
     /**
      * 比率の分子・分母に使える行（区分は「§sec:区分」、書式ペインの小計は「§calc:本目」、指標は「§ind:queryName」、ほかは行のコード。
@@ -94,13 +96,15 @@ export interface RowModel {
     /** 科目のコード → 性質（金額の行のうちも入れる） */
     traits: Map<string, AccountTraits>;
     calcChoices: CalcChoices;
-    /** 行のうち（親の行のコード → うちの行のコード）。合計の行・計算の行の小計のうちは子（children）に入らないので、折りたたみはここも見る */
+    /** 行のうち（親の行のコード → うちの行のコード）。合計行・計算行の小計のうちは子（children）に入らないので、折りたたみはここも見る */
     attached: Map<string, string[]>;
     /** 行の後ろに置いた指標（置く場所の行のコード → 指標の行のコード）。折りたたみで、子の後ろに置いた指標も一緒に隠す */
     following: Map<string, string[]>;
+    /** 科目のコード → 区分（一番上の段の名前。科目名だけの表は科目ごとの区分の名前） */
+    sectionOf: Map<string, string>;
 }
 
-/** 書式ペインで足す計算の行（「計算の行」カードの編集する行）。小計はどこからの区分から置く場所の区分までの合計、比率は分子の行 ÷ 分母の行 */
+/** 書式ペインで足す計算行（「計算行」カードの編集する行）。小計はどこからの区分から置く場所の区分までの合計、比率は分子の行 ÷ 分母の行 */
 export interface CalcRowSpec {
     /** 書式ペインの何本目か（1 から。警告に出す） */
     slot: number;
@@ -142,7 +146,7 @@ export const CALC_KEY = "§calc:";
 
 export interface BuildOptions {
     position: ParentPosition;
-    /** 書式ペインで足す計算の行 */
+    /** 書式ペインで足す計算行 */
     calcRows?: CalcRowSpec[];
     /** 指標の行（指標の欄の並び） */
     indicators?: IndicatorSpec[];
@@ -152,6 +156,10 @@ export interface BuildOptions {
     flags?: { credit: boolean; balance: boolean };
     /** 科目の金額の大きさ（すべての月・イベントの絶対値の和）。区分の向きの多数を金額で見る。無ければ科目の数で見る */
     magnitude?: (code: string) => number;
+    /** すべての区分を足した「合計」の行（根）を出すか。区分が 2 つ以上のときだけ出す */
+    totalRow?: boolean;
+    /** 合計行と、科目の欄を入れない表の 1 行（data.ts の TOTAL_ACCOUNT）の名前。空なら「合計」 */
+    totalName?: string;
 }
 
 const DEFAULT_OPTIONS: BuildOptions = { position: "below" };
@@ -183,7 +191,7 @@ interface Section {
     credit: boolean | null;
     /** 残高の区分か */
     stock: boolean;
-    /** 足さない区分（区分なし・向きの分からない区分）。見出しの下に並べるだけ */
+    /** 足さない区分（区分なし）。見出しの下に並べるだけ。向きの分からない区分は足す（届いた値のまま） */
     other: boolean;
     /** 区分の科目 */
     accounts: AccountRecord[];
@@ -193,11 +201,22 @@ interface Section {
 
 /** 区分の空の科目を置く区分。区分マスタの「その他」などとぶつからない名前 */
 export const NO_CATEGORY = "（区分なし）";
+/** すべての区分を足した合計行（木の根）のコードと名前 */
+export const TOTAL_KEY = "§total";
+export const TOTAL_NAME = "合計";
+
+/**
+ * 科目名より上の段の値（上から）。data.ts は groups を入れる。無ければ（テストの科目の表）区分 → 中分類から作る
+ * （区分は空でも 1 段に数える：区分の欄はあるのに空の科目は「区分なし」）
+ */
+export function groupsOf(account: AccountRecord): Array<string | null> {
+    return account.groups ?? [account.category, ...(account.subCategory !== null ? [account.subCategory] : [])];
+}
 
 /** 行の向きの符号：貸方の向きは −1（借方プラスのデータを反転して見せる） */
 const signOf = (credit: boolean | null): 1 | -1 => (credit ? -1 : 1);
-/** 良し悪し：貸方のフローは +、借方のフローは −、残高は色なし */
-const goodOf = (credit: boolean | null, stock: boolean): GoodDirection => (stock || credit === null ? 0 : credit ? 1 : -1);
+/** 良し悪し：貸方のフローは +、借方のフローは −、残高は色なし。向きが分からなければ（貸方フラグが無い）、届いた値の差がプラスなら良い（2.0） */
+const goodOf = (credit: boolean | null, stock: boolean): GoodDirection => (stock ? 0 : credit === false ? -1 : 1);
 
 /** 値を持つ行か（見出し・空行でない） */
 const hasValue = (type: RowType) => type !== "heading" && type !== "blank";
@@ -218,9 +237,12 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         return row;
     };
     /** 同じコードが既にあれば番号を付ける（見出し・段階の行・率の行の名前がぶつかっても上書きしない） */
+    // 取ったコードは、行を足す前でも押さえる（段の小計は、子を組んでから行を足すので、同じ名前の小計が同じコードを取った）
+    const taken = new Set<string>();
     const uniqueCode = (base: string) => {
         let code = base;
-        for (let n = 2; rows.has(code); n++) code = `${base}:${n}`;
+        for (let n = 2; rows.has(code) || taken.has(code); n++) code = `${base}:${n}`;
+        taken.add(code);
         return code;
     };
     const byOrder = (a: AccountRecord, b: AccountRecord) => {
@@ -228,7 +250,9 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         const ob = b.order ?? Number.POSITIVE_INFINITY;
         return oa !== ob ? oa - ob : compareCode(a.code, b.code);
     };
-    const sorted = Array.from(accounts.values()).sort(byOrder);
+    // 科目の欄を入れない表の 1 行は、合計行の名前で出す
+    const named = (a: AccountRecord) => (a.code === TOTAL_ACCOUNT && opts.totalName ? { ...a, name: opts.totalName } : a);
+    const sorted = Array.from(accounts.values()).map(named).sort(byOrder);
     const flags = opts.flags ?? {
         credit: sorted.some((a) => (a.creditFlag ?? null) !== null),
         balance: sorted.some((a) => (a.balanceFlag ?? null) !== null),
@@ -237,9 +261,16 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     // ---- 区分に分ける
     const sectionMap = new Map<string, Section>();
     const noCategory: string[] = [];
+    /** 科目の、区分より下の段の値（区分の中の小計を組む） */
+    const innerGroups = new Map<string, Array<string | null>>();
+    /** 科目名だけの表の区分の名前：科目名。同じ名前の科目があればコードを添える */
+    const flatNames = new Map<string, number>();
+    for (const account of sorted) if (groupsOf(account).length === 0) flatNames.set(account.name, (flatNames.get(account.name) ?? 0) + 1);
     for (const account of sorted) {
-        const label = account.category ?? NO_CATEGORY;
-        if (account.category === null) noCategory.push(account.name);
+        const groups = groupsOf(account);
+        const label = groups.length === 0 ? ((flatNames.get(account.name) ?? 0) > 1 ? `${account.name}（${account.code}）` : account.name) : (groups[0] ?? NO_CATEGORY);
+        innerGroups.set(account.code, groups.slice(1));
+        if (groups.length > 0 && groups[0] === null) noCategory.push(account.name);
         let section = sectionMap.get(label);
         if (!section) {
             section = { label, credit: null, stock: false, other: false, accounts: [], master: { ...account.section } };
@@ -250,7 +281,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         for (const [field, value] of Object.entries(account.section)) if (master[field] === null && value !== null) master[field] = value;
         section.accounts.push(account);
     }
-    if (noCategory.length > 0) warn(`区分の空の科目がある（${list(noCategory)}）。「${NO_CATEGORY}」として最後に並べた`);
+    if (noCategory.length > 0) warn(`区分の空の行がある（${list(noCategory)}）。「${NO_CATEGORY}」として最後に並べた`);
 
     // 区分の並びの列を入れたか。列の有無が分からないときは値で見る
     const useMaster = opts.sectionMaster ?? Array.from(accounts.values()).some((a) => a.section.order !== null);
@@ -301,23 +332,21 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         const voters = candidates.filter((a) => (balanceFlag.get(a.code) ?? false) === section.stock);
         const flagOf = (a: AccountRecord) => creditFlag.get(a.code) ?? null;
         section.credit = majority(voters, flagOf, voters.some((a) => size(a) > 0) ? size : () => 1) ?? voters.map(flagOf).find((v) => v !== null) ?? null;
-        // 足さない区分：区分なし・向きの分からない区分。名前（その他など）では決めない
+        // 足さない区分：区分なし。名前（その他など）では決めない。向きの分からない区分は届いた値のまま足す
         const noCategory = section.label === NO_CATEGORY;
-        section.other = noCategory || section.credit === null;
-        // 向きの分からない区分：科目があるのに貸方フラグがどれも空の区分
-        if (!noCategory && section.credit === null) unknownDirection.push(section.label);
+        section.other = noCategory;
+        // 向きの分からない区分：貸方フラグの列を入れたのに、区分の科目の貸方フラグがどれも空の区分（列が無ければ知らせない）
+        if (!noCategory && section.credit === null && flags.credit) unknownDirection.push(section.label);
         if (!section.other && !flags.balance) unknownStock.push(section.label);
     }
     if (unknownDirection.length > 0) {
         warn(
-            `区分「${unknownDirection.slice(0, 3).join("」「")}」の向き（正常な残高が貸方か借方か）が分からない（区分の科目の貸方フラグがどれも空）。区分を足さずに、見出しの下に並べた。${
-                flags.credit ? "科目の表の貸方フラグを埋める" : "科目の表に貸方フラグの列を入れる"
-            }（収益・負債・純資産は ON、費用・資産は OFF。空は OFF でなく、区分の向きを継ぐ）`
+            `区分「${unknownDirection.slice(0, 3).join("」「")}」の向き（正常な残高が貸方か借方か）が分からない（区分の行の貸方フラグがどれも空）。届いた値のまま足し、差はプラスを良い向きとして色を付けた。向きをそろえて足すなら、貸方フラグを埋める（収益・負債・純資産は 1、費用・資産は 0。空は 0 でなく、区分の向きを継ぐ）`
         );
     }
     if (unknownStock.length > 0) {
         warn(
-            `残高フラグの列が無いので、区分（${list(unknownStock)}）をフローとして四半期・通期で足した。貸借対照表のような残高（期末の値）の科目があれば、科目の表に残高フラグの列を入れる（損益だけの表なら、列を入れて空にしておけば知らせない）`
+            `残高フラグの列が無いので、区分（${list(unknownStock)}）をフローとして四半期・通期で足した。貸借対照表のような残高（期末の値）の行があれば、残高フラグの列を入れる（損益だけの表なら、列を入れて空にしておけば知らせない）`
         );
     }
 
@@ -327,7 +356,8 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         for (const account of section.accounts) {
             // 空のフラグは区分の向き・フロー（残高は区分の多数では決めない）
             const stock = balanceFlag.get(account.code) ?? false;
-            const amount = !section.other;
+            // 向きの分からない区分の科目は金額として符号をそろえない（届いた値のまま）
+            const amount = !section.other && section.credit !== null;
             traits.set(account.code, {
                 credit: creditFlag.get(account.code) ?? section.credit,
                 stock,
@@ -336,12 +366,12 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             });
         }
         // 区分の合計に足す金額の科目で、貸方フラグが空のもの（区分の向きを継いだ。名前から向きを当てないので、付け忘れなら区分の向きが崩れる）
-        if (!section.other) {
+        if (!section.other && section.credit !== null) {
             for (const a of section.accounts) if (traits.get(a.code)?.inTotal && creditFlag.get(a.code) === null) blankCredit.push(a.name);
         }
     }
     if (blankCredit.length > 0) {
-        warn(`貸方フラグが空の科目は、区分の向きにした（${list(blankCredit)}）。区分と逆の科目（評価勘定）なら符号が逆になるので、科目の表の貸方フラグを埋める`);
+        warn(`貸方フラグが空の行は、区分の向きにした（${list(blankCredit)}）。区分と逆の行（評価勘定）なら符号が逆になるので、貸方フラグを埋める`);
     }
 
     /** 区分の値の行のコード（段階の行が足す行） */
@@ -370,7 +400,8 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             name: account.name,
             type: "detail",
             sign: asIs ? 1 : signOf(own ? trait.credit : section.credit),
-            good: asIs || trait.stock ? 0 : own ? goodOf(trait.credit, false) : goodOf(section.credit, section.stock),
+            // 届いた値のままの科目：区分なしは色なし、向きの分からない区分の科目はプラスが良い（goodOf）
+            good: trait.stock || section.other ? 0 : asIs ? goodOf(null, false) : own ? goodOf(trait.credit, false) : goodOf(section.credit, section.stock),
             aggregation: trait.stock ? "stock" : "flow",
             format: AMOUNT_FORMAT,
         });
@@ -398,7 +429,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     };
 
     /** 区分の行を組んで、表示の並びに足す。段階の行が足す値の行は sectionValue に残す（足さない区分は残さない） */
-    /** 表に出した区分（表の並び）。計算の行の小計の範囲と、書式ペインの置く場所の選択肢 */
+    /** 表に出した区分（表の並び）。計算行の小計の範囲と、書式ペインの置く場所の選択肢 */
     const emitted: Section[] = [];
     const emitSection = (section: Section): void => {
         emitted.push(section);
@@ -420,8 +451,8 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         if (mismatch.length > 0) {
             warn(
                 section.stock
-                    ? `残高フラグが OFF か空の科目は、残高の区分「${section.label}」の合計と段階の行に足さない（${list(mismatch.map((a) => a.name))}）`
-                    : `残高フラグの科目は、区分「${section.label}」の合計と段階の行に足さない（${list(mismatch.map((a) => a.name))}）`
+                    ? `残高フラグが 0 か空の行は、残高の区分「${section.label}」の合計と段階の行に足さない（${list(mismatch.map((a) => a.name))}）`
+                    : `残高フラグが 1 の行は、区分「${section.label}」の合計と段階の行に足さない（${list(mismatch.map((a) => a.name))}）`
             );
         }
         const summable = (code: string) => !mismatch.some((a) => a.code === code);
@@ -434,8 +465,9 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             return;
         }
 
-        // 科目が 1 つで区分と同じ名前：小計を付けず、その科目を区分の行にする
-        if (main.length === 1 && main[0].name === section.label && main[0].subCategory === null) {
+        // 科目が 1 つで区分と同じ名前（科目名だけの表の区分も）：小計を付けず、その科目を区分の行にする
+        const inner = (a: AccountRecord) => innerGroups.get(a.code) ?? [];
+        if (main.length === 1 && (main[0].name === section.label || groupsOf(main[0]).length === 0) && inner(main[0]).every((g) => g === null)) {
             emitAccount(main[0], section, 0);
             sectionValue.set(section.label, main[0].code);
             noteName(section.label, main[0].code);
@@ -455,43 +487,50 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
                 summands: children.filter(summable).map((c) => ({ code: c, weight: 1 })),
             });
 
-        // 中分類ごとの小計。並びは中分類の中の最初の科目の位置
-        const groups: Array<{ name: string | null; accounts: AccountRecord[] }> = [];
-        for (const account of main) {
-            const group = groups.find((g) => g.name !== null && g.name === account.subCategory);
-            if (group) group.accounts.push(account);
-            else groups.push({ name: account.subCategory, accounts: [account] });
-        }
-        const sectionCode = uniqueCode(`§sec:${section.label}`);
-        const children: string[] = [];
-        const body: Array<() => void> = [];
-        for (const group of groups) {
-            if (group.name === null) {
-                const account = group.accounts[0];
-                children.push(account.code);
-                body.push(() => emitAccount(account, section, 1));
-                continue;
+        // 区分より下の段ごとの小計（中分類…）。段の値で分け、並びはその値の最初の科目の位置。値の空の科目は 1 つ上の段の子
+        type Child = { code: string; emit: () => void };
+        const level = (accounts: AccountRecord[], at: number, depth: number, path: string[]): Child[] => {
+            // 段の値の空の行：下の段にも値が無ければその行だけ、下の段に値があれば 1 つにまとめて下の段で分ける
+            // （1 行ずつ下の段へ送ると、同じ下の段の値が別々の小計になった）
+            const parts: Array<{ name: string | null; leaf?: AccountRecord; accounts: AccountRecord[] }> = [];
+            for (const account of accounts) {
+                const name = inner(account)[at] ?? null;
+                const leaf = name === null && inner(account).slice(at + 1).every((g) => g === null);
+                const part = leaf ? undefined : parts.find((p) => p.name === name && p.leaf === undefined);
+                if (part) part.accounts.push(account);
+                else parts.push({ name, leaf: leaf ? account : undefined, accounts: [account] });
             }
-            if (!group.accounts.some((a) => summable(a.code))) {
-                // 足せる科目の無い中分類は小計を付けない（足すものが無い）
-                for (const account of group.accounts) {
-                    children.push(account.code);
-                    body.push(() => emitAccount(account, section, 1));
+            return parts.flatMap((part): Child[] => {
+                if (part.leaf) {
+                    const account = part.leaf;
+                    return [{ code: account.code, emit: () => emitAccount(account, section, depth) }];
                 }
-                continue;
-            }
-            const groupCode = uniqueCode(`§grp:${section.label}:${group.name}`);
-            groupSection.set(groupCode, section.label);
-            const groupChildren = group.accounts.map((a) => a.code);
-            children.push(groupCode);
-            body.push(() => {
-                const groupRow = sumRow(groupCode, group.name!, groupChildren);
-                noteName(group.name!, groupCode);
-                if (opts.position === "above") display.push({ def: groupRow, depth: 1 });
-                for (const account of group.accounts) emitAccount(account, section, 2);
-                if (opts.position === "below") display.push({ def: groupRow, depth: 1 });
+                // 空の段も道筋に残す（中の段の名前と、空の段の下の名前が同じでも、届く順に依らず同じコードになる）
+                if (part.name === null) return level(part.accounts, at + 1, depth, [...path, ""]);
+                // 足せる科目の無い段は小計を付けない（足すものが無い）。下の段はそのまま組む
+                if (!part.accounts.some((a) => summable(a.code))) return level(part.accounts, at + 1, depth, path);
+                const name = part.name;
+                const groupCode = uniqueCode(`§grp:${[section.label, ...path, name].join(":")}`);
+                groupSection.set(groupCode, section.label);
+                const kids = level(part.accounts, at + 1, depth + 1, [...path, name]);
+                return [
+                    {
+                        code: groupCode,
+                        emit: () => {
+                            const groupRow = sumRow(groupCode, name, kids.map((k) => k.code));
+                            noteName(name, groupCode);
+                            if (opts.position === "above") display.push({ def: groupRow, depth });
+                            kids.forEach((k) => k.emit());
+                            if (opts.position === "below") display.push({ def: groupRow, depth });
+                        },
+                    },
+                ];
             });
-        }
+        };
+        const sectionCode = uniqueCode(`§sec:${section.label}`);
+        const top = level(main, 0, 1, []);
+        const children = top.map((k) => k.code);
+        const body = top.map((k) => k.emit);
         const sectionRow = sumRow(sectionCode, section.label, children);
         if (opts.position === "above") display.push({ def: sectionRow, depth: 0 });
         body.forEach((emit) => emit());
@@ -501,29 +540,35 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     };
 
     /**
-     * 小計の行（書式ペインの計算の行の小計）。借方プラスのデータの値を足し、足す範囲の最初の区分の向きで見せる
+     * 小計の行（書式ペインの計算行の小計）。借方プラスのデータの値を足し、足す範囲の最初の区分の向きで見せる
      * （営業利益 = −(売上高 + 売上原価 + 販管費)、資産合計 = 流動資産 + 固定資産）。期末かどうかは足す区分で決める
      */
     const emitSubtotal = (name: string, sections: Section[], codeBase: string): RowDef | null => {
-        // 向きの分からない区分（科目があるのに貸方フラグがどれも空）は足せない。飛ばして足すと、売上原価を引かない売上総利益の
-        // ような値になるので、行ごと出さない（収益にだけ ON を入れ、費用を空にした科目の表で起きる）
-        const unknown = sections.filter((sec) => unknownDirection.includes(sec.label));
-        if (unknown.length > 0) {
-            warn(`計算の行「${name}」は、向きの分からない区分（${list(unknown.map((sec) => sec.label))}）を足す範囲に含むので出さなかった。区分の科目の貸方フラグを埋める`);
+        const isTotal = codeBase === TOTAL_KEY;
+        const what = isTotal ? `合計行「${name}」` : `計算行「${name}」`;
+        const summed = sections.filter((sec) => !sec.other && sectionValue.has(sec.label));
+        // 向きの分かる区分と分からない区分は一緒に足せない（借方プラスにそろえた値と届いたままの値が混ざり、売上原価を引かない
+        // 売上総利益のような値になる）ので、行ごと出さない（収益にだけ ON を入れ、費用を空にした科目の表で起きる）。
+        // どの区分も向きが分からなければ、届いた値のまま足す（貸方フラグを入れない表）
+        const unknown = summed.filter((sec) => sec.credit === null);
+        if (unknown.length > 0 && unknown.length < summed.length) {
+            warn(`${what}は、向きの分からない区分（${list(unknown.map((sec) => sec.label))}）を足す範囲に含むので出さなかった。区分の行の貸方フラグを埋める`);
             return null;
         }
-        const summed = sections.filter((sec) => !sec.other && sectionValue.has(sec.label));
         if (summed.length === 0) {
-            warn(`計算の行「${name}」に足す区分が無い（その他の区分だけ）。出さなかった`);
+            warn(`${what}に足す区分が無い（その他の区分だけ）。出さなかった`);
             return null;
         }
         const stock = summed.every((sec) => sec.stock);
         if (!stock && summed.some((sec) => sec.stock)) {
             warn(
-                `計算の行「${name}」は、フローの区分と残高の区分をまたいで足している。四半期・通期では残高も月ごとに足される。計算の行の「どこから」で、損益と貸借対照表の間を切る`
+                isTotal
+                    ? `${what}は、フローの区分と残高の区分をまたいで足している。四半期・通期では残高も月ごとに足される。合計行を非表示にするか、損益と貸借対照表を別の表にする`
+                    : `${what}は、フローの区分と残高の区分をまたいで足している。四半期・通期では残高も月ごとに足される。計算行の「開始位置」で、損益と貸借対照表の間を切る`
             );
         }
-        const credit = summed[0].credit;
+        // 計算行は足す範囲の最初の区分の向き。合計行は、貸方の区分があれば貸方（収益と費用を足すと利益。1 段の表は行の順序で費用を先に置ける）
+        const credit = isTotal ? (summed.some((sec) => sec.credit === true) ? true : summed[0].credit) : summed[0].credit;
         const code = uniqueCode(codeBase);
         const row = add({
             code,
@@ -553,14 +598,14 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         if (!text) return PERCENT_FORMAT;
         const parsed = parseRowFormat(text);
         if (parsed.ok) return parsed.format.kind === "amount" ? { ...parsed.format, kind: "number" } : parsed.format;
-        warn(`計算の行「${name}」の書式「${text}」が読めない。0.0% にした`);
+        warn(`計算行「${name}」の書式「${text}」が読めない。0.0% にした`);
         return PERCENT_FORMAT;
     };
 
-    // ---- 書式ペインの計算の行。置く場所の区分の後か表の最後に、書式ペインの並びで出す（次の区分を出す直前、flushCalc）
+    // ---- 書式ペインの計算行。置く場所の区分の後か表の最後に、書式ペインの並びで出す（次の区分を出す直前、flushCalc）
     const calcSpecs = (opts.calcRows ?? []).filter((spec) => {
         if (spec.name.trim() !== "") return true;
-        warn(`計算の行 ${spec.slot} の名前が空。出さなかった`);
+        warn(`計算行 ${spec.slot} の名前が空。出さなかった`);
         return false;
     });
     const calcDone = new Set<CalcRowSpec>();
@@ -568,7 +613,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         calcDone.add(spec);
         if (spec.kind === "ratio") {
             if (!spec.numerator || !spec.denominator) {
-                warn(`計算の行「${spec.name}」の分子か分母が空。出さなかった`);
+                warn(`計算行「${spec.name}」の分子か分母が空。出さなかった`);
                 return;
             }
             emitRatio(spec.name, spec.numerator, spec.denominator, ratioFormat(spec.format, spec.name), spec.good, CALC_KEY + spec.slot);
@@ -580,14 +625,14 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         if (start < 0 || start > end) {
             warn(
                 spec.from !== null && sectionMap.has(spec.from)
-                    ? `計算の行「${spec.name}」のどこからの区分「${spec.from}」が、置く場所より後にある。出さなかった`
-                    : `計算の行「${spec.name}」のどこからの区分「${spec.from}」が表に無い。出さなかった`
+                    ? `計算行「${spec.name}」の開始位置の区分「${spec.from}」が、終了位置より後にある。出さなかった`
+                    : `計算行「${spec.name}」の開始位置の区分「${spec.from}」が表に無い。出さなかった`
             );
             return;
         }
         emitSubtotal(spec.name, emitted.slice(start, end + 1), CALC_KEY + spec.slot);
     };
-    /** 出したが、まだ計算の行を出していない区分 */
+    /** 出したが、まだ計算行を出していない区分 */
     let unflushed: Section[] = [];
     const flushCalc = () => {
         const done = unflushed;
@@ -602,7 +647,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     const sections = Array.from(sectionMap.values());
     const unlinked = useMaster ? sections.filter((sec) => sec.master.order === null && sec.label !== NO_CATEGORY) : [];
     if (unlinked.length > 0) {
-        warn(`区分の並びが空の区分がある（${list(unlinked.map((sec) => sec.label))}）。最後に並べた。区分マスタの区分の名前を科目の区分とそろえる`);
+        warn(`区分の並びが空の区分がある（${list(unlinked.map((sec) => sec.label))}）。最後に並べた。区分マスタの区分の名前を行の区分とそろえる`);
     }
     const last = (sec: Section) => (unlinked.includes(sec) ? 1 : 0) + (sec.label === NO_CATEGORY ? 2 : 0);
     sections.sort(
@@ -615,21 +660,32 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     }
     flushCalc();
 
-    // 表の最後に置く計算の行。置く場所の区分が表に無い計算の行は出さない（フィルターで区分が消えたときも）。
+    // 表の最後に置く計算行。置く場所の区分が表に無い計算行は出さない（フィルターで区分が消えたときも）。
     // 表が空（フィルターで科目が無い）なら、どの行も出さず、知らせもしない
     for (const spec of emitted.length > 0 ? calcSpecs : []) {
         if (calcDone.has(spec)) continue;
         if (spec.after === null) emitCalc(spec);
-        else warn(`計算の行「${spec.name}」の置く場所の区分「${spec.after}」が表に無い。出さなかった`);
+        else warn(`計算行「${spec.name}」の挿入位置の区分「${spec.after}」が表に無い。出さなかった`);
+    }
+
+    // ---- すべての区分を足した合計行（木の根）。区分が 2 つ以上のとき。上に置く表は表の先頭、下に置く表は区分と計算行の後ろ
+    const summedSections = emitted.filter((sec) => !sec.other && sectionValue.has(sec.label));
+    if (opts.totalRow && summedSections.length >= 2) {
+        const at = display.length;
+        const totalName = opts.totalName || TOTAL_NAME;
+        const total = emitSubtotal(totalName, summedSections, TOTAL_KEY);
+        if (total && opts.position === "above") display.unshift(...display.splice(at, 1));
+        const left = emitted.filter((sec) => sec.other && sec.accounts.length > 0);
+        if (total && left.length > 0) warn(`合計行「${totalName}」に、区分の無い行（${list(left.flatMap((sec) => sec.accounts.map((a) => a.name)))}）は足していない。区分を入れると足す`);
     }
 
     // ---- 表に置けなかった科目は無いはずだが、落とさずに最後に出して知らせる
     const missing = sorted.filter((a) => !displayed.has(a.code));
     if (missing.length > 0) {
-        warn(`表に置けなかった科目がある（${list(missing.map((a) => a.name))}）。足さずに最後に並べた`);
-        const other: Section = { label: "（置けなかった科目）", credit: null, stock: false, other: true, accounts: missing, master: missing[0].section };
+        warn(`表に置けなかった行がある（${list(missing.map((a) => a.name))}）。足さずに最後に並べた`);
+        const other: Section = { label: "（置けなかった行）", credit: null, stock: false, other: true, accounts: missing, master: missing[0].section };
         blank();
-        display.push({ def: add({ code: uniqueCode("§head:置けなかった科目"), name: other.label, type: "heading", sign: 1, good: 0, aggregation: "flow", format: AMOUNT_FORMAT }), depth: 0 });
+        display.push({ def: add({ code: uniqueCode("§head:置けなかった行"), name: other.label, type: "heading", sign: 1, good: 0, aggregation: "flow", format: AMOUNT_FORMAT }), depth: 0 });
         for (const account of missing) display.push({ def: accountRow(account, other), depth: 1 });
     }
 
@@ -648,13 +704,13 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         key.startsWith(SECTION_KEY)
             ? key.slice(SECTION_KEY.length)
             : key.startsWith(CALC_KEY)
-              ? `計算の行 ${key.slice(CALC_KEY.length)}`
+              ? `計算行 ${key.slice(CALC_KEY.length)}`
               : key.startsWith(INDICATOR_KEY)
                 ? (indicatorNames.get(key) ?? key.slice(INDICATOR_KEY.length))
                 : (rows.get(key)?.name ?? key);
     /**
-     * 行のうち（親の行のコード → うちの行のコード）。区分・中分類の合計の行と計算の行の小計のうちは、親の子（children）にしない
-     * （子にすると囲みの帯が合計の行の下まで伸び、下囲みの底が合計の行でなくなる）ので、ここで持つ
+     * 行のうち（親の行のコード → うちの行のコード）。区分・中分類の合計行と計算行の小計のうちは、親の子（children）にしない
+     * （子にすると囲みの帯が合計行の下まで伸び、下囲みの底が合計行でなくなる）ので、ここで持つ
      */
     const attached = new Map<string, string[]>();
     /** 行と、その下の行（子・孫・うち）の並びの最後の位置 */
@@ -702,7 +758,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             display.splice(blockEnd(underTail.get(parent.code) ?? parent.code) + 1, 0, { def: row, depth });
             underTail.set(parent.code, row.code);
             attached.set(parent.code, [...(attached.get(parent.code) ?? []), row.code]);
-            // 科目・指標の行のうちは子にする（区分の囲みの帯に入る）。合計の行・計算の行の小計のうちは子にしない
+            // 科目・指標の行のうちは子にする（区分の囲みの帯に入る）。合計行・計算行の小計のうちは子にしない
             if (parent.type !== "subtotal" && parent.type !== "step") parent.children.push(row.code);
             noteName(spec.name, spec.code);
             return;
@@ -719,7 +775,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         afterTail.set(parent.code, row.code);
         following.set(parent.code, [...(following.get(parent.code) ?? []), row.code]);
     };
-    // 表が空（フィルターで科目が無い）なら、指標も出さず、知らせない（計算の行と同じ）
+    // 表が空（フィルターで科目が無い）なら、指標も出さず、知らせない（計算行と同じ）
     let pending = emitted.length > 0 ? [...(opts.indicators ?? [])] : [];
     while (pending.length > 0) {
         const waiting: IndicatorSpec[] = [];
@@ -736,11 +792,11 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             if (target !== undefined) placeIndicator(spec, target);
             // 置く場所の指標をまだ置いていない（後ろの指標のうち・後ろに置いた）なら、次の回で置く
             else if (pending.some((p) => p !== spec && p.code === spec.target)) waiting.push(spec);
-            else warn(`指標「${spec.name}」の置く場所「${placeLabel(spec.target)}」が表に無い。出さなかった`);
+            else warn(`指標「${spec.name}」の挿入位置「${placeLabel(spec.target)}」が表に無い。出さなかった`);
         }
         if (waiting.length === pending.length) {
             // どれも置けない：置く場所が輪になっている
-            warn(`指標の置く場所が輪になっている（${list(waiting.map((spec) => spec.name))}）。出さなかった`);
+            warn(`指標の挿入位置が輪になっている（${list(waiting.map((spec) => spec.name))}）。出さなかった`);
             break;
         }
         pending = waiting;
@@ -750,7 +806,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     for (const { row, numerator, denominator } of pendingRatios) {
         const resolve = (key: string): string | null => {
             const isSection = key.startsWith(SECTION_KEY);
-            // 警告に出す名前は書式ペインと同じ（区分は区分の名前、書式ペインの行は「計算の行 N」、指標はメジャーの名前、科目はコード）
+            // 警告に出す名前は書式ペインと同じ（区分は区分の名前、書式ペインの行は「計算行 N」、指標はメジャーの名前、科目はコード）
             const label = isSection || key.startsWith(CALC_KEY) || key.startsWith(INDICATOR_KEY) ? placeLabel(key) : key;
             const found = (isSection ? sectionValue.get(key.slice(SECTION_KEY.length)) : undefined) ?? (rows.has(key) ? key : nameIndex.has(key) ? nameIndex.get(key) : undefined);
             if (found !== undefined && found !== null && rows.get(found)?.type === "calc") {
@@ -780,7 +836,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         if (later.some((next) => step.summands.every((s) => next.summands.some((n) => n.code === s.code)))) step.continued = true;
     });
 
-    // ---- 書式ペインに出すもの：計算の行と指標の選択肢
+    // ---- 書式ペインに出すもの：計算行と指標の選択肢
     const valueLabel = new Map(Array.from(sectionValue, ([label, code]) => [code, label] as const));
     const headLabel = new Map(Array.from(sectionHead, ([label, code]) => [code, label] as const));
     const nameCount = new Map<string, number>();
@@ -788,7 +844,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     /** 同じ名前の行に添える、行の出どころ（科目は科目コード、指標はメジャーの queryName） */
     const sourceOf = (code: string) =>
         code.startsWith(CALC_KEY)
-            ? `計算の行 ${code.slice(CALC_KEY.length)}`
+            ? `計算行 ${code.slice(CALC_KEY.length)}`
             : code.startsWith(INDICATOR_KEY)
               ? code.slice(INDICATOR_KEY.length)
               : groupSection.has(code)
@@ -805,5 +861,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         places: display.filter(({ def }) => def.type !== "blank").map(({ def }) => choiceOf(def)),
     };
 
-    return { rows, display, warnings, traits, calcChoices, attached, following };
+    const sectionOf = new Map<string, string>();
+    for (const section of sectionMap.values()) for (const account of section.accounts) sectionOf.set(account.code, section.label);
+    return { rows, display, warnings, traits, calcChoices, attached, following, sectionOf };
 }

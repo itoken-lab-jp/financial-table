@@ -357,7 +357,7 @@ export class Visual implements IVisual {
         } catch (error) {
             // 保存に失敗しても、このセッションの見た目は保つ
             this.pendingVisualState = null;
-            console.error("見る人の選択（主と比較・開き閉じ）を保存できませんでした", error);
+            console.error("見る人の選択（基準と比較・開き閉じ）を保存できませんでした", error);
         }
     }
 

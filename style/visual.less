@@ -38,7 +38,14 @@
 .ft-layout-table .ft-corner-label,
 .ft-table.ft-layout-table thead th.ft-org-head { font-size: var(--ft-size-column); font-weight: normal; color: var(--ft-head-muted); text-align: left; }
 .ft-corner-label { display: block; }
-.ft-scroll.ft-layout-scroll { border: 0; }
+// 外枠は表ごとに引く。スクロールすると表の左と上の枠線は流れて消えるので、スクロールした向きだけ箱の縁に線を引いて代わりにする
+// （縁はいつも 1px 取っておき、色だけ変える。線を足すと中身が 1px ずれる）
+.ft-scroll.ft-layout-scroll { border: 1px solid transparent; }
+.ft-scroll.ft-layout-scroll.ft-scrolled-x { border-left-color: var(--ft-line-outer); }
+.ft-scroll.ft-layout-scroll.ft-scrolled-y { border-top-color: var(--ft-line-outer); }
+// 残す見出しと左の列は、縁の内側へ 1px 食い込ませて止める（左の列は App.tsx が left を書く）。Desktop はビジュアルを端数の倍率で拡大するので、
+// 0 で止めると縁の線とのあいだに 1px 足らずの隙間ができ、下を流れる字がうっすら透けた
+.ft-table.ft-layout-table thead { top: -1px; }
 .ft-block-unit { text-align: right; color: var(--ft-muted); padding: 0.25em 0.5em; font-size: var(--ft-size-unit); }
 .ft-hierarchy-name { z-index: 1; background: var(--ft-bg); vertical-align: top; text-align: left; font-size: var(--ft-size-name); border-right: 1px solid var(--ft-line-name); }
 .ft-table.ft-layout-table thead tr:first-child th { box-shadow: none; }
@@ -74,6 +81,33 @@
         margin-left: auto;
         color: var(--ft-muted);
     }
+}
+
+// 年度（左）と単位（右）の行。表のすぐ上に置き、表の幅までで止める（単位を表の右の端にそろえる）
+.ft-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 1em;
+    padding: 0 0.25em 0.3em;
+    white-space: nowrap;
+
+    .ft-title {
+        font-weight: 600;
+    }
+
+    .ft-unit {
+        margin-left: auto;
+        color: var(--ft-muted);
+        font-size: var(--ft-size-unit);
+    }
+}
+
+// 左上の角に置いた年度：期間の見出しと同じ段で、同じ線（期間の見出しの下の線）と字
+.ft-table.ft-layout-table thead th.ft-corner-title {
+    text-align: left;
+    font-weight: 600;
+    font-size: var(--ft-size-period);
+    border-bottom: 1px solid var(--ft-line-row);
 }
 
 .ft-notice {
@@ -878,12 +912,30 @@ thead th.ft-dim {
     .ft-name-line, .ft-box-line { border-top: 1px solid var(--ft-line-row); }
     > th.ft-name { padding-top: calc(0.15em + 1px); }
 }
-.ft-table .ft-row-end + .ft-row {
+// 箱の中の行は、締めの線を名前のセルの枠線でなく、自分の段から右の線（ft-box-bottom）で引く。枠線だと外の箱の帯まで横切った
+.ft-table .ft-row-end > th.ft-name-inbox { border-bottom: 0; }
+.ft-box-bottom {
+    position: absolute;
+    bottom: 0;
+    height: 0;
+    z-index: 1;
+    border-bottom: 1px solid var(--ft-line-subtotal);
+    pointer-events: none;
+}
+.ft-row:not(.ft-row-end) .ft-box-bottom,
+.ft-table .ft-row-end:has(+ .ft-row-total) .ft-box-bottom,
+.ft-table .ft-row-end:has(+ .ft-row-start) .ft-box-bottom,
+.ft-table .ft-row-end:has(+ .ft-row-block) .ft-box-bottom,
+.ft-table .ft-row-end:has(+ .ft-row-hierarchy-start) .ft-box-bottom,
+.ft-table .ft-row-end.ft-row-total .ft-box-bottom { display: none; }
+// 最後の合計（二重線）は下の線を引かないので、次の行（後ろに置いた指標など）は自分の上の線を引く。
+// 次の行が最後の合計なら、その二重線を残す（閉じた区分の下の線で消すと、当期純利益の上の二重線が消えた）
+.ft-table .ft-row-end:not(.ft-row-total) + .ft-row:not(.ft-row-total) {
     > td, > th.ft-hierarchy-name { border-top-width: 0; }
     .ft-name-line, .ft-box-line { display: none; }
 }
 // 最終結果を区切る二重線は上側。直前の小計の下線と同じ境界を二度描かない。
-.ft-table .ft-row-end:has(+ .ft-row-end.ft-row-total),
+.ft-table .ft-row-end:has(+ .ft-row-total),
 .ft-table .ft-row-end:has(+ .ft-row-start),
 .ft-table .ft-row-end:has(+ .ft-row-block),
 .ft-table .ft-row-end:has(+ .ft-row-hierarchy-start) {
@@ -896,7 +948,6 @@ thead th.ft-dim {
     .ft-name-line, .ft-box-line { display: block; border-top: 3px double var(--ft-line-total); }
 }
 .ft-table.ft-layout-table:has(tbody > .ft-row-end:not(.ft-row-total):last-child) { border-bottom: 0; }
-.ft-layout-table .ft-row-collapsed > td { font-weight: 600; }
 .ft-layout-table tbody > .ft-row-collapsed:first-child > td { border-top-width: 0; }
 
 // 上合計はまとまりの開始側を区切る。先頭は列見出しの下線だけにする。
@@ -906,9 +957,13 @@ thead th.ft-dim {
 }
 .ft-table .ft-row-start:first-child > td { border-top-width: 0; }
 
-// 集計の強調は計算種別や開閉状態で変えない。
-.ft-layout-table .ft-row-expanded > th.ft-name,
-.ft-layout-table .ft-row-expanded > td { font-weight: 600; }
+// 開いた行・閉じた行とも、太字は名前だけ。数字の太字は段階の行（利益・合計）だけにする（docs/financialTable.md の「強弱の付け方」。
+// 2.0 で配置の描き方がいつも効くようになり、区分の数字まで太字だと、閉じた損益計算書で行の半分以上が太字になって段階利益が埋もれた）
+.ft-layout-table .ft-row-expanded > th.ft-name { font-weight: 600; }
+// 「行」カードの「集計の数字を太字」：区分・中分類の行（開いた行・閉じた行・小計）の数字も太字
+.ft-bold-aggregates .ft-layout-table .ft-row-expanded > td,
+.ft-bold-aggregates .ft-layout-table .ft-row-collapsed > td,
+.ft-bold-aggregates .ft-row-subtotal > td { font-weight: 600; }
 
 // 横積みでは新しく始まる親セルから右だけを区切り、継続中の上位セルを横断しない。
 .ft-layout-table .ft-row-hierarchy-start:not(:first-child) {
