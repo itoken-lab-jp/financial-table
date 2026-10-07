@@ -36,7 +36,7 @@
 .ft-layout-box > .ft-layout-stack { gap: 0; }
 .ft-layout-table { border: 1px solid var(--ft-line-outer); width: 100%; }
 .ft-layout-table .ft-corner-label,
-.ft-table.ft-layout-table thead th.ft-org-head { font-size: var(--ft-size-column); font-weight: normal; color: var(--ft-head-muted); text-align: left; }
+.ft-table.ft-layout-table thead th.ft-org-head { font-size: var(--ft-size-column); font-weight: normal; color: var(--ft-head-muted); text-align: center; }
 .ft-corner-label { display: block; }
 // 外枠は表ごとに引く。スクロールすると表の左と上の枠線は流れて消えるので、スクロールした向きだけ箱の縁に線を引いて代わりにする
 // （縁はいつも 1px 取っておき、色だけ変える。線を足すと中身が 1px ずれる）
@@ -49,7 +49,7 @@
 .ft-block-unit { text-align: right; color: var(--ft-muted); padding: 0.25em 0.5em; font-size: var(--ft-size-unit); }
 .ft-hierarchy-name { z-index: 1; background: var(--ft-bg); vertical-align: top; text-align: left; font-size: var(--ft-size-name); border-right: 1px solid var(--ft-line-name); }
 .ft-table.ft-layout-table thead tr:first-child th { box-shadow: none; }
-.ft-layout-label:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.ft-keyboard .ft-layout-label:focus { outline: 2px solid currentColor; outline-offset: -2px; }
 
 .ft-landing {
     padding: 1em;
@@ -83,8 +83,12 @@
     }
 }
 
-// 年度（左）と単位（右）の行。表のすぐ上に置き、表の幅までで止める（単位を表の右の端にそろえる）
+// 年度（左）と単位（右）の行。表のすぐ上に置き、表の幅までで止める（単位を表の右の端にそろえる）。
+// 幅は余白を含めて表の幅にする（含めないと、単位が余白の分だけ表の右の外に出た）。年度と単位は同じ字（書式の「年度・単位の文字サイズ」）
 .ft-heading {
+    box-sizing: border-box;
+    font-size: var(--ft-size-heading);
+    color: var(--ft-heading-color, inherit);
     display: flex;
     align-items: baseline;
     gap: 1em;
@@ -97,8 +101,7 @@
 
     .ft-unit {
         margin-left: auto;
-        color: var(--ft-muted);
-        font-size: var(--ft-size-unit);
+        font-weight: 600;
     }
 }
 
@@ -207,14 +210,15 @@
         vertical-align: middle;
     }
 
-    // 期間の区切り。期間の最初の列（表の最初の期間は除く）の左に縦の線
+    // 期間の区切り。期間の最初の列（表の最初の期間は除く）の左に縦の線。線はセルの枠ではなく、セルに重ねた部品（ft-period-line）で引く。
+    // 枠で引くと、行の横の線と角でぶつかって縦の線に欠けが出た（二重線では 2 本のすき間に食い込んだ）。枠の幅（1px、二重線は 3px）は空けておく
     .ft-period-start {
-        border-left: 1px solid var(--ft-line-period);
+        border-left: 1px solid transparent;
     }
 
-    // 「期間の列」カードの「集計の列の区切りを二重線」：四半期・半期・通期などの列の前は二重線
+    // 「期間の列」カードの「集計の列の区切りを二重線」：期間の種類が変わる所（月と四半期、四半期と半期、半期と通期など）は二重線
     .ft-aggregate-double & .ft-period-start.ft-period-agg {
-        border-left: 3px double var(--ft-line-period);
+        border-left-width: 3px;
     }
 
     // 月ごとにイベントが違う列（つないだ主・古い計画へ落とした比較）。点線で、ツールチップに内訳があると分かるようにする
@@ -222,6 +226,57 @@
         text-decoration: underline dotted;
         cursor: help;
     }
+}
+
+// 区切りの線の部品。数字のセルは位置の基準にする（見出しのセルは上に残すために sticky で、もともと基準になる）。
+// 行の線は各行の上の枠で引くので、上の枠にだけかぶせる（下にはみ出すと、最後の行で表の下にはみ出して縦のスクロールが出た）
+.ft-period-line {
+    display: none;
+}
+
+// 見出しのセルも位置の基準にする（上に残すのは thead の sticky で、セルは基準を持っていなかった。持たないと部品が thead を基準に置かれ、1 段目の線が消えた）
+.ft-table tbody td.ft-period-start,
+.ft-table thead th.ft-period-start {
+    position: relative;
+}
+
+.ft-table .ft-period-start > .ft-period-line {
+    display: block;
+    position: absolute;
+    left: -1px;
+    top: -3px;
+    bottom: 0;
+    width: 0;
+    // 線は塗りではなく枠線で引く。Desktop の拡大（125% など）で塗りの 1px は 2 画素にまたがって太く見えた。枠線の太さは画素にそろう
+    border-left: 1px solid var(--ft-line-period);
+    pointer-events: none;
+    z-index: 1;
+}
+
+// 二重線：2 本の線のすき間を地の色で埋める
+.ft-aggregate-double .ft-table .ft-period-start.ft-period-agg > .ft-period-line {
+    left: -3px;
+    width: 3px;
+    box-sizing: border-box;
+    border-left: 1px solid var(--ft-line-period);
+    border-right: 1px solid var(--ft-line-period);
+    background: var(--ft-bg);
+}
+
+.ft-aggregate-double .ft-table thead .ft-period-start.ft-period-agg > .ft-period-line {
+    background: var(--ft-head-bg, var(--ft-bg));
+}
+
+// 見出しの 1 段目は表の上の端。上にはみ出すと外枠を突き抜けるので、外枠で閉じる（下の端と同じ）
+.ft-table thead tr:first-child .ft-period-start > .ft-period-line {
+    top: 0;
+}
+
+// 「期間の区切り」を入れているときは、行の名前の列と最初の期間のあいだの縦線も期間の区切りの線にする
+// （左上の角・年度の角・行の名前のセル。セグメントの列と行の名前のあいだの線は「左の列の区切り」のまま）
+.ft-period-lines .ft-table thead th.ft-corner:not(.ft-org-head),
+.ft-period-lines .ft-table tbody th.ft-name {
+    border-right-color: var(--ft-line-period);
 }
 
 .ft-name {
@@ -564,7 +619,7 @@ tbody .ft-row:first-child .ft-seg-box-line {
 }
 
 .ft-table thead th.ft-org-head {
-    text-align: left;
+    text-align: center;
     vertical-align: middle;
     font-weight: normal;
     font-size: var(--ft-size-org);
@@ -621,6 +676,13 @@ tbody .ft-row-block:first-child {
     position: sticky;
 }
 
+// 2 段の行（差と比など）では、セグメントの名前を 1 行目の行の名前と同じ高さに置く（数字の 2 段の真ん中）
+.ft-two-lines tbody th.ft-org .ft-org-label {
+    display: flex;
+    align-items: center;
+    min-height: calc((var(--ft-size-compare) + var(--ft-size-sub)) * var(--ft-row-two, 1.35));
+}
+
 /* すべて開く・すべて閉じる。表の上の行に、主と比較のメニューのあとに小さく置く */
 .ft-folds {
     display: inline-flex;
@@ -673,19 +735,17 @@ thead th.ft-dim {
     cursor: pointer;
 }
 
-.ft-org-selected {
-    box-shadow: inset 0 0 0 2px #118dff;
-}
+// 選んだセグメントに枠は付けない。行・列を選んだときと同じく、ほかを薄くして見せる（2026-10-08 ユーザー）
 
 /*
- * キーボードで移ったセルの枠（マウスで押したときは出さない）。枠を outline にすると選択の覆い（::after）の下になって薄くなるので、
+ * キーボードで移ったセルの枠（マウスで押したときは出さない。:focus-visible は Desktop ではマウスでも効いたので、キーを押したら root に付く ft-keyboard で見る）。枠を outline にすると選択の覆い（::after）の下になって薄くなるので、
  * 覆いより上の ::before に描く。値のセルは重なりの文脈を作って、枠を上と左に残す見出しの上に出さない
  */
 .ft-table [data-cell]:focus {
     outline: none;
 }
 
-.ft-table td[data-cell]:focus-visible {
+.ft-keyboard .ft-table td[data-cell]:focus {
     position: relative;
     z-index: 0;
 }
@@ -694,14 +754,14 @@ thead th.ft-dim {
  * 位置を持たないセル（列の見出し・左に残さない組織の列）は、枠の基準にするため relative にする。z-index で重なりの文脈を作り、
  * 枠を左上の角・上と左に残す見出しの上に出さない（無いと、スクロールしたとき枠が残す見出しの上を横切った）
  */
-.ft-table thead th.ft-period:focus-visible,
-.ft-table thead th.ft-colhead:focus-visible,
-.ft-table th.ft-org-free[data-cell]:focus-visible {
+.ft-keyboard .ft-table thead th.ft-period:focus,
+.ft-keyboard .ft-table thead th.ft-colhead:focus,
+.ft-keyboard .ft-table th.ft-org-free[data-cell]:focus {
     position: relative;
     z-index: 0;
 }
 
-.ft-table [data-cell]:focus-visible::before {
+.ft-keyboard .ft-table [data-cell]:focus::before {
     content: "";
     position: absolute;
     inset: 0;

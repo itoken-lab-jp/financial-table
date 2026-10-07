@@ -36,35 +36,40 @@ export { UNIT_TYPES, UNIT_NOTATIONS, PRECISIONS };
 
 export const DEFAULT_FONT_FAMILY = '"Segoe UI", wf_segoe-ui_normal, helvetica, arial, sans-serif';
 export const DEFAULT_FONT_SIZE = 10;
+/** 表のすぐ上の年度と単位の文字サイズの既定（pt） */
+export const DEFAULT_HEADING_SIZE = 9;
 export { DEFAULT_GOOD_COLOR, DEFAULT_BAD_COLOR, TONE_MODES };
 export const DEFAULT_CURRENCY = "円";
 /**
- * 囲みの段ごとの色（外側から）。薄い青の濃淡で、外側ほど濃い。標準テーマの 1 番目のデータの色 #118DFF を地に寄せた色（theme.ts の TINTS）。
+ * 囲みの段ごとの色（外側から）。灰の濃淡で、外側ほど濃い。標準テーマの「背景（明るい）」#F3F2F1 から「背景（中間）」#C8C6C4 へ寄せた色（theme.ts の BAND_STEPS）。
  * 塗るのはまとまりを締める行の名前の所だけで、明細の行は地の色
  */
-export const DEFAULT_BAND_COLORS = ["#D4EAFF", "#E7F4FF", "#F3F9FF", "#F8FCFF"];
+export const DEFAULT_BAND_COLORS = ["#E0DEDD", "#E6E5E4", "#EDEBEA", "#F3F2F1"];
+/** 標準テーマの「背景（中間）」。囲み・セグメントの塗りの濃いほうの端 */
+export const DEFAULT_NEUTRAL_BACKGROUND = "#C8C6C4";
 /** 見出しの背景 */
 export const DEFAULT_HEAD_BACKGROUND = "#F3F2F1";
 /** 罫線の既定の色 */
 export const DEFAULT_LINE_COLORS = {
-    row: "#C8C6C4",
-    subtotal: "#605E5C",
-    total: "#252423",
+    // 2026-10-08 ユーザーが Desktop で決めた色：行の中の線は薄い灰（テーマの白を 10% 暗く）、セグメント・期間の区切り・外枠は文字の色
+    row: "#E6E6E6",
+    subtotal: "#E6E6E6",
+    total: "#E6E6E6",
     head: "#252423",
     // セグメントの箱（段ごとの縦線と切れ目の横線）。細い実線
-    block: "#8A8886",
-    // 囲み（区分・中分類の箱）の線。行の間の点線と同じ濃さ
-    band: "#C8C6C4",
-    period: "#E1DFDD",
+    block: "#252423",
+    // 囲み（区分・中分類の箱）の線。行の間の線と同じ濃さ
+    band: "#E6E6E6",
+    period: "#252423",
     // 表の外枠
-    outer: "#8A8886",
-    name: "#C8C6C4",
+    outer: "#252423",
+    name: "#E6E6E6",
 };
 /**
  * 要素ごとの文字サイズの既定（pt）。主の数字は大きく、比較と 2 段目は小さく
  */
-// 主の数字は比較の数字の 1.2 倍まで
-export const DEFAULT_TEXT_SIZES = { org: 10, name: 10, period: 10, column: 10, compareHead: 10, main: 12, compare: 10, sub: 9 };
+// 2026-10-08 ユーザーが旧 managementFigures に似せて Desktop で決めた大きさ（主の数字は大きく、名前・見出しは小さく）
+export const DEFAULT_TEXT_SIZES = { org: 9, name: 9, period: 10, column: 9, compareHead: 8, main: 15, compare: 9, sub: 9 };
 /** 比・率の上限の既定（%） */
 export const DEFAULT_RATIO_CAP = 999;
 export const UNIT_PLACES = { right: "right", corner: "corner", name: "name", cell: "cell" } as const;
@@ -75,8 +80,8 @@ const UNIT_PLACE_ITEMS: powerbi.IEnumMember[] = [
     { value: UNIT_PLACES.cell, displayName: "数字のあと（1,234百万円）" },
 ];
 
-/** セグメントの箱の段ごとの塗りの色（外側から）。区分の青と分けて、薄いオレンジの濃淡。外側ほど濃い */
-export const DEFAULT_SEGMENT_COLORS = ["#F4B183", "#F8CBAD", "#FBE5D6", "#FDF2EA"];
+/** セグメントの箱の段ごとの塗りの色（外側から）。囲みよりひと段濃い灰の濃淡で、外側ほど濃い（theme.ts の SEGMENT_STEPS） */
+export const DEFAULT_SEGMENT_COLORS = ["#D3D1CF", "#DBDAD8", "#E4E3E1", "#EDEBEA"];
 
 export const PARENT_POSITION_ITEMS: powerbi.IEnumMember[] = [
     { value: "below", displayName: "下（明細のあとに小計）" },
@@ -192,6 +197,17 @@ export const DEFAULT_COMPARE_VIEW: CompareView = COMPARE_VIEWS.diffRatio;
 /**
  * シナリオの列：主、2 段の見せ方、差の色、列の見出しと数字の文字。比較の列は見る人が選ぶので書式ペインに持たない
  */
+/**
+ * 最新見込みの列の見出し：シナリオが混ざったときに「最新見込み」と名乗るか、確度の低い（順序が前の）シナリオの名前を出すか、
+ * 文字で決める（確定とみなすシナリオだけなら確定の見出し、ほかが入れば別の見出し）か
+ */
+export const LATEST_HEADERS = { label: "label", scenario: "scenario", custom: "custom" } as const;
+const LATEST_HEADER_ITEMS: powerbi.IEnumMember[] = [
+    { value: LATEST_HEADERS.label, displayName: "「最新見込み」" },
+    { value: LATEST_HEADERS.scenario, displayName: "シナリオの名前" },
+    { value: LATEST_HEADERS.custom, displayName: "文字で決める" },
+];
+
 export class ComparisonCardSettings extends formattingSettings.CompositeCard {
     name = "comparison";
     displayName = "シナリオの列";
@@ -203,6 +219,36 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
             "表の値に出すもの。「最新見込み」はセグメント × 月ごとに、数字のあるシナリオのうちシナリオの順序の一番後ろのもの（順序が 2 つ以上のシナリオにあるとき）。順序の無いシナリオ（前年実績など）は基準にしない。見る人は表の上のメニューで変えられる",
         items: [NO_ITEM],
         value: NO_ITEM,
+    });
+
+    latestHeader = new formattingSettings.ItemDropdown({
+        name: "latestHeader",
+        displayName: "最新見込みの見出し",
+        description:
+            "最新見込みの列で、月やセグメントによって採るシナリオが違うとき（4〜8 月は実績で 9 月からは 9 月見通し、事業 A は予定で事業 B は実績など）の見出し。「最新見込み」と名乗るか、使ったうち確度の低い（シナリオの順序が前の）シナリオの名前（9 月見通し・予定）を出す。シナリオが 1 つならその名前。文字で決めるなら、確定とみなすシナリオだけの期間は確定の見出し（実績など）、ほかが入る期間は別の見出し（見通しなど）",
+        items: LATEST_HEADER_ITEMS,
+        value: LATEST_HEADER_ITEMS[0],
+    });
+    confirmedScenario = new formattingSettings.TextInput({
+        name: "confirmedScenario",
+        displayName: "確定とみなすシナリオ",
+        description: "最新見込みの見出しを文字で決めるとき、確定とみなすシナリオの名前。いくつもあれば「,」で区切る",
+        value: "",
+        placeholder: "例: 実績",
+    });
+    confirmedLabel = new formattingSettings.TextInput({
+        name: "confirmedLabel",
+        displayName: "確定だけのときの見出し",
+        description: "期間の数字が確定とみなすシナリオだけのときの見出し。空ならそのシナリオの名前",
+        value: "",
+        placeholder: "例: 実績",
+    });
+    forecastLabel = new formattingSettings.TextInput({
+        name: "forecastLabel",
+        displayName: "それ以外の見出し",
+        description: "期間の数字に、確定とみなすシナリオ以外が入るときの見出し。空なら「最新見込み」",
+        value: "",
+        placeholder: "例: 見通し",
     });
 
     diffSwap = new formattingSettings.ToggleSwitch({
@@ -249,27 +295,6 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
         items: BOLD_ITEMS,
         value: BOLD_ITEMS[0],
     });
-    mainBold = new formattingSettings.ItemDropdown({
-        name: "mainBold",
-        displayName: "基準列の数字の太字",
-        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
-        items: BOLD_ITEMS,
-        value: BOLD_ITEMS[0],
-    });
-    compareBold = new formattingSettings.ItemDropdown({
-        name: "compareBold",
-        displayName: "比較列の数字の太字",
-        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
-        items: BOLD_ITEMS,
-        value: BOLD_ITEMS[0],
-    });
-    subBold = new formattingSettings.ItemDropdown({
-        name: "subBold",
-        displayName: "2 段目の数字の太字",
-        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
-        items: BOLD_ITEMS,
-        value: BOLD_ITEMS[0],
-    });
     mainSize = new formattingSettings.NumUpDown({ name: "mainSize", displayName: "基準列の数字", value: DEFAULT_TEXT_SIZES.main });
     compareSize = new formattingSettings.NumUpDown({
         name: "compareSize",
@@ -279,14 +304,14 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
     });
     subSize = new formattingSettings.NumUpDown({ name: "subSize", displayName: "2 段目の数字", value: DEFAULT_TEXT_SIZES.sub });
 
-    general = new formattingSettings.Group({ name: "comparisonMain", displayName: "基準", slices: [this.main] });
+    general = new formattingSettings.Group({ name: "comparisonMain", displayName: "基準", slices: [this.main, this.latestHeader, this.confirmedScenario, this.confirmedLabel, this.forecastLabel] });
     /** 2 段の見せ方の上下（比較の列は見る人が選ぶ） */
     twoRows = new formattingSettings.Group({ name: "comparisonTwoRows", displayName: "2 段の表示", slices: [this.diffSwap] });
     tones = new formattingSettings.Group({ name: "comparisonTones", displayName: "差の色", slices: [this.toneMode, this.good, this.bad] });
     texts = new formattingSettings.Group({
         name: "comparisonText",
         displayName: "文字",
-        slices: [this.columnSize, this.columnBold, this.compareHeadSize, this.compareHeadBold, this.mainSize, this.mainBold, this.compareSize, this.compareBold, this.subSize, this.subBold],
+        slices: [this.columnSize, this.columnBold, this.compareHeadSize, this.compareHeadBold, this.mainSize, this.compareSize, this.subSize],
     });
 
     groups = [this.general, this.twoRows, this.tones, this.texts];
@@ -295,6 +320,11 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
     applyEvents(mainItems: powerbi.IEnumMember[], main: string): void {
         this.main.items = mainItems.length > 0 ? mainItems : [NO_ITEM];
         this.main.value = itemOf(this.main.items, main);
+        // 文字の欄は「文字で決める」のときだけ
+        const custom = String(this.latestHeader.value?.value ?? LATEST_HEADERS.label) === LATEST_HEADERS.custom;
+        this.confirmedScenario.visible = custom;
+        this.confirmedLabel.visible = custom;
+        this.forecastLabel.visible = custom;
     }
 }
 
@@ -390,7 +420,7 @@ export class PeriodsCardSettings extends formattingSettings.CompositeCard {
     aggregateDouble = new formattingSettings.ToggleSwitch({
         name: "aggregateDouble",
         displayName: "集計の列の区切りを二重線",
-        description: "四半期・半期・通期・累計・合計の列の前の区切りを二重線にする（月の列との境目と、集計の列どうしの境目）。「期間の区切り」を入れているときに効く",
+        description: "期間の種類が変わる所（月と四半期、四半期と半期、半期と通期、累計・合計の前）の区切りを二重線にする。同じ種類の列どうし（1Q と 2Q など）は 1 本の線。「期間の区切り」を入れているときに効く",
         value: false,
     });
     periodLine = new formattingSettings.ColorPicker({ name: "periodLine", displayName: "期間の区切りの色", value: { value: DEFAULT_LINE_COLORS.period } });
@@ -446,6 +476,14 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
     });
     accountRoot = dropdown("accountRoot", "最上位の配置", ROOT_ITEMS, "joined", "一番上の段の行（区分・合計）を 1 つの表につなげるか、表を分けて縦・左右に並べるか（貸借対照表の資産と負債・純資産を左右に）");
 
+    rowHeader = new formattingSettings.TextInput({
+        name: "rowHeader",
+        displayName: "行の名前の列の見出し",
+        description: "行の名前の列の、左上の見出しの文字。空なら「項目」",
+        value: "",
+        placeholder: "項目",
+    });
+
     totalName = new formattingSettings.TextInput({
         name: "totalName",
         displayName: "合計行の名前",
@@ -466,8 +504,8 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
     bandFill = new formattingSettings.ToggleSwitch({
         name: "bandFill",
         displayName: "囲みの塗り",
-        description: "区分・中分類の箱の行の名前の所を、段ごとの色で塗る（切ると線だけ）",
-        value: true,
+        description: "区分・中分類の箱の行の名前の所を、段ごとの色で塗る（切ると線だけ）。既定は塗らない",
+        value: false,
     });
 
     bandColor = new formattingSettings.ColorPicker({
@@ -498,7 +536,13 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
     hideBlankRows = new formattingSettings.ToggleSwitch({
         name: "hideBlankRows",
         displayName: "値の無い行を隠す",
-        description: "表に出している列（基準・比較のすべての期間）がどれも空の行を出さない。値が 0 の行は出す",
+        description: "表に出している列（基準・比較のすべての期間）がどれも空の行を出さない（科目と指標の行）。値が 0 の行は出す",
+        value: false,
+    });
+    hideZeroRows = new formattingSettings.ToggleSwitch({
+        name: "hideZeroRows",
+        displayName: "0 だけの行を隠す",
+        description: "表に出している列（基準・比較のすべての期間）の月の値がどれも 0 か空の行を出さない（科目と指標の行）",
         value: false,
     });
     breakdownBrackets = new formattingSettings.ToggleSwitch({
@@ -521,22 +565,22 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         description: "区分・中分類の行の数字も太字にする。切ると、数字の太字は計算行（利益・合計）だけ",
         value: false,
     });
-    nameBold = new formattingSettings.ItemDropdown({
-        name: "nameBold",
-        displayName: "行名の太字",
-        description: "既定は行の種類で太さを変える（計算行・区分の名前は太字など）。太字・太字にしないを選ぶと、この文字を全部その太さにそろえる",
-        items: BOLD_ITEMS,
-        value: BOLD_ITEMS[0],
-    });
     nameSize = new formattingSettings.NumUpDown({ name: "nameSize", displayName: "行名の文字", value: DEFAULT_TEXT_SIZES.name });
 
     layout = new formattingSettings.Group({
         name: "rowsLayout",
         displayName: "表示",
         description: "段・行ごとに変えるときは「段・行ごとの配置」カード",
-        slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot, this.hideBlankRows],
+        slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot, this.rowHeader, this.hideBlankRows, this.hideZeroRows],
     });
-    order = new formattingSettings.Group({ name: "rowsOrder", displayName: "合計行", slices: [this.totalRow, this.totalName] });
+    /** 合計・計算行・小計を太字にするか（行の名前と数字。2026-10-08 ユーザー「合計行を太字にするかしないかだけでいい」。要素ごとの太字の選択をやめてここにまとめた） */
+    totalBold = new formattingSettings.ToggleSwitch({
+        name: "totalBold",
+        displayName: "合計行を太字",
+        description: "合計・計算行（利益など）・小計の行の名前と数字を太字にする。切ると、どの行も太字にしない",
+        value: true,
+    });
+    order = new formattingSettings.Group({ name: "rowsOrder", displayName: "合計行", slices: [this.totalRow, this.totalName, this.totalBold] });
     box = new formattingSettings.Group({
         name: "rowsBands",
         displayName: "囲みの塗りと線",
@@ -547,7 +591,7 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         displayName: "うち・その他の行",
         slices: [this.breakdownBrackets, this.breakdownMuted, this.breakdownTag, this.othersCount],
     });
-    look = new formattingSettings.Group({ name: "rowsLook", displayName: "行の線と文字", slices: [this.rowLine, this.subtotalLine, this.totalLine, this.boldAggregates, this.nameSize, this.nameBold] });
+    look = new formattingSettings.Group({ name: "rowsLook", displayName: "行の線と文字", slices: [this.rowLine, this.subtotalLine, this.totalLine, this.boldAggregates, this.nameSize] });
 
     groups = [this.layout, this.order, this.box, this.breakdown, this.look];
 
@@ -563,7 +607,7 @@ export class SegmentsCardSettings extends formattingSettings.CompositeCard {
     displayName = "セグメント";
     visible = false;
 
-    orgStyle = dropdown("orgStyle", "表示", STYLE_ITEMS, "split", "セグメントと、その下のセグメントの見せ方。分割は子のセグメントごとに表を分ける");
+    orgStyle = dropdown("orgStyle", "表示", STYLE_ITEMS, "box", "セグメントと、その下のセグメントの見せ方。分割は子のセグメントごとに表を分ける。既定は囲み");
     orgTotal = dropdown("orgTotal", "展開時の合計", TOTAL_ITEMS, "bottom", "子のセグメントを足した合計の表を、子の下・上に置くか、置かないか（なしでも畳むと合計を出す）");
     orgDirection = dropdown("orgDirection", "分割の向き", DIRECTION_ITEMS, "vertical", "表示が「分割」のとき、子の表を縦に並べるか左右に並べるか");
 
@@ -583,11 +627,19 @@ export class SegmentsCardSettings extends formattingSettings.CompositeCard {
         value: true,
     });
 
+    segmentHeader = new formattingSettings.TextInput({
+        name: "segmentHeader",
+        displayName: "セグメントの列の見出し",
+        description: "セグメントを左の列に並べたとき（横積み）の、列の見出しの文字。空なら「セグメント」",
+        value: "",
+        placeholder: "セグメント",
+    });
+
     segmentFill = new formattingSettings.ToggleSwitch({
         name: "segmentFill",
         displayName: "セグメントの塗り",
-        description: "セグメントの箱の名前の所を、段ごとの色で塗る（切ると線だけ）",
-        value: true,
+        description: "セグメントの箱の名前の所を、段ごとの色で塗る（切ると線だけ）。既定は塗らない",
+        value: false,
     });
     segmentColor = new formattingSettings.ColorPicker({
         name: "segmentColor",
@@ -621,7 +673,7 @@ export class SegmentsCardSettings extends formattingSettings.CompositeCard {
     box = new formattingSettings.Group({
         name: "segmentsBoxes",
         displayName: "箱と文字",
-        slices: [this.segmentFill, this.segmentColor, this.segmentColor2, this.segmentColor3, this.segmentColor4, this.blockLine, this.orgSize, this.orgBold],
+        slices: [this.segmentHeader, this.segmentFill, this.segmentColor, this.segmentColor2, this.segmentColor3, this.segmentColor4, this.blockLine, this.orgSize, this.orgBold],
     });
 
     groups = [this.order, this.box];
@@ -814,7 +866,7 @@ const INDICATOR_HELP = {
     after: "この行の後ろか、この行のうちに出す。区分は区分の合計行（区分の中の行の後ろ）。既定は表の最後",
     placement:
         "表に出さない：行は出さず、計算行の分子・分母に選べる（率の分子と分母のメジャーを入れて、計算行の比率で率を作る。どの期間でも分子の合計 ÷ 分母の合計になる。人数のような分母も「期間の集計」は合計（延べ人数）にする。期末にすると、四半期の時間を最後の月の人数で割ってしまう）。うち：挿入位置の行の下に 1 段下げて出し、親の行と同じ向き・集計・書式・良し悪しで見せる（値の行のうちは、値の欄と同じ持ち方のメジャー。CALCULATE([値], 製品[区分] = \"新製品\") の形）。親の合計には足さない",
-    aggregation: "四半期・通期の値。人数のような残高は期末",
+    aggregation: "四半期・通期の値。人数のような残高は期末。利益率のような率のメジャーは、どちらでも期間の率にならないので、分子と分母のメジャーを指標に入れて「表に出さない（計算行で使う）」にし、計算行の「比率」で作る",
     format: "空なら値の欄と同じ（表示単位で割る。EBITDA など）。#,0人・#,0.0h のように書くと数で出す（表示単位で割らない。字も出す）。0.0% は比率",
     good: "差の色の向き。既定は色を付けない",
     event: "メジャーを積んだ（横持ち）ときの、指標の値のシナリオ。既定はシナリオの順序の一番後ろのメジャー。「すべてのシナリオ」はシナリオに依らない値（営業日数など）",
@@ -1113,9 +1165,15 @@ export class TableCardSettings extends formattingSettings.CompositeCard {
     fontFamily = new formattingSettings.FontPicker({ name: "fontFamily", displayName: "フォント", value: DEFAULT_FONT_FAMILY });
     fontSize = new formattingSettings.NumUpDown({
         name: "fontSize",
-        displayName: "表の上の文字サイズ",
-        description: "表の上のバー（題名・メニュー・単位）とダイアログ。表の中の文字は、行・列のカードで要素ごとに変える",
-        value: DEFAULT_FONT_SIZE,
+        displayName: "年度・単位の文字サイズ",
+        description: "表のすぐ上の年度と単位（表の右上に置いた単位も）。上のボタン・メニュー・ダイアログの文字は変わらない。表の中の文字は、行・列のカードで要素ごとに変える",
+        value: DEFAULT_HEADING_SIZE,
+    });
+    headingColor = new formattingSettings.ColorPicker({
+        name: "headingColor",
+        displayName: "年度・単位の色",
+        description: "表のすぐ上の年度と単位の文字の色。空なら表の文字と同じ色。左上の角に置いた年度は、期間の見出しと同じ大きさと色",
+        value: { value: "" },
     });
     headBackground = new formattingSettings.ColorPicker({
         name: "headBackground",
@@ -1152,7 +1210,7 @@ export class TableCardSettings extends formattingSettings.CompositeCard {
         items: ROW_HEIGHT_ITEMS,
         value: ROW_HEIGHT_ITEMS[0],
     });
-    text = new formattingSettings.Group({ name: "tableText", displayName: "文字", slices: [this.fontFamily, this.fontSize, this.rowHeight, this.columnPadding] });
+    text = new formattingSettings.Group({ name: "tableText", displayName: "文字", slices: [this.fontFamily, this.fontSize, this.headingColor, this.rowHeight, this.columnPadding] });
     head = new formattingSettings.Group({ name: "tableHead", displayName: "見出しと枠", slices: [this.headBackground, this.headLine, this.nameLine, this.outerLine] });
     copy = new formattingSettings.Group({ name: "tableCopy", displayName: "画像のコピー", slices: [this.copyButton] });
 

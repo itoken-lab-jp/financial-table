@@ -14,7 +14,7 @@ import { ValueParts, valueParts } from "./valueParts";
 import { resolveUnit } from "./shared/units";
 import { SCROLL_STARTS } from "./shared/scrollStart";
 import { contrastingText, readableText } from "./shared/color";
-import { NEGATIVE_STYLES, TONE_MODES, ZERO_STYLES, toneOf } from "./shared/numberFormat";
+import { NEGATIVE_STYLES, TONE_MODES, ZERO_STYLES, toneOf, isPercentFormat } from "./shared/numberFormat";
 import { Calculator, EventRef } from "./compute";
 import { ALL_PERIODS_MONTH, COLUMN_LIMIT, TOTAL_ACCOUNT, Fact, INDICATOR_KEY, InputData, ORDER_OF_SECTIONS, ORG_SEPARATOR, SelectionNodes, readInput, savedString } from "./data";
 import { EventModel, SIGN_VALUES, fallbackOf, resolveEvents } from "./events";
@@ -79,6 +79,7 @@ import {
     DEFAULT_BAD_COLOR,
     DEFAULT_CURRENCY,
     DEFAULT_FONT_SIZE,
+    DEFAULT_HEADING_SIZE,
     DEFAULT_GOOD_COLOR,
     DEFAULT_HEAD_BACKGROUND,
     DEFAULT_LINE_COLORS,
@@ -92,6 +93,7 @@ import {
     IndicatorSetting,
     LATEST,
     LATEST_LABEL,
+    LATEST_HEADERS,
     LATEST_YEAR,
     PRIOR_YEAR,
     PRIOR_YEAR_LABEL,
@@ -488,8 +490,8 @@ export function transform(
         warnings.push(`月が読めない行が ${input.dropped.unreadableMonth} 行あり、表に入れていない（${input.dropped.unreadableMonthSamples.join("・")}）。${hint}`);
     }
     if (input.columnsCut) {
-        // 列（月の値）には続きの読み込みが無い。日付の列を日ごとに入れると、長い期間で上限に届く
-        warnings.push(`月の列の値が ${COLUMN_LIMIT.toLocaleString()} に届いたので、それより後の期間が届いていないおそれがある。日付の列なら年月の列を入れるか、ビジュアルのフィルターで期間を絞る`);
+        // 列（月の値）には続きの読み込みが無く、60 で切られる（5 年分の月）。日付の列を日ごとに入れると、60 日で届く
+        warnings.push(`月の列の値が ${COLUMN_LIMIT.toLocaleString()} に届いたので、それより後の期間が届いていないおそれがある。月の列は ${COLUMN_LIMIT} まで（月ごとなら 5 年分）。日付の列なら年月の列を入れるか、ビジュアルのフィルターで期間を絞る`);
     }
     if (input.dropped.notNumber > 0) warnings.push(`値の欄に数でない値が ${input.dropped.notNumber} 個あり、表に入れていない。値のメジャーは FORMAT などで文字にしない`);
     if (input.dropped.indicatorNotNumber > 0) {
@@ -522,6 +524,8 @@ export function transform(
     const eventModel = resolveEvents(input);
     warnings.push(...eventModel.warnings);
     const { latest } = eventModel;
+    // 最新見込みの見出しの決まり（書式の「最新見込みの見出し」）
+    const latestRule = latestHeaderRuleOf(settings, latest);
     const eventNames = eventModel.events.map((e) => e.name);
 
     // 指標：書式ペインのメジャーごとの設定。横持ちは、指標の値を書式ペインで選んだイベントに割り当てる
@@ -698,6 +702,22 @@ export function transform(
 
     const periodColumns = table.columns;
 
+    // 率のメジャー（利益率など、% の書式）を指標として表に出すと、四半期・通期などの値は月の値の合計か期末の月の値になり、
+    // 期間の率にならない（ビジュアルには月の値しか届かず、期間で計算し直せない）。月より長い列があるときだけ知らせる
+    if (periodColumns.some((period) => period.months.length > 1)) {
+        const rates = indicatorSaved.filter(
+            (s, i) =>
+                s.placement !== INDICATOR_MODES.hidden &&
+                (isPercentFormat(input.indicators[i]?.formatString) || parseRowFormat(s.format).format.kind === "percent")
+        );
+        if (rates.length > 0) {
+            warnings.push(
+                `指標「${rates.map((s) => s.name).join("」「")}」は率のメジャー（% の書式）なので、四半期・通期などの列は月の値の合計か期末の月の値になり、期間の率にならない。` +
+                    "分子と分母のメジャーを指標に入れて配置を「表に出さない（計算行で使う）」にし、計算行の「比率」で作ると、どの期間も分子の合計 ÷ 分母の合計になる"
+            );
+        }
+    }
+
     // 期間ごとの比較の列：見る人が「この期間だけ」の列を持っていればそれ、無ければ全期間と同じ。列 1〜3 の順
     const partners = new Map(candidates.map((value): [string, Partner] => [value, partnerOf(value)]));
     const periodSlots = new Map(periodColumns.map((period) => [period.key, slotsAt(periodNameOf(period))]));
@@ -853,7 +873,7 @@ export function transform(
         // 最新見込みの主は、期間に使ったイベントが 1 つならその名前、混ざれば「最新見込み」を名乗る
         const mainUsed = main === LATEST ? calc.eventsByMonth(mainRef, period.months) : null;
         // データの無い期間は「―」（空の見出しだと、列がずれたように見える）
-        const mainHeader = mainUsed ? latestName(mainUsed) || "―" : main;
+        const mainHeader = mainUsed ? latestName(mainUsed, latestRule) || "―" : main;
         columns.push({ periodKey: period.key, periodKind: period.kind, kind: "main", header: mainHeader, sub: "", ...titled(breakdownItems(mainUsed)) });
         for (const spec of specs) {
             const at = spec.partner;
@@ -967,7 +987,7 @@ export function transform(
         // 「その他」にまとめた行が小計（中分類）なら、その下の行にデータがあるか（小計そのものはファクトを持たない）
         const hasRow = (code: string): boolean => has(code) || (model.rows.get(code)?.summands ?? []).some((s) => s.code !== code && hasRow(s.code));
         const ownHeaders = new Map(
-            periodColumns.map((period): [string, string | null] => [period.key, !whole && main === LATEST ? latestName(calc.eventsByMonth(mainRef, period.months)) || null : null])
+            periodColumns.map((period): [string, string | null] => [period.key, !whole && main === LATEST ? latestName(calc.eventsByMonth(mainRef, period.months), latestRule) || null : null])
         );
         const ownCompares = new Map(
             usedCompares.map((value): [string, Map<string, string | null>] => [
@@ -978,7 +998,7 @@ export function transform(
                         if (whole || at.compare === PRIOR_YEAR || at.ref.events.length <= 1) return [period.key, null];
                         const used = new Set(Array.from(calc.compareEventsByMonth(mainRef, at.ref, period.months).values()).flat());
                         if (used.size <= 1) return [period.key, used.size === 1 ? Array.from(used)[0] : null];
-                        return [period.key, at.compare === LATEST ? LATEST_LABEL : at.ref.events.filter((e) => used.has(e)).join("・")];
+                        return [period.key, at.compare === LATEST ? latestName(used, latestRule) : at.ref.events.filter((e) => used.has(e)).join("・")];
                     })
                 ),
             ])
@@ -1019,7 +1039,7 @@ export function transform(
                 const ownName = (ref: EventRef, fallback: string, latestLike = true) => {
                     if (!def.code.startsWith(INDICATOR_KEY) || ref.events.length <= 1) return fallback;
                     const used = calc.rowEventsByMonth(def.code, ref, period.months);
-                    if (latestLike) return latestName(used) || fallback;
+                    if (latestLike) return latestName(used, latestRule) || fallback;
                     const all = new Set(Array.from(used.values()).flat());
                     return all.size === 0 ? fallback : ref.events.filter((e) => all.has(e)).join("・");
                 };
@@ -1105,8 +1125,9 @@ export function transform(
     {
         const options = (kind: "account" | "org", id: string, level: number) => hierarchyOptions({ ...settings.rows, ...settings.segments } as unknown as HierarchyDefaults, hierarchySaved, kind, id, level);
         const codes = tree && settings.segments.hideEmptyAccounts.value ? codesByOrg(tree.root, input.facts) : null;
-        // 表に出す月（前年同期を比べるなら 12 か月前も）。「値の無い行を隠す」が切なら null
-        const shownMonths = settings.rows.hideBlankRows.value
+        // 表に出す月（前年同期を比べるなら 12 か月前も）。「値の無い行を隠す」「0 だけの行を隠す」がどちらも切なら null
+        const hideZero = settings.rows.hideZeroRows.value ?? false;
+        const shownMonths = settings.rows.hideBlankRows.value || hideZero
             ? new Set(periodColumns.flatMap(p => usedCompares.includes(PRIOR_YEAR) ? [...p.months, ...p.months.map(m => m - 12)] : p.months))
             : null;
         const block = (node?: OrgNode): LayoutPlan => {
@@ -1115,9 +1136,11 @@ export function transform(
             const present = node && codes ? codes.get(node.path) ?? new Set<string>() : null;
             const empty = present ? emptyAccountRows(model.display, model.attached, code => present.has(code), model.rows) : new Set<string>();
             // 「行」カードの「値の無い行を隠す」：表に出す月にファクトの無い行を外す（区分・中分類・その他・うちはセグメントの空の行と同じ扱い）
+            // 「0 だけの行を隠す」：0 の値は無い値とみなす（科目も指標も）
             if (shownMonths) {
-                const inShown = new Set(input.facts.filter(f => shownMonths.has(f.month) && (!node || containsOrg(node, f.org))).map(f => f.code));
-                for (const code of emptyAccountRows(model.display, model.attached, code => inShown.has(code), model.rows)) empty.add(code);
+                const counted = (f: Fact) => shownMonths.has(f.month) && (!node || containsOrg(node, f.org)) && (!hideZero || f.value !== 0 || f.last !== 0);
+                const inShown = new Set([...input.facts, ...input.indicatorFacts].filter(counted).map(f => f.code));
+                for (const code of emptyAccountRows(model.display, model.attached, code => inShown.has(code), model.rows, true)) empty.add(code);
             }
             const shown = model.display.filter(r => !empty.has(r.def.code));
             const full = shown.length ? shown : model.display;
@@ -1208,6 +1231,8 @@ export interface TableStyle {
     fontFamily: string;
     /** 表の上のバーとダイアログの文字サイズ */
     fontSize: number;
+    /** 表のすぐ上の年度と単位の文字の色。空なら表の文字と同じ */
+    headingColor: string;
     /** 表の中の要素ごとの文字サイズ */
     sizes: typeof DEFAULT_TEXT_SIZES;
     good: string;
@@ -1247,6 +1272,8 @@ export interface TableStyle {
     breakdown: { brackets: boolean; muted: boolean; tag: boolean };
     segmentFill: boolean;
     segmentColors: string[];
+    /** 列の見出しの文字：セグメントの列（横積み）と、行の名前の列 */
+    headers: { segment: string; row: string };
 }
 
 export type UnitPlace = (typeof UNIT_PLACES)[keyof typeof UNIT_PLACES];
@@ -1258,7 +1285,8 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
     const headBackground = color(table.headBackground, DEFAULT_HEAD_BACKGROUND);
     return {
         fontFamily: table.fontFamily.value,
-        fontSize: size(table.fontSize.value, DEFAULT_FONT_SIZE),
+        fontSize: size(table.fontSize.value, DEFAULT_HEADING_SIZE),
+        headingColor: table.headingColor.value?.value ?? "",
         sizes: {
             org: size(segments.orgSize.value, DEFAULT_TEXT_SIZES.org),
             name: size(rows.nameSize.value, DEFAULT_TEXT_SIZES.name),
@@ -1300,7 +1328,9 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
         rowHeight: rowHeightOf(dropdownValue(settings.table.rowHeight, "normal")),
         alignTails: settings.numbers.alignTails.value,
         bold: Object.fromEntries(BOLD_KEYS.map((key) => {
-            const card = {"org":"segments","name":"rows","period":"periods","column":"comparison","compareHead":"comparison","main":"comparison","compare":"comparison","sub":"comparison"}[key] as "segments" | "rows" | "periods" | "comparison";
+            // 行の名前と数字の太さは「行」カードの「合計行を太字」1 つで決める（入れれば行の種類で太さを変える、切れば太字にしない）
+            if (key === "name" || key === "main" || key === "compare" || key === "sub") return [key, (settings.rows.totalBold.value ?? true) ? "auto" : "off"];
+            const card = {"org":"segments","period":"periods","column":"comparison","compareHead":"comparison"}[key as "org" | "period" | "column" | "compareHead"] as "segments" | "periods" | "comparison";
             const value = dropdownValue((settings[card] as unknown as Record<string, Parameters<typeof dropdownValue>[0]>)[`${key}Bold`], "auto");
             return [key, value === "on" || value === "off" ? value : "auto"];
         })) as Record<BoldKey, BoldMode>,
@@ -1308,6 +1338,10 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
         breakdown: { brackets: settings.rows.breakdownBrackets.value, muted: settings.rows.breakdownMuted.value, tag: settings.rows.breakdownTag.value },
         segmentFill: settings.segments.segmentFill.value,
         segmentColors: settings.segments.segmentColors(),
+        headers: {
+            segment: (settings.segments.segmentHeader.value ?? "").trim() || "セグメント",
+            row: (settings.rows.rowHeader.value ?? "").trim() || "項目",
+        },
     };
 }
 
@@ -1368,14 +1402,48 @@ function foldsOf(orgs: string[], rows: string[], rowsClosedByDefault: boolean, c
     };
 }
 
+/** 書式ペインの「最新見込みの見出し」と文字の欄から、見出しの決まりを作る */
+function latestHeaderRuleOf(settings: VisualFormattingSettingsModel, latest: string[]): LatestHeaderRule {
+    const c = settings.comparison;
+    const mode = dropdownValue(c.latestHeader, LATEST_HEADERS.label);
+    if (mode === LATEST_HEADERS.scenario) return { newestFirst: latest };
+    if (mode !== LATEST_HEADERS.custom) return {};
+    return {
+        confirmed: (c.confirmedScenario.value ?? "")
+            .split(/[,、]/)
+            .map((name) => name.trim())
+            .filter((name) => name !== ""),
+        confirmedLabel: (c.confirmedLabel.value ?? "").trim(),
+        forecastLabel: (c.forecastLabel.value ?? "").trim(),
+    };
+}
+
+/** 書式の「最新見込みの見出し」の決まり。何も無ければ、混ざったときは「最新見込み」 */
+export interface LatestHeaderRule {
+    /** シナリオの名前：比較順の大きい順。混ざったときは使ったうち比較順のいちばん前（確度の低い）名前 */
+    newestFirst?: string[];
+    /** 文字で決める：確定とみなすシナリオ。これだけなら confirmedLabel、ほかが入れば forecastLabel */
+    confirmed?: string[];
+    confirmedLabel?: string;
+    forecastLabel?: string;
+}
+
 /**
  * 最新見込みの期間の名乗り：使ったイベントが 1 つならその名前、月か組織でイベントが混ざれば「最新見込み」。
+ * 「シナリオの名前」なら、混ざったときは確度の低い名前（実績と見通しなら見通し、予定と実績なら予定）。
+ * 「文字で決める」なら、確定とみなすシナリオだけの期間は確定の見出し（空ならそのシナリオの名前）、ほかが入れば別の見出し（空なら「最新見込み」）。
  * 月ごとの内訳は見出しの点線とツールチップ
  */
-export function latestName(used: Map<MonthIndex, string[]>): string {
-    const all = new Set(Array.from(used.values()).flat());
+export function latestName(used: Map<MonthIndex, string[]> | Set<string>, rule: LatestHeaderRule = {}): string {
+    const all = used instanceof Set ? used : new Set(Array.from(used.values()).flat());
     if (all.size === 0) return "";
-    return all.size === 1 ? Array.from(all)[0] : LATEST_LABEL;
+    if (rule.confirmed) {
+        const confirmed = rule.confirmed;
+        if (Array.from(all).every((e) => confirmed.includes(e))) return rule.confirmedLabel || (confirmed.find((e) => all.has(e)) ?? "");
+        return rule.forecastLabel || LATEST_LABEL;
+    }
+    if (all.size === 1) return Array.from(all)[0];
+    return rule.newestFirst ? ([...rule.newestFirst].reverse().find((e) => all.has(e)) ?? LATEST_LABEL) : LATEST_LABEL;
 }
 
 /**

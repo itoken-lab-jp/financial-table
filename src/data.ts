@@ -109,6 +109,8 @@ export interface IndicatorInfo {
     /** 書式ペインのメジャーごとの設定の保存先 */
     queryName: string;
     name: string;
+    /** メジャーの書式（モデルの書式の文字。0.0% など）。率のメジャーかを見分ける */
+    formatString: string;
     /** 書式ペインの保存値（生のまま。viewModel が読む） */
     saved: Record<string, string>;
 }
@@ -197,7 +199,7 @@ export interface InputData {
     measureKey: string;
     /** 金額のメジャーの名前（欄の並び。系列の名前の付け替えに使う） */
     measureNames: string[];
-    /** 列（月の値）が宣言の上限（COLUMN_LIMIT）に届いた。列には続きの読み込みが無いので、それより後の期間が落ちているおそれ */
+    /** 列（月の値）が上限（COLUMN_LIMIT）に届いた。列には続きの読み込みが無いので、それより後の期間が落ちているおそれ */
     columnsCut: boolean;
     /** 組織の段の名前（上の段から。組織を入れていなければ空） */
     orgLevelNames: string[];
@@ -233,8 +235,11 @@ const orderBucket = (category: string | null, subCategory: string | null) => `${
 
 const emptySelection = (): SelectionNodes => ({ rowLevels: [], columnLevels: [], accounts: new Map(), orgs: new Map(), months: new Map() });
 
-/** 列（月の値）の上限（capabilities.json の columns の top の数。列には続きの読み込みが無い） */
-export const COLUMN_LIMIT = 2000;
+/**
+ * 列（月の値）の上限。capabilities.json の columns は top 2000 だが、行を window（続きを読む受け方）で受けると、
+ * Power BI は列を 60 で切る（行の数によらない。列の小計も届かない）。行が多い表なので行の window を残し、60 に届いたら知らせる
+ */
+export const COLUMN_LIMIT = 60;
 
 /**
  * 組織の段の値をつなぐ字。道筋を段に分け直すので、
@@ -456,7 +461,13 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
     const measureName = (a: number) => amountSources[a].displayName ?? `値${a + 1}`;
     const indicators: IndicatorInfo[] = indicatorSources.map((source, i) => {
         const queryName = source.queryName ?? source.displayName ?? `指標${i + 1}`;
-        return { code: INDICATOR_KEY + queryName, queryName, name: source.displayName ?? `指標${i + 1}`, saved: savedTexts(source.objects?.indicators) };
+        return {
+            code: INDICATOR_KEY + queryName,
+            queryName,
+            name: source.displayName ?? `指標${i + 1}`,
+            formatString: source.format ?? "",
+            saved: savedTexts(source.objects?.indicators),
+        };
     });
 
     const accounts = new Map<string, AccountRecord>();

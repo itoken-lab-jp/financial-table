@@ -193,6 +193,30 @@
                         "enumeration": []
                     }
                 },
+                "latestHeader": {
+                    "displayName": "最新見込みの見出し",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "confirmedScenario": {
+                    "displayName": "確定とみなすシナリオ",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "confirmedLabel": {
+                    "displayName": "確定だけのときの見出し",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "forecastLabel": {
+                    "displayName": "それ以外の見出し",
+                    "type": {
+                        "text": true
+                    }
+                },
                 "diffSwap": {
                     "displayName": "2 段の上下入れ替え",
                     "type": {
@@ -261,12 +285,6 @@
                         }
                     }
                 },
-                "mainBold": {
-                    "displayName": "基準列の数字の太字",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
                 "compareSize": {
                     "displayName": "比較列の数字",
                     "type": {
@@ -275,24 +293,12 @@
                         }
                     }
                 },
-                "compareBold": {
-                    "displayName": "比較列の数字の太字",
-                    "type": {
-                        "enumeration": []
-                    }
-                },
                 "subSize": {
                     "displayName": "2 段目の数字",
                     "type": {
                         "formatting": {
                             "fontSize": true
                         }
-                    }
-                },
-                "subBold": {
-                    "displayName": "2 段目の数字の太字",
-                    "type": {
-                        "enumeration": []
                     }
                 }
             }
@@ -494,6 +500,12 @@
                         ]
                     }
                 },
+                "hideZeroRows": {
+                    "displayName": "0 だけの行を隠す",
+                    "type": {
+                        "bool": true
+                    }
+                },
                 "hideBlankRows": {
                     "displayName": "値の無い行を隠す",
                     "type": {
@@ -504,6 +516,12 @@
                     "displayName": "合計行",
                     "type": {
                         "enumeration": []
+                    }
+                },
+                "rowHeader": {
+                    "displayName": "行の名前の列の見出し",
+                    "type": {
+                        "text": true
                     }
                 },
                 "totalName": {
@@ -636,10 +654,10 @@
                         }
                     }
                 },
-                "nameBold": {
-                    "displayName": "行名の太字",
+                "totalBold": {
+                    "displayName": "合計行を太字",
                     "type": {
-                        "enumeration": []
+                        "bool": true
                     }
                 }
             }
@@ -714,6 +732,12 @@
                     "displayName": "データなしの行を非表示",
                     "type": {
                         "bool": true
+                    }
+                },
+                "segmentHeader": {
+                    "displayName": "セグメントの列の見出し",
+                    "type": {
+                        "text": true
                     }
                 },
                 "segmentFill": {
@@ -3938,6 +3962,16 @@
                     "displayName": "列の余白",
                     "type": {
                         "enumeration": []
+                    }
+                },
+                "headingColor": {
+                    "displayName": "年度・単位の色",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
                     }
                 },
                 "headBackground": {

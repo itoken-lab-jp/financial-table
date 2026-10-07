@@ -9,7 +9,7 @@
 import powerbi from "powerbi-visuals-api";
 
 import { blend, contrastRatio } from "./shared/color";
-import { DEFAULT_BAD_COLOR, DEFAULT_BAND_COLORS, DEFAULT_GOOD_COLOR, DEFAULT_HEAD_BACKGROUND, DEFAULT_LINE_COLORS, DEFAULT_SEGMENT_COLORS } from "./settings";
+import { DEFAULT_BAD_COLOR, DEFAULT_BAND_COLORS, DEFAULT_GOOD_COLOR, DEFAULT_HEAD_BACKGROUND, DEFAULT_LINE_COLORS, DEFAULT_NEUTRAL_BACKGROUND, DEFAULT_SEGMENT_COLORS } from "./settings";
 
 import ISandboxExtendedColorPalette = powerbi.extensibility.ISandboxExtendedColorPalette;
 
@@ -47,12 +47,12 @@ export const DEFAULT_THEME: Theme = {
 };
 
 /**
- * 塗りの段ごとの、地に寄せる量（外ほど濃い）。標準テーマの 1 番目のデータの色 #118DFF から、既定の囲みの色 #D4EAFF 系になる。
- * 塗るのはまとまりを締める行だけ（App.tsx）。「囲みの塗りを薄く」
+ * 囲み・セグメントの塗りの段ごとの濃さ（外ほど濃い）。テーマの「背景（明るい）」（見出しの背景と同じ）から「背景（中間）」へ寄せる量。
+ * データの色（系列の色）は使わない（2026-10-08 ユーザーと決めた。表の色はテーマの背景の段で作る）。塗るのはまとまりを締める行だけ（App.tsx）
  */
-const TINTS = [0.82, 0.9, 0.95, 0.97];
-/** セグメントの塗りの寄せる量。標準テーマの 3 番目のデータの色 #E66C37 から、今の既定のセグメントの色 #F4B183 系に近くなる */
-const SEGMENT_TINTS = [0.45, 0.65, 0.85, 0.93];
+const BAND_STEPS = [0.45, 0.3, 0.15, 0];
+/** セグメントの塗りは、囲みよりひと段濃く */
+const SEGMENT_STEPS = [0.75, 0.55, 0.35, 0.15];
 
 
 /** 字に使う色を、地に対して minimum のコントラスト比になるまで字の色へ寄せる（足りていればそのまま） */
@@ -71,10 +71,10 @@ export function themeOf(palette: ISandboxExtendedColorPalette | undefined): Them
     const text = valid(palette.foreground, DEFAULT_THEME.text);
     const background = valid(palette.background, DEFAULT_THEME.background);
     const muted = valid(palette.foregroundNeutralSecondary, DEFAULT_THEME.muted);
-    const line = valid(palette.backgroundNeutral, DEFAULT_LINE_COLORS.row);
-    // データの色は getColor で順に取る（初めての名前には、テーマのデータの色が並びの順に割り当たる。同じ名前はいつも同じ色）
-    const data = ["financialTable.theme.0", "financialTable.theme.1", "financialTable.theme.2"].map((key) => valid(palette.getColor(key), ""));
-    const tints = (base: string, amounts: number[], fallback: string[]) => (base ? amounts.map((amount) => blend(base, background, amount)) : fallback);
+    const soft = blend(background, "#000000", 0.1);
+    const light = valid(palette.backgroundLight, DEFAULT_HEAD_BACKGROUND);
+    const neutral = valid(palette.backgroundNeutral, DEFAULT_NEUTRAL_BACKGROUND);
+    const steps = (amounts: number[]) => amounts.map((amount) => blend(light, neutral, amount));
     return {
         text,
         muted,
@@ -82,20 +82,20 @@ export function themeOf(palette: ISandboxExtendedColorPalette | undefined): Them
         headBackground: valid(palette.backgroundLight, DEFAULT_HEAD_BACKGROUND),
         good: readableOn(valid(palette.positive, DEFAULT_GOOD_COLOR), background, text, SENTIMENT_CONTRAST),
         bad: readableOn(valid(palette.negative, DEFAULT_BAD_COLOR), background, text, SENTIMENT_CONTRAST),
+        // 線の既定（2026-10-08 ユーザーが Desktop で決めた色をテーマの言葉で）：行の中の線はテーマの背景を 10% 暗く
+        // （書式ペインのテーマの色の「白、10% 暗く」）、セグメントの箱・期間の区切り・外枠はテーマの文字の色。見出しの下の線は文字の色のまま
         lines: {
-            row: line,
-            subtotal: muted,
-            total: text,
+            row: soft,
+            subtotal: soft,
+            total: soft,
             head: text,
-            // セグメントの箱・表の外枠は字と地のあいだ（標準テーマで #8A8886 あたり）
-            block: blend(text, background, 0.46),
-            band: line,
-            // 期間の区切りは行の線より薄く（標準テーマで #E1DFDD あたり）
-            period: blend(line, background, 0.44),
-            outer: blend(text, background, 0.46),
-            name: line,
+            block: text,
+            band: soft,
+            period: text,
+            outer: text,
+            name: soft,
         },
-        bandColors: tints(data[0], TINTS, DEFAULT_BAND_COLORS),
-        segmentColors: tints(data[2], SEGMENT_TINTS, DEFAULT_SEGMENT_COLORS),
+        bandColors: steps(BAND_STEPS),
+        segmentColors: steps(SEGMENT_STEPS),
     };
 }

@@ -12,7 +12,7 @@
  *
  * 計の置き場所は区分と独立に選べる・左の列に縦にかける・一番上の段まで開く・閉じた組織は計の表
  */
-import { ORG_SEPARATOR } from "./data";
+import { INDICATOR_KEY, ORG_SEPARATOR } from "./data";
 import { UNDER_KEY, isAccountRow } from "./picks";
 import { DisplayRow, RowDef } from "./rows";
 
@@ -253,7 +253,9 @@ export function emptyAccountRows(
     display: DisplayRow[],
     attached: ReadonlyMap<string, string[]>,
     has: (code: string) => boolean,
-    defs?: ReadonlyMap<string, RowDef>
+    defs?: ReadonlyMap<string, RowDef>,
+    /** 指標の行（行の後ろ・うちに置いた指標）も、値が無ければ空とみなすか。「値の無い行を隠す」「0 だけの行を隠す」で使う */
+    indicators = false
 ): Set<string> {
     const shown = new Map(display.map((d) => [d.def.code, d.def]));
     // 並びに無い行（小計をうちにして中身を出さない行など）も、行の定義から引く
@@ -265,6 +267,7 @@ export function emptyAccountRows(
         const def = byCode.get(code);
         let result = false;
         if (isAccountRow(def)) result = !has(code);
+        else if (indicators && def?.code.startsWith(INDICATOR_KEY) && (def.type === "measure" || def.type === "breakdown")) result = !has(code);
         // 見る人が小計をうちにした行：元の小計が空なら空
         else if (def?.type === "breakdown" && code.startsWith(UNDER_KEY)) result = def.summands.length > 0 && def.summands.every((s) => empty(s.code));
         // 見る人が選ばなかった科目をまとめた「その他」：まとめた科目がどれも空
