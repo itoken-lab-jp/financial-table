@@ -661,14 +661,6 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     }
     flushCalc();
 
-    // 表の最後に置く計算行。置く場所の区分が表に無い計算行は出さない（フィルターで区分が消えたときも）。
-    // 表が空（フィルターで科目が無い）なら、どの行も出さず、知らせもしない
-    for (const spec of emitted.length > 0 ? calcSpecs : []) {
-        if (calcDone.has(spec)) continue;
-        if (spec.after === null) emitCalc(spec);
-        else warn(`計算行「${spec.name}」の挿入位置の区分「${spec.after}」が表に無い。出さなかった`);
-    }
-
     // ---- すべての区分を足した合計行（木の根）。区分が 2 つ以上のとき。上に置く表は表の先頭、下に置く表は区分と計算行の後ろ
     const summedSections = emitted.filter((sec) => !sec.other && sectionValue.has(sec.label));
     if (opts.totalRow && summedSections.length >= 2) {
@@ -678,6 +670,14 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         if (total && opts.position === "above") display.unshift(...display.splice(at, 1));
         const left = emitted.filter((sec) => sec.other && sec.accounts.length > 0);
         if (total && left.length > 0) warn(`合計行「${totalName}」に、区分の無い行（${list(left.flatMap((sec) => sec.accounts.map((a) => a.name)))}）は足していない。区分を入れると足す`);
+    }
+
+    // 表の最後に置く計算行。合計行のあとに作る（合計行は区分をまとめる木の根で、先に作った計算行は根のまとまりより上に並んだ）。置く場所の区分が表に無い計算行は出さない（フィルターで区分が消えたときも）。
+    // 表が空（フィルターで科目が無い）なら、どの行も出さず、知らせもしない
+    for (const spec of emitted.length > 0 ? calcSpecs : []) {
+        if (calcDone.has(spec)) continue;
+        if (spec.after === null) emitCalc(spec);
+        else warn(`計算行「${spec.name}」の挿入位置の区分「${spec.after}」が表に無い。出さなかった`);
     }
 
     // ---- 表に置けなかった科目は無いはずだが、落とさずに最後に出して知らせる

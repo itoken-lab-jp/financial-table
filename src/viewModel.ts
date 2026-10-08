@@ -1130,6 +1130,7 @@ export function transform(
         const shownMonths = settings.rows.hideBlankRows.value || hideZero
             ? new Set(periodColumns.flatMap(p => usedCompares.includes(PRIOR_YEAR) ? [...p.months, ...p.months.map(m => m - 12)] : p.months))
             : null;
+        const shownRefs = [mainRef, ...usedCompares.map(refOf)];
         const block = (node?: OrgNode): LayoutPlan => {
             const prefix = node ? node.path ?? "\u0000" : "";
             const ownCalc = !node || node === tree?.root ? calc : new Calculator(model, debitFacts.filter(f => containsOrg(node, f.org)));
@@ -1140,7 +1141,10 @@ export function transform(
             if (shownMonths) {
                 const counted = (f: Fact) => shownMonths.has(f.month) && (!node || containsOrg(node, f.org)) && (!hideZero || f.value !== 0 || f.last !== 0);
                 const inShown = new Set([...input.facts, ...input.indicatorFacts].filter(counted).map(f => f.code));
-                for (const code of emptyAccountRows(model.display, model.attached, code => inShown.has(code), model.rows, true)) empty.add(code);
+                // 表に出したシナリオ（基準と、使っている比較）の、月ごとに採ったイベントの数字だけを数える。月だけで見ると、表に出していない
+                // シナリオ（期初予算など）にだけ値のある行が残った（2026-10-08 ユーザーが会社で見つけた）
+                const valued = (code: string) => ownCalc.hasValue(code, shownRefs, shownMonths, hideZero);
+                for (const code of emptyAccountRows(model.display, model.attached, code => inShown.has(code) && valued(code), model.rows, true)) empty.add(code);
             }
             const shown = model.display.filter(r => !empty.has(r.def.code));
             const full = shown.length ? shown : model.display;

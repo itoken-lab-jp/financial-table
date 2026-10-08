@@ -338,6 +338,28 @@ export class Calculator {
     }
 
     /**
+     * 科目・指標の行に、表の月で採ったイベントの数字があるか（refs のどれか）。データのある組で数字の無い科目は 0 で出るが、それは数えない。
+     * skipZero なら 0 の数字も無いとみなす
+     */
+    hasValue(code: string, refs: EventRef[], months: Iterable<MonthIndex>, skipZero: boolean): boolean {
+        const group = this.groupOf(code);
+        const shown = Array.from(months);
+        for (const ref of refs) {
+            for (const [slot, byMonth] of this.resolution(ref)) {
+                const { org, group: slotGroup } = this.slots.get(slot)!;
+                if (slotGroup !== group) continue;
+                for (const m of shown) {
+                    const event = byMonth.get(m);
+                    if (event === undefined) continue;
+                    const cell = this.cells.get(key(code, event))?.get(org)?.get(m + ref.shift);
+                    if (cell && (!skipZero || cell.sum !== 0 || cell.last !== 0)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * 行の値に使ったイベント（月ごと、候補の並びの順）。行のまとまりの組だけで見る（指標はメジャー 1 本ずつなので、列の見出しの
      * イベントと違うことがある。セルのツールチップで名乗る）
      */
