@@ -105,18 +105,27 @@ function signed(value: number, format: RowFormat, unit: AmountUnit, style: Parti
     }
 }
 
-/** 行の値の文字。空欄は空文字 */
-export function formatRowValue(value: number | null, format: RowFormat, unit: AmountUnit, sign: SignOptions = PLAIN_SIGN): string {
-    if (value === null) return "";
-    return signed(value, format, unit, { negative: sign.negative, zero: sign.zero, negativeZero: sign.negativeZero, plus: false }, "%");
+/**
+ * 比率の行（% の書式の指標・計算行の比率）の値と差を、比・率と同じ上限で止める（「≧999%」「≦▲999pt」）。
+ * 金額・数の行と、上限を渡さないとき（ツールチップの実の値）は止めない
+ */
+function capped(value: number, format: RowFormat, unit: AmountUnit, style: Partial<SignStyle>, suffix: string, cap: number | undefined): string {
+    if (cap === undefined || format.kind !== "percent" || Math.abs(value) <= cap) return signed(value, format, unit, style, suffix);
+    return `${value > 0 ? "≧" : "≦"}${signed(value > 0 ? cap : -cap, { ...format, decimals: 0 }, unit, style, suffix)}`;
 }
 
-/** 差の文字。正に + を付ける。比率の行の差はポイント */
-export function formatDiff(diff: number | null, format: RowFormat, unit: AmountUnit, sign: SignOptions = PLAIN_SIGN): string {
+/** 行の値の文字。空欄は空文字。cap を渡すと、比率の行の値をその上限（倍）で止める */
+export function formatRowValue(value: number | null, format: RowFormat, unit: AmountUnit, sign: SignOptions = PLAIN_SIGN, cap?: number): string {
+    if (value === null) return "";
+    return capped(value, format, unit, { negative: sign.negative, zero: sign.zero, negativeZero: sign.negativeZero, plus: false }, "%", cap);
+}
+
+/** 差の文字。正に + を付ける。比率の行の差はポイント。cap を渡すと、比率の行の差をその上限（ポイント）で止める */
+export function formatDiff(diff: number | null, format: RowFormat, unit: AmountUnit, sign: SignOptions = PLAIN_SIGN, cap?: number): string {
     if (diff === null) return "";
     // 丸めて 0 になるプラスは「+0」と書かない（0 の書き方にそろえる）
     if (diff > 0 && shownValue(diff, format, unit) === 0) diff = 0;
-    return signed(diff, format, unit, { negative: sign.negative, zero: sign.diffZero, negativeZero: sign.negativeZero, plus: true }, "pt");
+    return capped(diff, format, unit, { negative: sign.negative, zero: sign.diffZero, negativeZero: sign.negativeZero, plus: true }, "pt", cap);
 }
 
 /**

@@ -1152,7 +1152,7 @@ export class NumbersCardSettings extends SimpleCard {
     ratioCap = new formattingSettings.NumUpDown({
         name: "ratioCap",
         displayName: "比・率の上限（%）",
-        description: "これを超える比・率は「≧999%」のように上限で止める（100〜99999）",
+        description: "これを超える比・率と、比率の行（% の指標・計算行の比率）の値・差は「≧999%」のように上限で止める（100〜99999）",
         value: DEFAULT_RATIO_CAP,
     });
 

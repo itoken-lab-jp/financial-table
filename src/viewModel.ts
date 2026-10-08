@@ -1091,11 +1091,11 @@ export function transform(
                               ...values,
                           ];
                 const withTooltip = (cell: Cell): Cell => (tooltip ? { ...cell, tooltip } : cell);
-                cells.push(withTooltip({ text: formatRowValue(mainValue, def.format, rowUnit, rowSign), tone: null }));
+                cells.push(withTooltip({ text: formatRowValue(mainValue, def.format, rowUnit, rowSign, ratioCap), tone: null }));
                 specs.forEach((spec, i) => {
                     const result = results[i];
                     if (spec.view === COMPARE_VIEWS.value) {
-                        cells.push(withTooltip({ text: formatRowValue(result.compare, def.format, rowUnit, rowSign), tone: null }));
+                        cells.push(withTooltip({ text: formatRowValue(result.compare, def.format, rowUnit, rowSign, ratioCap), tone: null }));
                         return;
                     }
                     // 色は表に出る差の符号で決める（丸めて 0 は塗らない、▲0 は悪い向きなら塗る）。比・率だけの列も差の向きで塗る
@@ -1103,7 +1103,7 @@ export function transform(
                     cells.push(
                         withTooltip(
                             diffCell(result.main, result.compare, tone, def.format.kind === "percent", spec.view, swap, rowSign, ratioCap, () =>
-                                formatDiff(result.diff, def.format, rowUnit, rowSign)
+                                formatDiff(result.diff, def.format, rowUnit, rowSign, ratioCap)
                             )
                         )
                     );
