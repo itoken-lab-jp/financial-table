@@ -106,7 +106,7 @@ export function periodActive(selection: SelectTarget[], periodKey: string): bool
     return selection.some((t) => (t.kind === "period" || t.kind === "cell" ? t.periodKey === periodKey : true));
 }
 
-/** 選べない行（計算行・指標）の見出しは薄くしない。ただし組織を選んでいれば、ほかの組織のブロックの行は薄くする */
+/** 選べない行（科目を引かない計算行・指標）の見出しは薄くしない。ただし組織を選んでいれば、ほかの組織のブロックの行は薄くする */
 export function plainRowActive(selection: SelectTarget[], org: string | null): boolean {
     const orgs = selection.filter((t): t is Extract<SelectTarget, { kind: "org" }> => t.kind === "org");
     return orgs.length === 0 || orgs.some((t) => inOrg(org, t.path));

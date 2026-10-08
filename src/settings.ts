@@ -303,6 +303,13 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
         value: DEFAULT_TEXT_SIZES.compare,
     });
     subSize = new formattingSettings.NumUpDown({ name: "subSize", displayName: "2 段目の数字", value: DEFAULT_TEXT_SIZES.sub });
+    /** 表の数字をすべて太字（2026-10-08 ユーザー「表の数字と項目ラベルを太字にする設定がない」） */
+    valueBold = new formattingSettings.ToggleSwitch({
+        name: "valueBold",
+        displayName: "数字をすべて太字",
+        description: "基準・比較・2 段目の数字を、行の種類によらず太字にする。切ると、太字は「行」カードの「合計行を太字」で決まる",
+        value: false,
+    });
 
     general = new formattingSettings.Group({ name: "comparisonMain", displayName: "基準", slices: [this.main, this.latestHeader, this.confirmedScenario, this.confirmedLabel, this.forecastLabel] });
     /** 2 段の見せ方の上下（比較の列は見る人が選ぶ） */
@@ -311,7 +318,7 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
     texts = new formattingSettings.Group({
         name: "comparisonText",
         displayName: "文字",
-        slices: [this.columnSize, this.columnBold, this.compareHeadSize, this.compareHeadBold, this.mainSize, this.compareSize, this.subSize],
+        slices: [this.columnSize, this.columnBold, this.compareHeadSize, this.compareHeadBold, this.mainSize, this.compareSize, this.subSize, this.valueBold],
     });
 
     groups = [this.general, this.twoRows, this.tones, this.texts];
@@ -483,6 +490,7 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         value: "",
         placeholder: "項目",
     });
+    rowHeaderBold = new formattingSettings.ToggleSwitch({ name: "rowHeaderBold", displayName: "行の名前の列の見出しを太字", value: false });
 
     totalName = new formattingSettings.TextInput({
         name: "totalName",
@@ -566,12 +574,18 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         value: false,
     });
     nameSize = new formattingSettings.NumUpDown({ name: "nameSize", displayName: "行名の文字", value: DEFAULT_TEXT_SIZES.name });
+    allNamesBold = new formattingSettings.ToggleSwitch({
+        name: "allNamesBold",
+        displayName: "行名をすべて太字",
+        description: "行の名前を、行の種類によらず太字にする。切ると、太字は「合計行」の「合計行を太字」で決まる",
+        value: false,
+    });
 
     layout = new formattingSettings.Group({
         name: "rowsLayout",
         displayName: "表示",
         description: "段・行ごとに変えるときは「段・行ごとの配置」カード",
-        slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot, this.rowHeader, this.hideBlankRows, this.hideZeroRows],
+        slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot, this.rowHeader, this.rowHeaderBold, this.hideBlankRows, this.hideZeroRows],
     });
     /** 合計・計算行・小計を太字にするか（行の名前と数字。2026-10-08 ユーザー「合計行を太字にするかしないかだけでいい」。要素ごとの太字の選択をやめてここにまとめた） */
     totalBold = new formattingSettings.ToggleSwitch({
@@ -591,7 +605,7 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         displayName: "うち・その他の行",
         slices: [this.breakdownBrackets, this.breakdownMuted, this.breakdownTag, this.othersCount],
     });
-    look = new formattingSettings.Group({ name: "rowsLook", displayName: "行の線と文字", slices: [this.rowLine, this.subtotalLine, this.totalLine, this.boldAggregates, this.nameSize] });
+    look = new formattingSettings.Group({ name: "rowsLook", displayName: "行の線と文字", slices: [this.rowLine, this.subtotalLine, this.totalLine, this.boldAggregates, this.nameSize, this.allNamesBold] });
 
     groups = [this.layout, this.order, this.box, this.breakdown, this.look];
 
@@ -634,6 +648,7 @@ export class SegmentsCardSettings extends formattingSettings.CompositeCard {
         value: "",
         placeholder: "セグメント",
     });
+    segmentHeaderBold = new formattingSettings.ToggleSwitch({ name: "segmentHeaderBold", displayName: "セグメントの列の見出しを太字", value: false });
 
     segmentFill = new formattingSettings.ToggleSwitch({
         name: "segmentFill",
@@ -673,7 +688,7 @@ export class SegmentsCardSettings extends formattingSettings.CompositeCard {
     box = new formattingSettings.Group({
         name: "segmentsBoxes",
         displayName: "箱と文字",
-        slices: [this.segmentHeader, this.segmentFill, this.segmentColor, this.segmentColor2, this.segmentColor3, this.segmentColor4, this.blockLine, this.orgSize, this.orgBold],
+        slices: [this.segmentHeader, this.segmentHeaderBold, this.segmentFill, this.segmentColor, this.segmentColor2, this.segmentColor3, this.segmentColor4, this.blockLine, this.orgSize, this.orgBold],
     });
 
     groups = [this.order, this.box];

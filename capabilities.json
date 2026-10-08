@@ -300,6 +300,12 @@
                             "fontSize": true
                         }
                     }
+                },
+                "valueBold": {
+                    "displayName": "数字をすべて太字",
+                    "type": {
+                        "bool": true
+                    }
                 }
             }
         },
@@ -659,6 +665,18 @@
                     "type": {
                         "bool": true
                     }
+                },
+                "rowHeaderBold": {
+                    "displayName": "行の名前の列の見出しを太字",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "allNamesBold": {
+                    "displayName": "行名をすべて太字",
+                    "type": {
+                        "bool": true
+                    }
                 }
             }
         },
@@ -808,6 +826,12 @@
                     "displayName": "セグメント名の太字",
                     "type": {
                         "enumeration": []
+                    }
+                },
+                "segmentHeaderBold": {
+                    "displayName": "セグメントの列の見出しを太字",
+                    "type": {
+                        "bool": true
                     }
                 }
             }

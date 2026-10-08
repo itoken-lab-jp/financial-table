@@ -724,7 +724,7 @@ export function App({
     return (
         <div
             ref={rootRef}
-            className={`ft-root${viewModel.style.periodLines ? " ft-period-lines" : ""}${viewModel.style.aggregateDouble ? " ft-aggregate-double" : ""}${viewModel.style.boldAggregates ? " ft-bold-aggregates" : ""}${viewModel.style.breakdown.muted ? " ft-breakdown-muted" : ""}${Object.entries(viewModel.style.bold).filter(([, m]) => m !== "auto").map(([k, m]) => ` ft-bold-${k}-${m}`).join("")}`}
+            className={`ft-root${viewModel.style.periodLines ? " ft-period-lines" : ""}${viewModel.style.aggregateDouble ? " ft-aggregate-double" : ""}${viewModel.style.boldAggregates ? " ft-bold-aggregates" : ""}${viewModel.style.breakdown.muted ? " ft-breakdown-muted" : ""}${viewModel.style.headerBold.segment ? " ft-bold-segment-head" : ""}${viewModel.style.headerBold.row ? " ft-bold-row-head" : ""}${Object.entries(viewModel.style.bold).filter(([, m]) => m !== "auto").map(([k, m]) => ` ft-bold-${k}-${m}`).join("")}`}
             style={rootStyle}
             // フォーカスの枠はキーボードで動かしたときだけ出す（Desktop ではマウスで押しても :focus-visible が効き、押したセルに黒い枠が出た）
             onKeyDownCapture={() => rootRef.current?.classList.add("ft-keyboard")}

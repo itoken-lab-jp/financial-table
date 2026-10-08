@@ -283,6 +283,14 @@ export function emptyAccountRows(
                 return child === undefined || isAccountRow(child) || child.type === "others" || child.type === "subtotal" || child.type === "heading";
             });
             result = accounts.length > 0 && accounts.every((c) => (byCode.has(c) ? empty(c) : !has(c)));
+        } else if (indicators && def?.type === "step") {
+            // 段階の行（営業利益・合計行）：足す区分がどれも空
+            memo.set(code, false);
+            result = def.summands.length > 0 && def.summands.every((s) => empty(s.code));
+        } else if (indicators && def?.type === "calc") {
+            // 計算行（比率）：分子か分母の行が空なら、率が出ない（総生産の無い事業の税前利益率が空の行で残った。2026-10-08 ユーザー）
+            memo.set(code, false);
+            result = def.refs.length > 0 && def.refs.some((ref) => empty(ref));
         }
         memo.set(code, result);
         return result;

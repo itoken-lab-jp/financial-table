@@ -953,7 +953,11 @@ export function transform(
      * ）。期間の中で混ざれば、比較の最新見込みは「最新見込み」、個々のイベントは使ったイベントを比較順の候補の並びで
      * 並べる（修正予算・期初予算）
      */
-    /** 行を押したときに絞る科目：科目の行はその科目、区分・中分類の小計・見出しはその下の科目すべて。ほかの行は選べない */
+    /**
+     * 行を押したときに絞る科目：科目の行はその科目、区分・中分類の小計・見出しはその下の科目すべて、段階の行（営業利益・合計行など）は足す区分の科目、
+     * 計算行は式が引く行の科目。科目の無い行（指標だけを引く計算行・指標）は選べない。
+     * 段階の行・計算行も選べないと、押すと空いた所を押したことになって選択が解け、ほかの組織のブロックまで明るくなった（2026-10-08 ユーザー）
+     */
     const selectCodes = new Map<string, string[] | null>();
     const codesOf = (code: string): string[] | null => {
         const known = selectCodes.get(code);
@@ -968,6 +972,10 @@ export function transform(
         else if (def && (def.type === "subtotal" || def.type === "heading")) {
             // 子と足す行（見る人がその他・うちにして子から外した科目も、親の合計には入っている）
             const codes = Array.from(new Set([...def.children, ...def.summands.map((s) => s.code)].flatMap((child) => codesOf(child) ?? [])));
+            result = codes.length > 0 ? codes : null;
+        } else if (def && (def.type === "step" || def.type === "calc")) {
+            selectCodes.set(code, null);
+            const codes = Array.from(new Set([...def.summands.map((s) => s.code), ...def.refs].flatMap((ref) => codesOf(ref) ?? [])));
             result = codes.length > 0 ? codes : null;
         }
         selectCodes.set(code, result);
@@ -1278,6 +1286,8 @@ export interface TableStyle {
     segmentColors: string[];
     /** 列の見出しの文字：セグメントの列（横積み）と、行の名前の列 */
     headers: { segment: string; row: string };
+    /** 列の見出し（セグメント・行の名前の列）を太字にするか */
+    headerBold: { segment: boolean; row: boolean };
 }
 
 export type UnitPlace = (typeof UNIT_PLACES)[keyof typeof UNIT_PLACES];
@@ -1333,6 +1343,9 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
         alignTails: settings.numbers.alignTails.value,
         bold: Object.fromEntries(BOLD_KEYS.map((key) => {
             // 行の名前と数字の太さは「行」カードの「合計行を太字」1 つで決める（入れれば行の種類で太さを変える、切れば太字にしない）
+            // 「行名をすべて太字」「数字をすべて太字」を入れれば、行の種類によらず太字
+            if (key === "name" && settings.rows.allNamesBold.value) return [key, "on"];
+            if ((key === "main" || key === "compare" || key === "sub") && settings.comparison.valueBold.value) return [key, "on"];
             if (key === "name" || key === "main" || key === "compare" || key === "sub") return [key, (settings.rows.totalBold.value ?? true) ? "auto" : "off"];
             const card = {"org":"segments","period":"periods","column":"comparison","compareHead":"comparison"}[key as "org" | "period" | "column" | "compareHead"] as "segments" | "periods" | "comparison";
             const value = dropdownValue((settings[card] as unknown as Record<string, Parameters<typeof dropdownValue>[0]>)[`${key}Bold`], "auto");
@@ -1346,6 +1359,7 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
             segment: (settings.segments.segmentHeader.value ?? "").trim() || "セグメント",
             row: (settings.rows.rowHeader.value ?? "").trim() || "項目",
         },
+        headerBold: { segment: settings.segments.segmentHeaderBold.value ?? false, row: settings.rows.rowHeaderBold.value ?? false },
     };
 }
 
