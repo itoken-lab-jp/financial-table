@@ -14,6 +14,36 @@
     color: var(--ft-text);
 }
 
+/*
+ * ボタン・選択・ダイアログの形と動きは Power BI の画面と同じ Fluent 2（角丸 4px、細い灰の枠、マウスを乗せると地が少し沈む）。
+ * 色は App.tsx がテーマの字と地から作って --ctl-* で渡す
+ */
+.ft-control-focus() {
+    outline: 2px solid var(--ctl-focus);
+    outline-offset: -2px;
+}
+
+.ft-control() {
+    font: inherit;
+    font-size: 0.85em;
+    color: var(--ctl-text);
+    background: var(--ctl-bg);
+    border: 1px solid var(--ctl-stroke);
+    border-radius: var(--ctl-radius);
+    padding: 0.15em 0.6em;
+    cursor: pointer;
+    transition: background-color var(--ctl-transition), border-color var(--ctl-transition);
+
+    &:hover { background: var(--ctl-hover); border-color: var(--ctl-stroke-hover); }
+    &:active { background: var(--ctl-pressed); }
+    &[aria-expanded="true"] { background: var(--ctl-selected); }
+    &:focus-visible { .ft-control-focus(); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ft-root * { transition-duration: 0.01ms !important; }
+}
+
 .ft-toggle-slot { display: inline-block; width: 0.9em; flex: 0 0 0.9em; }
 .ft-toggle-slot > .ft-toggle { margin-right: 0; }
 .ft-number-parts { display: inline-flex; align-items: baseline; }
@@ -532,22 +562,23 @@ tbody .ft-row:first-child .ft-seg-box-line {
     // 選んだ中身の幅に合わせる。既定の幅の見積もりは和文の字を狭く見て「つなぐ（確度の順）」の末尾が切れた
     field-sizing: content;
     font: inherit;
-    color: var(--ft-text);
-    background: var(--ft-bg);
-    border: 1px solid var(--ft-line-row);
-    border-radius: 2px;
-    padding: 0 0.2em;
+    color: var(--ctl-text);
+    background: var(--ctl-bg);
+    // 枠は細い灰、下の線だけ濃い灰（入力の欄の形）
+    border: 1px solid var(--ctl-stroke);
+    border-bottom-color: var(--ctl-stroke-accessible);
+    border-radius: var(--ctl-radius);
+    padding: 0.1em 0.3em;
+    transition: border-color var(--ctl-transition);
+
+    &:hover { border-color: var(--ctl-stroke-hover); border-bottom-color: var(--ctl-stroke-accessible); }
+    &:focus-visible { .ft-control-focus(); }
 }
 
 /* 表の上のバーの「比較」：全期間の列のシナリオの名前。押すと比較の列を選ぶダイアログ（主の選択と同じ見た目） */
 .ft-compare-open {
+    .ft-control();
     font: inherit;
-    color: var(--ft-text);
-    background: var(--ft-bg);
-    border: 1px solid var(--ft-line-row);
-    border-radius: 2px;
-    padding: 0 0.3em;
-    cursor: pointer;
 }
 
 /* 比較の列を選ぶダイアログ（バーと期間の見出しの ▾ で同じ形）の 1 行：列の名前、シナリオ、見せ方 */
@@ -569,13 +600,13 @@ tbody .ft-row:first-child .ft-seg-box-line {
 
 // 「全期間と同じ」のあいだは全期間の列を押せない形で見せる
 .ft-compare-locked select {
-    color: #a19f9d;
+    color: var(--ctl-disabled);
 }
 
 .ft-compare-hint {
     margin-top: 0.3em;
     padding-top: 0.3em;
-    border-top: 1px solid #edebe9;
+    border-top: 1px solid var(--ctl-divider);
     color: var(--ft-muted);
     font-size: 0.9em;
 }
@@ -689,14 +720,7 @@ tbody .ft-row-block:first-child {
     gap: 0.4em;
 
     .ft-fold-all {
-        font: inherit;
-        font-size: 0.85em;
-        color: var(--ft-muted);
-        background: var(--ft-bg);
-        border: 1px solid var(--ft-line-row);
-        border-radius: 2px;
-        padding: 0 0.4em;
-        cursor: pointer;
+        .ft-control();
     }
 }
 
@@ -807,29 +831,29 @@ thead th.ft-dim {
     line-height: 1.2;
     padding: 0;
     border: none;
-    border-radius: 2px;
+    border-radius: var(--ctl-radius);
     background: transparent;
     color: var(--ft-head-muted);
     cursor: pointer;
+    transition: background-color var(--ctl-transition), color var(--ctl-transition);
 
     &:hover {
-        color: var(--ft-text);
-        background: #edebe9;
+        color: var(--ctl-text);
+        background: var(--ctl-hover);
     }
+
+    &:active {
+        background: var(--ctl-pressed);
+    }
+
+    &:focus-visible { .ft-control-focus(); }
 }
 
 /* 見せる科目：表の上のバーのボタンと、区分・中分類ごとに科目を選ぶダイアログ */
 // 期間を選ぶボタンは印を分ける（見せる科目のダイアログが、期間のボタンを自分の開くボタンとみなして閉じなかった）
 .ft-pick-open,
 .ft-period-open {
-    font: inherit;
-    font-size: 0.85em;
-    color: var(--ft-muted);
-    background: var(--ft-bg);
-    border: 1px solid var(--ft-line-row);
-    border-radius: 2px;
-    padding: 0 0.4em;
-    cursor: pointer;
+    .ft-control();
 }
 
 .ft-pick-pop {
@@ -839,10 +863,15 @@ thead th.ft-dim {
     width: min(24em, calc(100% - 0.5em));
     box-sizing: border-box;
     overflow-y: auto;
-    padding: 0.25em 0 0.5em;
-    background: var(--ft-bg);
-    border: 1px solid var(--ft-line-row);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    padding: 4px;
+    // ダイアログの地（暗い地ではページより一段明るい）。中のボタン・行はこの地を基準にする
+    --ctl-bg: var(--ctl-surface);
+    --ctl-hover: var(--ctl-surface-hover);
+    color: var(--ctl-text);
+    background: var(--ctl-surface);
+    border: 1px solid transparent;
+    border-radius: var(--ctl-radius);
+    box-shadow: var(--ctl-popover-shadow);
     font-size: 0.9em;
 
     button {
@@ -855,19 +884,15 @@ thead th.ft-dim {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    padding: 0.3em 0.8em 0.3em;
+    padding: 0.3em 0.5em 0.4em;
     font-weight: 600;
 }
 
 .ft-pick-close,
 .ft-pick-actions button {
+    .ft-control();
     font-size: 0.9em;
     font-weight: normal;
-    color: var(--ft-muted);
-    background: var(--ft-bg);
-    border: 1px solid var(--ft-line-row);
-    border-radius: 2px;
-    padding: 0 0.4em;
 }
 
 .ft-pick-parent {
@@ -875,16 +900,23 @@ thead th.ft-dim {
     width: 100%;
     box-sizing: border-box;
     text-align: left;
-    padding: 0.25em 0.8em;
+    padding: 0.3em 0.5em;
     border: none;
+    border-radius: var(--ctl-radius);
     background: transparent;
-    color: var(--ft-text);
+    color: var(--ctl-subtle);
+    transition: background-color var(--ctl-transition), color var(--ctl-transition);
 
-    &:hover,
-    &:focus-visible {
-        background: #edebe9;
-        outline: none;
+    &:hover {
+        background: var(--ctl-hover);
+        color: var(--ctl-text);
     }
+
+    &:active {
+        background: var(--ctl-pressed);
+    }
+
+    &:focus-visible { .ft-control-focus(); }
 }
 
 .ft-pick-mark {
@@ -925,7 +957,7 @@ thead th.ft-dim {
 
 .ft-pick-actions {
     padding-bottom: 0.3em;
-    border-bottom: 1px solid #edebe9;
+    border-bottom: 1px solid var(--ctl-divider);
     margin-bottom: 0.2em;
 }
 
@@ -947,7 +979,7 @@ thead th.ft-dim {
 .ft-period-top {
     padding-top: 0.1em;
     padding-left: 0.8em;
-    border-bottom: 1px solid #edebe9;
+    border-bottom: 1px solid var(--ctl-divider);
     margin-bottom: 0.2em;
 }
 

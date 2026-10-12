@@ -113,7 +113,7 @@ function readSlots(value: unknown): CompareSlot[] | null {
     });
 }
 
-/** 保存値の比較の列の選択を読む。無い・形の合わないものは null（既定の 1 列）。 の形（比較対象の名前の並び）は読み替えない（公開前） */
+/** 保存値の比較の列の選択を読む。無い・形の合わないものは null（既定の 1 列）。前の形（比較対象の名前の並び）は読み替えない（公開前） */
 function readCompares(value: unknown): CompareChoice | null {
     if (typeof value !== "string" || value === "") return null;
     try {

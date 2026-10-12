@@ -31,11 +31,11 @@ export const AMOUNT_FORMAT: RowFormat = { kind: "amount", decimals: null, prefix
 export function parseRowFormat(text: string | null): { format: RowFormat; ok: boolean } {
     const src = (text ?? "").split(";")[0].trim();
     if (src === "" || src === "値" || src === "金額") return { format: AMOUNT_FORMAT, ok: true };
-    const match = /[#0,.]*[#0][#0,.]*/.exec(src);
+    const match = /[0#,.]*[0#][0#,.]*/.exec(src);
     if (!match) return { format: AMOUNT_FORMAT, ok: false };
     const pattern = match[0];
     const dot = pattern.indexOf(".");
-    const decimals = dot < 0 ? 0 : pattern.slice(dot + 1).replace(/[^#0]/g, "").length;
+    const decimals = dot < 0 ? 0 : pattern.slice(dot + 1).replace(/[^0#]/g, "").length;
     const literal = (s: string) => s.replace(/["\\]/g, "");
     const prefix = literal(src.slice(0, match.index));
     const suffix = literal(src.slice(match.index + pattern.length));

@@ -14,6 +14,7 @@ import { ValueParts } from "./valueParts";
 import powerbi from "powerbi-visuals-api";
 
 import { CopyImageButton } from "./shared/CopyImageButton";
+import { controlColorsOf, controlVars } from "./shared/controls";
 import { htmlImage } from "./shared/htmlImage";
 import { SCROLL_STARTS, useScrollStart } from "./shared/scrollStart";
 import { OrgCell } from "./orgs";
@@ -696,6 +697,8 @@ export function App({
         "--ft-text": style.text,
         "--ft-muted": style.muted,
         "--ft-bg": style.background,
+        // ボタン・選択・ダイアログの色（--ctl-*）は、字と地の色から作る
+        ...controlVars(controlColorsOf(style.text, style.background)),
     } as React.CSSProperties;
     // 期間の区切り：期間の最初の列（表の最初の期間は除く）の左に縦の線を引く
     const periodStarts = new Set(

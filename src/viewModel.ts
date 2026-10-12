@@ -1150,7 +1150,7 @@ export function transform(
                 const counted = (f: Fact) => shownMonths.has(f.month) && (!node || containsOrg(node, f.org)) && (!hideZero || f.value !== 0 || f.last !== 0);
                 const inShown = new Set([...input.facts, ...input.indicatorFacts].filter(counted).map(f => f.code));
                 // 表に出したシナリオ（基準と、使っている比較）の、月ごとに採ったイベントの数字だけを数える。月だけで見ると、表に出していない
-                // シナリオ（期初予算など）にだけ値のある行が残った（2026-10-08 ユーザーが会社で見つけた）
+                // シナリオ（期初予算など）にだけ値のある行が残った（2026-10-08）
                 const valued = (code: string) => ownCalc.hasValue(code, shownRefs, shownMonths, hideZero);
                 for (const code of emptyAccountRows(model.display, model.attached, code => inShown.has(code) && valued(code), model.rows, true)) empty.add(code);
             }

@@ -41,14 +41,12 @@ export const DEFAULT_HEADING_SIZE = 9;
 export { DEFAULT_GOOD_COLOR, DEFAULT_BAD_COLOR, TONE_MODES };
 export const DEFAULT_CURRENCY = "円";
 /**
- * 囲みの段ごとの色（外側から）。灰の濃淡で、外側ほど濃い。標準テーマの「背景（明るい）」#F3F2F1 から「背景（中間）」#C8C6C4 へ寄せた色（theme.ts の BAND_STEPS）。
+ * 囲みの段ごとの色（外側から）。灰の濃淡で、外側ほど濃い。見出しの地 #F5F5F5 から濃い端 #C9C8C8（どちらも標準の字 #252423 と白から作る段。theme.ts）へ寄せた色（BAND_STEPS）。
  * 塗るのはまとまりを締める行の名前の所だけで、明細の行は地の色
  */
-export const DEFAULT_BAND_COLORS = ["#E0DEDD", "#E6E5E4", "#EDEBEA", "#F3F2F1"];
-/** 標準テーマの「背景（中間）」。囲み・セグメントの塗りの濃いほうの端 */
-export const DEFAULT_NEUTRAL_BACKGROUND = "#C8C6C4";
-/** 見出しの背景 */
-export const DEFAULT_HEAD_BACKGROUND = "#F3F2F1";
+export const DEFAULT_BAND_COLORS = ["#E1E1E1", "#E8E8E8", "#EEEEEE", "#F5F5F5"];
+/** 見出しの背景（白から標準の字へ 4.5% 寄せた、ごく薄い灰。標準の表とマトリックスは見出しを塗らない） */
+export const DEFAULT_HEAD_BACKGROUND = "#F5F5F5";
 /** 罫線の既定の色 */
 export const DEFAULT_LINE_COLORS = {
     // 2026-10-08 ユーザーが Desktop で決めた色：行の中の線は薄い灰（テーマの白を 10% 暗く）、セグメント・期間の区切り・外枠は文字の色
@@ -81,7 +79,7 @@ const UNIT_PLACE_ITEMS: powerbi.IEnumMember[] = [
 ];
 
 /** セグメントの箱の段ごとの塗りの色（外側から）。囲みよりひと段濃い灰の濃淡で、外側ほど濃い（theme.ts の SEGMENT_STEPS） */
-export const DEFAULT_SEGMENT_COLORS = ["#D3D1CF", "#DBDAD8", "#E4E3E1", "#EDEBEA"];
+export const DEFAULT_SEGMENT_COLORS = ["#D4D3D3", "#DDDCDC", "#E6E5E5", "#EEEEEE"];
 
 export const PARENT_POSITION_ITEMS: powerbi.IEnumMember[] = [
     { value: "below", displayName: "下（明細のあとに小計）" },
@@ -303,7 +301,7 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
         value: DEFAULT_TEXT_SIZES.compare,
     });
     subSize = new formattingSettings.NumUpDown({ name: "subSize", displayName: "2 段目の数字", value: DEFAULT_TEXT_SIZES.sub });
-    /** 表の数字をすべて太字（2026-10-08 ユーザー「表の数字と項目ラベルを太字にする設定がない」） */
+    /** 表の数字をすべて太字（2026-10-08。表の数字と項目ラベルを太字にする設定が無かった） */
     valueBold = new formattingSettings.ToggleSwitch({
         name: "valueBold",
         displayName: "数字をすべて太字",
@@ -587,7 +585,7 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         description: "段・行ごとに変えるときは「段・行ごとの配置」カード",
         slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot, this.rowHeader, this.rowHeaderBold, this.hideBlankRows, this.hideZeroRows],
     });
-    /** 合計・計算行・小計を太字にするか（行の名前と数字。2026-10-08 ユーザー「合計行を太字にするかしないかだけでいい」。要素ごとの太字の選択をやめてここにまとめた） */
+    /** 合計・計算行・小計を太字にするか（行の名前と数字。2026-10-08、太字は合計行にするかしないかだけで足りるとユーザーと決めた。要素ごとの太字の選択をやめてここにまとめた） */
     totalBold = new formattingSettings.ToggleSwitch({
         name: "totalBold",
         displayName: "合計行を太字",
