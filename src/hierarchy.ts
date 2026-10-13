@@ -83,6 +83,8 @@ export function accountTree(model: RowModel, stepParents = true): AccountTree {
 export interface HierarchyCell { row: TableRow; column: number; rowSpan: number }
 export interface LayoutHeader {
     above?: boolean;
+    /** 名前を出さず、開き閉じのしるしだけにする（分割で合計なしを開いているとき。合計の行があるように読めるので） */
+    hideLabel?: boolean;
     key: string; label: string; kind: "account" | "org"; open?: boolean; fold?: string; org?: string | null; row?: TableRow;
 }
 export type LayoutPlan =

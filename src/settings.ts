@@ -876,7 +876,7 @@ export interface IndicatorSetting {
 
 /** 指標の欄の説明（メジャーごとのグループの欄で同じものを使う） */
 const INDICATOR_HELP = {
-    after: "この行の後ろか、この行のうちに出す。区分は区分の合計行（区分の中の行の後ろ）。既定は表の最後",
+    after: "この行の後ろか、この行のうちに出す。区分は区分の合計行（区分の中の行の後ろ）。表の最初は一番上の行の前（最上位の配置を左右分割にすると、指標の表が左に来る）。既定は表の最後",
     placement:
         "表に出さない：行は出さず、計算行の分子・分母に選べる（率の分子と分母のメジャーを入れて、計算行の比率で率を作る。どの期間でも分子の合計 ÷ 分母の合計になる。人数のような分母も「期間の集計」は合計（延べ人数）にする。期末にすると、四半期の時間を最後の月の人数で割ってしまう）。うち：挿入位置の行の下に 1 段下げて出し、親の行と同じ向き・集計・書式・良し悪しで見せる（値の行のうちは、値の欄と同じ持ち方のメジャー。CALCULATE([値], 製品[区分] = \"新製品\") の形）。親の合計には足さない",
     aggregation: "四半期・通期の値。人数のような残高は期末。利益率のような率のメジャーは、どちらでも期間の率にならないので、分子と分母のメジャーを指標に入れて「表に出さない（計算行で使う）」にし、計算行の「比率」で作る",
@@ -906,8 +906,12 @@ export class IndicatorsCardSettings extends formattingSettings.CompositeCard {
             const selector = { metadata: setting.queryName };
             const dropdown = (name: string, displayName: string, items: powerbi.IEnumMember[], value: string, description: string) =>
                 new formattingSettings.ItemDropdown({ name, displayName, description, items, value: itemOf(items, value), selector });
-            // 挿入位置の選択肢は表の行と表の最後（自分の行は入れない）。表に無い保存値（フィルターで行が消えたなど）は選択肢に残す
-            const places_: powerbi.IEnumMember[] = [...places.filter((p) => p.value !== setting.code), { value: CALC_TABLE_END, displayName: "表の最後" }];
+            // 挿入位置の選択肢は表の最初・表の行・表の最後（自分の行は入れない）。表に無い保存値（フィルターで行が消えたなど）は選択肢に残す
+            const places_: powerbi.IEnumMember[] = [
+                { value: CALC_TABLE_START, displayName: "表の最初" },
+                ...places.filter((p) => p.value !== setting.code),
+                { value: CALC_TABLE_END, displayName: "表の最後" },
+            ];
             if (!places_.some((p) => p.value === setting.after)) places_.push({ value: setting.after, displayName: `${missingLabel(setting.after)}（表に無い）` });
             const hidden = setting.placement === INDICATOR_MODES.hidden;
             const slices: formattingSettings.Slice[] = [
@@ -937,7 +941,7 @@ export class IndicatorsCardSettings extends formattingSettings.CompositeCard {
 /** 行別の数値書式の枠の数（決め打ち。計算行・イベントの金額の持ち方と同じ形） */
 export const ROW_NUMBER_SLOTS = 8;
 /** 行別の数値書式の枠で上書きする設定（名前は「数値」カードと同じ。書式は指標の書式と同じ書き方） */
-export const ROW_NUMBER_PROPS = ["target", "unitType", "precision", "negativeStyle", "zeroStyle", "diffZeroStyle", "negativeZero", "format", "currency"] as const;
+export const ROW_NUMBER_PROPS = ["target", "unitType", "precision", "negativeStyle", "zeroStyle", "diffZeroStyle", "negativeZero", "format", "currency", "caption"] as const;
 export type RowNumberProp = (typeof ROW_NUMBER_PROPS)[number];
 /** 枠 i（1 から）の設定の名前。1 つの object（rowNumbers）に target1・unitType1… と並べる */
 export const rowNumberProp = (prop: RowNumberProp, slot: number): string => `${prop}${slot}`;
@@ -982,6 +986,7 @@ class RowNumberItem extends SimpleCard {
     negativeZero: formattingSettings.ItemDropdown;
     format: formattingSettings.TextInput;
     currency: formattingSettings.TextInput;
+    caption: formattingSettings.TextInput;
 
     constructor(readonly slot: number) {
         super();
@@ -1011,7 +1016,14 @@ class RowNumberItem extends SimpleCard {
             value: "",
             placeholder: "円・ドル",
         });
-        this.slices = [this.target, this.unitType, this.precision, this.format, this.currency, this.negativeStyle, this.zeroStyle, this.diffZeroStyle, this.negativeZero];
+        this.caption = new formattingSettings.TextInput({
+            name: rowNumberProp("caption", slot),
+            displayName: "右上の見出し",
+            description: "この行が一番上の段にある表（左右・縦に分けた表）の右上に出す字（「台数：台」など）。空なら表の行から決める（金額の行があれば表全体の単位、台数だけなら「台数：台」）",
+            value: "",
+            placeholder: "台数：台",
+        });
+        this.slices = [this.target, this.unitType, this.precision, this.format, this.currency, this.caption, this.negativeStyle, this.zeroStyle, this.diffZeroStyle, this.negativeZero];
     }
 }
 
@@ -1253,6 +1265,28 @@ export interface DataDrivenFormat {
     hasPeriods?: boolean;
 }
 
+/** 用語：ビジュアルが決めている言葉（最新見込み・前年同期・差・比・率・期間の名前・年度・右上の単位の頭）を書き換える。空なら既定の字（words.ts） */
+export class WordsCardSettings extends SimpleCard {
+    name = "words";
+    displayName = "用語";
+    description = "表に出る言葉を書き換える。空なら既定の字";
+    latest = new formattingSettings.TextInput({ name: "latest", displayName: "最新見込み", description: "シナリオを月ごとに確かなものから採った基準の名前（基準のメニュー・列の見出し・ツールチップ・差の名前）", value: "", placeholder: "最新見込み" });
+    priorYear = new formattingSettings.TextInput({ name: "priorYear", displayName: "前年同期", description: "前の年の同じ月と比べる比較の名前", value: "", placeholder: "前年同期" });
+    diff = new formattingSettings.TextInput({ name: "diff", displayName: "差", description: "比較の差の列の名前の後ろに付く字（予定差）", value: "", placeholder: "差" });
+    ratio = new formattingSettings.TextInput({ name: "ratio", displayName: "比", description: "比較の比の列の名前の後ろに付く字（予定比）", value: "", placeholder: "比" });
+    rate = new formattingSettings.TextInput({ name: "rate", displayName: "率", description: "比較の率の列の名前の後ろに付く字（予定率）", value: "", placeholder: "率" });
+    quarter = new formattingSettings.TextInput({ name: "quarter", displayName: "四半期", description: "四半期の名前。{n} に 1〜4 が入る（第{n}四半期・Q{n}）", value: "", placeholder: "{n}Q" });
+    firstHalf = new formattingSettings.TextInput({ name: "firstHalf", displayName: "上期", description: "前半の 6 か月の名前", value: "", placeholder: "上期" });
+    secondHalf = new formattingSettings.TextInput({ name: "secondHalf", displayName: "下期", description: "後半の 6 か月の名前", value: "", placeholder: "下期" });
+    fullYear = new formattingSettings.TextInput({ name: "fullYear", displayName: "通期", description: "年度の 12 か月の名前", value: "", placeholder: "通期" });
+    ytd = new formattingSettings.TextInput({ name: "ytd", displayName: "累計", description: "期首から今の月までの名前", value: "", placeholder: "累計" });
+    sum = new formattingSettings.TextInput({ name: "sum", displayName: "合計の列", description: "見る人が足した月の合計の列の後ろに付く字（4〜6月計）", value: "", placeholder: "計" });
+    allPeriods = new formattingSettings.TextInput({ name: "allPeriods", displayName: "全期間", description: "月の欄が無いときの 1 列の名前", value: "", placeholder: "全期間" });
+    year = new formattingSettings.TextInput({ name: "year", displayName: "年度", description: "年度の形。{年} に 4 桁、{年2} に下 2 桁の年が入る（{年}年度・FY{年2}）。どちらの年かは「期間の列」の年度の表記。空なら年度の表記のまま", value: "", placeholder: "{年}年度" });
+    unit = new formattingSettings.TextInput({ name: "unit", displayName: "右上の単位の見出し", description: "右上の「単位：百万円」の「：」より前の字。値の欄が金額なら「金額」、台数なら「数量」など", value: "", placeholder: "単位" });
+    slices = [this.latest, this.priorYear, this.diff, this.ratio, this.rate, this.quarter, this.firstHalf, this.secondHalf, this.fullYear, this.ytd, this.sum, this.allPeriods, this.year, this.unit];
+}
+
 export class VisualFormattingSettingsModel extends Model {
     hierarchyOverrides = new HierarchyOverrides();
     comparison = new ComparisonCardSettings();
@@ -1265,6 +1299,7 @@ export class VisualFormattingSettingsModel extends Model {
     numbers = new NumbersCardSettings();
     rowNumbers = new RowNumbersCardSettings();
     table = new TableCardSettings();
+    words = new WordsCardSettings();
 
     // 対象ごとのカード（2.0）：列（シナリオ・期間）→ 行（科目・セグメント・階層・計算・指標）→ 数値 → 表全体
     cards = [
@@ -1279,6 +1314,7 @@ export class VisualFormattingSettingsModel extends Model {
         this.numbers,
         this.rowNumbers,
         this.table,
+        this.words,
     ];
 
     /**

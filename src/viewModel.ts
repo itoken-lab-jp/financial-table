@@ -8,7 +8,8 @@
 import powerbi from "powerbi-visuals-api";
 import { AccountNode, HierarchyCell, LayoutPlan, accountTree, accountPlan, compactOrgBoxes, planRows, stack } from "./hierarchy";
 import { HierarchyDefaults, hierarchyOptions, readHierarchyOverrides } from "./hierarchySettings";
-import { ROOT_FOLD } from "./orgs";
+import { NO_ORG_LABEL, ROOT_FOLD } from "./orgs";
+import { DEFAULT_WORDS, Words, wordsOf } from "./words";
 import { ValueParts, valueParts } from "./valueParts";
 
 import { resolveUnit } from "./shared/units";
@@ -96,7 +97,6 @@ import {
     LATEST_HEADERS,
     LATEST_YEAR,
     PRIOR_YEAR,
-    PRIOR_YEAR_LABEL,
     TOTAL_ROW,
     UNIT_PLACES,
     TITLE_PLACES,
@@ -230,6 +230,10 @@ export interface TableRow {
     name: string;
     /** 単位を行の名前の横に置くときの単位（（百万円）（台））。名前のあとに小さく薄く出す */
     unit?: string;
+    /** 行別の数値書式の「右上の見出し」（この行が一番上の段にある表の右上に、自動の単位の代わりに出す） */
+    unitCaption?: string;
+    /** 数字の書き方：amount は表の単位で割る金額、own は書式の字を数字に付ける行（台・人。ownUnit がその字）、other は率など */
+    measure?: { kind: "amount" | "own" | "other"; ownUnit?: string };
     type: RowType;
     /** 途中の段階の行（後の段階が続く。上の線は小計の線） */
     continued?: boolean;
@@ -358,12 +362,13 @@ export function indicatorSettings(input: InputData, eventModel: EventModel): Ind
     });
 }
 
-/** 指標の設定から、行を組む指定を作る（置く場所の「表の最後」は null） */
+/** 指標の設定から、行を組む指定を作る（置く場所の「表の最後」「表の最初」は null。最初は atStart） */
 export function indicatorSpecs(settings: IndicatorSetting[], warn: (message: string) => void = () => {}): IndicatorSpec[] {
     return settings.map((s) => ({
         code: s.code,
         name: s.name,
-        target: s.after === CALC_TABLE_END ? null : s.after,
+        target: s.after === CALC_TABLE_END || s.after === CALC_TABLE_START ? null : s.after,
+        atStart: s.after === CALC_TABLE_START,
         mode: s.placement === INDICATOR_MODES.under ? "under" : s.placement === INDICATOR_MODES.hidden ? "hidden" : "after",
         aggregation: s.aggregation === "stock" ? "stock" : "flow",
         format: indicatorFormat(s.format, s.name, warn),
@@ -525,7 +530,9 @@ export function transform(
     warnings.push(...eventModel.warnings);
     const { latest } = eventModel;
     // 最新見込みの見出しの決まり（書式の「最新見込みの見出し」）
-    const latestRule = latestHeaderRuleOf(settings, latest);
+    // 用語（書式ペインの「用語」カード）。空なら既定の字
+    const words = wordsOf((key) => settings.words[key].value);
+    const latestRule = latestHeaderRuleOf(settings, latest, words);
     const eventNames = eventModel.events.map((e) => e.name);
 
     // 指標：書式ペインのメジャーごとの設定。横持ちは、指標の値を書式ペインで選んだイベントに割り当てる
@@ -576,6 +583,7 @@ export function transform(
     const calendar: FiscalCalendar = {
         startMonth: Number(dropdownValue(settings.periods.fiscalStartMonth, "4")) || 4,
         yearLabel: (dropdownValue(settings.periods.yearLabel, "start") === "end" ? "end" : "start") as YearLabel,
+        words,
     };
     // 符号の持ち方：表全体の設定（数値のカード）。自動はシナリオごとに見分けて借方プラスにそろえる（2.0 でシナリオ・メジャーごとの設定はやめた）
     const tableSign = dropdownValue(settings.numbers.amountSign, "auto") as AmountSign;
@@ -615,7 +623,7 @@ export function transform(
     const periodBase = JSON.stringify([savedYear ?? "", calendar.startMonth, ...Object.values(authorPeriods)]);
     const periodPick = viewer.periods !== null && viewer.periods.base === periodBase ? viewer.periods : null;
     const table = noPeriods
-        ? { columns: [{ key: "all", kind: "sum" as const, label: ALL_PERIODS_LABEL, months: [ALL_PERIODS_MONTH] }], starts: [], title: "", fromPick: false }
+        ? { columns: [{ key: "all", kind: "sum" as const, label: words.allPeriods, months: [ALL_PERIODS_MONTH] }], starts: [], title: "", fromPick: false }
         : selectedStart === undefined
           ? null
           : tablePeriods(starts, selectedStart, authorPeriods, lastStrong, calendar, periodPick);
@@ -651,7 +659,7 @@ export function transform(
     // 比較の個々のイベントは、組織 × 月にそのイベントが無ければ、同じ系列で比較順が下のイベントへ落とす（上のイベントへは落とさない）
     const refOf = (value: string): EventRef =>
         value === PRIOR_YEAR ? { events: mainRef.events, shift: -12 } : { events: value === LATEST ? latest : fallbackOf(value, eventModel), shift: 0 };
-    const label = (value: string) => (value === LATEST ? LATEST_LABEL : value === PRIOR_YEAR ? PRIOR_YEAR_LABEL : value);
+    const label = (value: string) => (value === LATEST ? words.latest : value === PRIOR_YEAR ? words.priorYear : value);
     // 選択肢の名前：ビジュアルが組むもの（最新見込み・前年同期）は、データのシナリオと見分けられるようにかっこで囲む。列の見出しは囲まない
     const choiceLabel = (value: string) => (value === LATEST || value === PRIOR_YEAR ? `（${label(value)}）` : value);
     const partnerOf = (value: string): Partner => ({ compare: value, ref: refOf(value), label: label(value) });
@@ -793,7 +801,6 @@ export function transform(
     const hasAmountRows = valueRows.some(
         (d) => d.def.format.kind === "amount" && !ownFormatOf(d.def.code) && rowOverride.get(d.def.code)?.unitType === undefined && rowOverride.get(d.def.code)?.currency === undefined
     );
-    const mixedUnits = valueRows.some((d) => d.def.format.kind !== "amount" || ownFormatOf(d.def.code) !== null);
 
     const sign: SignOptions = {
         negative: dropdownValue(settings.numbers.negativeStyle, NEGATIVE_STYLES.triangle),
@@ -874,14 +881,16 @@ export function transform(
         const mainUsed = main === LATEST ? calc.eventsByMonth(mainRef, period.months) : null;
         // データの無い期間は「―」（空の見出しだと、列がずれたように見える）
         const mainHeader = mainUsed ? latestName(mainUsed, latestRule) || "―" : main;
-        columns.push({ periodKey: period.key, periodKind: period.kind, kind: "main", header: mainHeader, sub: "", ...titled(breakdownItems(mainUsed)) });
+        const mainItems = main === LATEST ? byOrgItems(breakdownItems(mainUsed), calc.eventsByOrgMonth(mainRef, period.months)) : undefined;
+        columns.push({ periodKey: period.key, periodKind: period.kind, kind: "main", header: mainHeader, sub: "", ...titled(mainItems) });
         for (const spec of specs) {
             const at = spec.partner;
             // 比較の月ごとの内訳：下のイベントへ落とした月があるとき（期間を通して落としたときも）と、最新見込み・前年同期でイベントが混ざるとき。
             // 差の列も比較の名前を名乗るので、比較の値の列を出していなくても内訳が分かるよう、同じツールチップを付ける
             const used = at.ref.events.length > 1 ? calc.compareEventsByMonth(mainRef, at.ref, period.months) : null;
-            const items = at.compare === PRIOR_YEAR || at.compare === LATEST ? breakdownItems(used) : breakdownItems(used, at.compare);
-            const [header, sub] = compareHeaderLines(at.label, spec.view, swap);
+            const merged = at.compare === PRIOR_YEAR || at.compare === LATEST ? breakdownItems(used) : breakdownItems(used, at.compare);
+            const items = used ? byOrgItems(merged, calc.compareEventsByOrgMonth(mainRef, at.ref, period.months)) : merged;
+            const [header, sub] = compareHeaderLines(at.label, spec.view, swap, words);
             columns.push({
                 periodKey: period.key,
                 periodKind: period.kind,
@@ -981,6 +990,8 @@ export function transform(
         selectCodes.set(code, result);
         return result;
     };
+    // ツールヒントの名前は見出しと同じ（見出しを「事業」「科目」にしたらツールヒントも）
+    const tooltipNames = headerNames(settings);
     const tableRows = (
         calc: Calculator,
         prefix: string,
@@ -1070,12 +1081,12 @@ export function transform(
                     const ratio = views.some((v) => v === COMPARE_VIEWS.ratio || v === COMPARE_VIEWS.diffRatio) || !rate;
                     partners.push(
                         { displayName: name, value: formatExact(result.compare, exact, rowCurrency, rowSign) },
-                        { displayName: `${name}差`, value: formatExact(result.diff, exact, rowCurrency, rowSign, true) }
+                        { displayName: `${name}${words.diff}`, value: formatExact(result.diff, exact, rowCurrency, rowSign, true) }
                     );
                     // 比率の行の比・率は意味が無い（差のポイントだけ）
                     if (def.format.kind === "percent") return;
-                    if (ratio) partners.push({ displayName: `${name}比`, value: formatRatio(result.main, result.compare, 1 + EXACT_EXTRA_DECIMALS, ratioCap) });
-                    if (rate) partners.push({ displayName: `${name}率`, value: formatRate(result.main, result.compare, rowSign, 1 + EXACT_EXTRA_DECIMALS, ratioCap) });
+                    if (ratio) partners.push({ displayName: `${name}${words.ratio}`, value: formatRatio(result.main, result.compare, 1 + EXACT_EXTRA_DECIMALS, ratioCap) });
+                    if (rate) partners.push({ displayName: `${name}${words.rate}`, value: formatRate(result.main, result.compare, rowSign, 1 + EXACT_EXTRA_DECIMALS, ratioCap) });
                 });
                 const values: TooltipItem[] = [{ displayName: mainName, value: formatExact(mainValue, exact, rowCurrency, rowSign) }, ...partners].filter(
                     (item) => item.value !== ""
@@ -1084,8 +1095,8 @@ export function transform(
                     mainValue === null && results.every((result) => result.compare === null)
                         ? undefined
                         : [
-                              ...(org !== null ? [{ displayName: "セグメント", value: org }] : []),
-                              { displayName: "行", value: def.name },
+                              ...(org !== null ? [{ displayName: tooltipNames.segment, value: org }] : []),
+                              { displayName: tooltipNames.row, value: def.name },
                               ...(def.type === "others" ? [{ displayName: "まとめた行", value: othersList(def, hasRow, (code) => model.rows.get(code)?.name ?? code) }] : []),
                               { displayName: "期間", value: period.label },
                               ...values,
@@ -1114,6 +1125,8 @@ export function transform(
                 code: def.code,
                 name: shownName,
                 ...(nameUnit ? { unit: nameUnit } : {}),
+                ...(blankRow ? {} : { measure: measureOf(formatted.format) }),
+                ...(rowOverride.get(def.code)?.caption?.trim() ? { unitCaption: rowOverride.get(def.code)!.caption!.trim() } : {}),
                 type: def.type,
                 ...(def.continued ? { continued: true } : {}),
                 depth,
@@ -1183,7 +1196,9 @@ export function transform(
                     return { ...content, preserveTables: true } as LayoutPlan;
                 }
             }
-            return { kind: "frame", key: `org:${id}`, style: opt.style, header, content };
+            // 分割で合計なしを開いているあいだは、合計の名前を出さない（囲みの合計なしと同じ。閉じれば名前と合計の表）
+            const bare = open && opt.style === "split" && opt.total === "none";
+            return { kind: "frame", key: `org:${id}`, style: opt.style, header: bare ? { ...header, hideLabel: true } : header, content };
         };
         layout = tree ? compactOrgBoxes(orgPlan(tree.root, 0)) : block();
         rows.push(...planRows(layout));
@@ -1194,8 +1209,9 @@ export function transform(
         title: table.title,
         yearKey: table.starts.map(yearKey).join(","),
         // 単位を行の名前の横に置くときは、表の上には出さない
-        // 金額でない行（率・時間・人数など）が混ざる表は「金額：」（「単位：」だと率や時間にも掛かって読める）
-        unitCaption: hasAmountRows && !unitByName && !unitInCell ? `${mixedUnits ? "金額" : "単位"}：${unitDef.unitWord}${currency}` : "",
+        // 頭は 1 つ（用語の「右上の単位の見出し」、既定「単位」）。以前は率・時間などの行が混ざると「金額：」にしていたが、値の欄は
+        // 台数・人数でも入れられるので金額とは限らない（ユーザー、2026-10-13）。字の付く行（台・%・h）は数字に字が出る
+        unitCaption: hasAmountRows && !unitByName && !unitInCell ? `${words.unit}：${unitDef.unitWord}${currency}` : "",
         mainLabel: label(main),
         compareLabel,
         periods,
@@ -1292,6 +1308,14 @@ export interface TableStyle {
 
 export type UnitPlace = (typeof UNIT_PLACES)[keyof typeof UNIT_PLACES];
 
+/** 左上のセグメントの列・行の名前の列の見出し（書式ペイン）。値のセルのツールヒントの名前も同じにする */
+function headerNames(settings: VisualFormattingSettingsModel): { segment: string; row: string } {
+    return {
+        segment: (settings.segments.segmentHeader.value ?? "").trim() || "セグメント",
+        row: (settings.rows.rowHeader.value ?? "").trim() || "項目",
+    };
+}
+
 function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableStyle {
     const size = (value: number | undefined, fallback: number) => Math.min(40, Math.max(6, value || fallback));
     const color = (slice: { value: { value: string } | undefined }, fallback: string) => slice.value?.value || fallback;
@@ -1355,10 +1379,7 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
         breakdown: { brackets: settings.rows.breakdownBrackets.value, muted: settings.rows.breakdownMuted.value, tag: settings.rows.breakdownTag.value },
         segmentFill: settings.segments.segmentFill.value,
         segmentColors: settings.segments.segmentColors(),
-        headers: {
-            segment: (settings.segments.segmentHeader.value ?? "").trim() || "セグメント",
-            row: (settings.rows.rowHeader.value ?? "").trim() || "項目",
-        },
+        headers: headerNames(settings),
         headerBold: { segment: settings.segments.segmentHeaderBold.value ?? false, row: settings.rows.rowHeaderBold.value ?? false },
     };
 }
@@ -1421,12 +1442,14 @@ function foldsOf(orgs: string[], rows: string[], rowsClosedByDefault: boolean, c
 }
 
 /** 書式ペインの「最新見込みの見出し」と文字の欄から、見出しの決まりを作る */
-function latestHeaderRuleOf(settings: VisualFormattingSettingsModel, latest: string[]): LatestHeaderRule {
+function latestHeaderRuleOf(settings: VisualFormattingSettingsModel, latest: string[], words: Words): LatestHeaderRule {
     const c = settings.comparison;
     const mode = dropdownValue(c.latestHeader, LATEST_HEADERS.label);
-    if (mode === LATEST_HEADERS.scenario) return { newestFirst: latest };
-    if (mode !== LATEST_HEADERS.custom) return {};
+    const latestLabel = words.latest;
+    if (mode === LATEST_HEADERS.scenario) return { newestFirst: latest, latestLabel };
+    if (mode !== LATEST_HEADERS.custom) return { latestLabel };
     return {
+        latestLabel,
         confirmed: (c.confirmedScenario.value ?? "")
             .split(/[,、]/)
             .map((name) => name.trim())
@@ -1444,6 +1467,8 @@ export interface LatestHeaderRule {
     confirmed?: string[];
     confirmedLabel?: string;
     forecastLabel?: string;
+    /** 混ざったときの名乗り（用語の「最新見込み」）。無ければ「最新見込み」 */
+    latestLabel?: string;
 }
 
 /**
@@ -1458,10 +1483,56 @@ export function latestName(used: Map<MonthIndex, string[]> | Set<string>, rule: 
     if (rule.confirmed) {
         const confirmed = rule.confirmed;
         if (Array.from(all).every((e) => confirmed.includes(e))) return rule.confirmedLabel || (confirmed.find((e) => all.has(e)) ?? "");
-        return rule.forecastLabel || LATEST_LABEL;
+        return rule.forecastLabel || (rule.latestLabel ?? LATEST_LABEL);
     }
     if (all.size === 1) return Array.from(all)[0];
-    return rule.newestFirst ? ([...rule.newestFirst].reverse().find((e) => all.has(e)) ?? LATEST_LABEL) : LATEST_LABEL;
+    const mixed = rule.latestLabel ?? LATEST_LABEL;
+    return rule.newestFirst ? ([...rule.newestFirst].reverse().find((e) => all.has(e)) ?? mixed) : mixed;
+}
+
+/** 行の数字の書き方（表ごとの単位を決める）。金額は表の単位で割る行、字の付く数（#,0台）は自前の単位の行 */
+export function measureOf(format: RowFormat): NonNullable<TableRow["measure"]> {
+    if (format.kind === "amount") return { kind: "amount" };
+    const unit = format.kind === "number" ? format.suffix.trim() : "";
+    return unit ? { kind: "own", ownUnit: unit } : { kind: "other" };
+}
+
+/**
+ * 表の右上の単位（左右・縦に分けた表ごと）。金額の行があれば表全体の単位（金額：万円）。金額の行が無く、字の付く行の字が 1 つなら
+ * 「一番上の段の行の名前：字」（台数：台）にし、数字からその字を外す（金額の表で数字に「万円」を付けないのと同じ）。どちらでもなければ出さない
+ */
+export function tableUnitOf(rows: TableRow[], unitCaption: string): { caption: string; strip?: string } {
+    if (rows.length === 0) return { caption: unitCaption };
+    // 名前は一番上の段のまとまりの行（台数の計）。囲みなしでは子も深さ 0 なので、深さだけで選ぶと最初の機種の名前になった。
+    // 開き閉じできる行（子を持つ行）のうち一番浅いもの、無ければ一番浅い行
+    const shallowest = (list: TableRow[]) => list.reduce((a, b) => (b.depth < a.depth ? b : a), list[0]);
+    const parents = rows.filter((r) => r.fold !== undefined);
+    const top = shallowest(parents.length > 0 ? parents : rows);
+    const auto = ((): { caption: string; strip?: string } => {
+        const valued = rows.filter((r) => r.measure);
+        if (valued.length === 0 || valued.some((r) => r.measure!.kind === "amount")) return { caption: unitCaption };
+        const units = new Set(valued.flatMap((r) => (r.measure!.kind === "own" ? [r.measure!.ownUnit!] : [])));
+        if (units.size !== 1) return { caption: "" };
+        const unit = Array.from(units)[0];
+        return { caption: `${top.name}：${unit}`, strip: unit };
+    })();
+    // 書式ペインで書いた右上の見出しがあれば、字だけそれにする（数字の字を外すかは自動と同じ）
+    return top.unitCaption ? { ...auto, caption: top.unitCaption } : auto;
+}
+
+/**
+ * 列の見出しのツールチップを、組織ごとの内訳にする（9月 → 国内事業：実績 / 海外事業：修正予算）。月ごとの内訳（merged）を出すときだけで、
+ * 組織が 1 つか、どの組織も同じ内訳なら月ごとの内訳のまま。組織ごとの値は、期間を通して 1 つのイベントならその名前、混ざれば月ごと（4〜8月 実績、9月 修正予算）
+ */
+export function byOrgItems(merged: TooltipItem[] | undefined, byOrg: Map<string, Map<MonthIndex, string[]>>): TooltipItem[] | undefined {
+    if (!merged || byOrg.size <= 1) return merged;
+    const summaries = Array.from(byOrg, ([org, used]): TooltipItem => {
+        const parts = breakdownItems(used);
+        const value = parts ? parts.map((p) => `${p.displayName} ${p.value}`).join("、") : Array.from(used.values())[0]?.join("・") ?? "";
+        const label = org.split(ORG_SEPARATOR).map((s) => s || NO_ORG_LABEL).join(" › ");
+        return { displayName: label, value };
+    }).filter((item) => item.value !== "");
+    return new Set(summaries.map((s) => s.value)).size <= 1 ? merged : summaries;
 }
 
 /**
@@ -1549,10 +1620,10 @@ export function tableAutoUnitKey(maxAbs: number, notation: string): string {
  * 比較の列の見出しの 2 行。2 段の列はセルの上下と同じ順に「修正予算差」「修正予算比」と書く（前年同期差・前年同期比）。
  * 率は「修正予算率」（値に + と ▲ が付くので達成率の 101.2% とは見分けられる）。比較の値の列は相手の名前
  */
-export function compareHeaderLines(compareLabel: string, view: CompareView, swap: boolean): [string, string] {
-    const diff = `${compareLabel}差`;
-    const ratio = `${compareLabel}比`;
-    const rate = `${compareLabel}率`;
+export function compareHeaderLines(compareLabel: string, view: CompareView, swap: boolean, words: Words = DEFAULT_WORDS): [string, string] {
+    const diff = `${compareLabel}${words.diff}`;
+    const ratio = `${compareLabel}${words.ratio}`;
+    const rate = `${compareLabel}${words.rate}`;
     switch (view) {
         case COMPARE_VIEWS.value:
             return [compareLabel, ""];

@@ -65,7 +65,7 @@ export function PeriodDialog({ years, current, total, picked, left, top, onPick,
             ref={ref}
             className="ft-pick-pop"
             role="dialog"
-            aria-label="出す期間"
+            aria-label="表示期間"
             style={{ left: x, top, maxHeight: `calc(100% - ${top}px - 0.5em)` }}
             onKeyDown={(e) => {
                 if (e.key === "Escape") {
@@ -82,7 +82,7 @@ export function PeriodDialog({ years, current, total, picked, left, top, onPick,
             }}
         >
             <div className="ft-pick-title">
-                <span>出す期間</span>
+                <span>表示期間</span>
                 <button type="button" className="ft-pick-close" onClick={() => onClose(true)}>
                     閉じる
                 </button>
@@ -90,7 +90,7 @@ export function PeriodDialog({ years, current, total, picked, left, top, onPick,
             <div className="ft-pick-body ft-period-top">
                 <label className="ft-pick-account">
                     <input type="checkbox" checked={total} onChange={() => onPick({ kind: "total" })} />
-                    出している月の合計の列
+                    表示中の月の合計の列
                 </label>
                 {picked && (
                     <div className="ft-pick-actions">
@@ -133,7 +133,7 @@ export function PeriodDialog({ years, current, total, picked, left, top, onPick,
                                 {expanded ? "▾" : "▸"}
                             </span>
                             {year.name}
-                            <span className="ft-pick-count">{count > 0 ? `${count} 列` : "出していない"}</span>
+                            <span className="ft-pick-count">{count > 0 ? `${count} 列` : "非表示"}</span>
                         </button>
                         {expanded && (
                             <div id={listId} className="ft-pick-body" role="group" aria-label={year.name}>

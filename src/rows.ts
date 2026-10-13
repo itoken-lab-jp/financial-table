@@ -128,8 +128,10 @@ export interface IndicatorSpec {
     /** 行のコード（INDICATOR_KEY + queryName） */
     code: string;
     name: string;
-    /** 置く場所の行（CalcChoices.places の value）。null は表の最後 */
+    /** 置く場所の行（CalcChoices.places の value）。null は表の最後（atStart なら表の最初） */
     target: string | null;
+    /** 表の最初に置く（target は null）。左右分割で、指標の表を左に置く */
+    atStart?: boolean;
     /** after：置く場所の行（とその下の行）の後ろ。under：置く場所の行の「うち」（親の行と同じ見せ方で、集計・書式・良し悪しも親に合わせる） */
     /** after：行の後ろ。under：行のうち。hidden：表に出さず、計算行の分子・分母にだけ使う */
     mode: "after" | "under" | "hidden";
@@ -736,6 +738,8 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     const afterTail = new Map<string, string>();
     /** 行のうちに最後に置いた指標（同じ行のうちを、書式ペインの並びで並べる） */
     const underTail = new Map<string, string>();
+    /** 表の最初に置いた指標の数（表の最初の指標どうしは書式ペインの並びで並べる） */
+    let atStart = 0;
     const placeIndicator = (spec: IndicatorSpec, target: string | null) => {
         const parent = target === null ? undefined : rows.get(target);
         let mode = spec.mode;
@@ -769,7 +773,8 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         const row = add({ code: spec.code, name: spec.name, type: "measure", sign: 1, good: spec.good, aggregation: spec.aggregation, format: spec.format });
         noteName(spec.name, spec.code);
         if (!parent) {
-            display.push({ def: row, depth: 0 });
+            if (spec.atStart) display.splice(atStart++, 0, { def: row, depth: 0 });
+            else display.push({ def: row, depth: 0 });
             return;
         }
         // 後ろ：置く場所の行とその下の行（子・うち）の後ろに、置く場所の行と同じ深さで

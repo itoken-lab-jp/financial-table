@@ -893,6 +893,12 @@
                         "text": true
                     }
                 },
+                "caption1": {
+                    "displayName": "右上の見出し 1",
+                    "type": {
+                        "text": true
+                    }
+                },
                 "target2": {
                     "displayName": "対象 2",
                     "type": {
@@ -943,6 +949,12 @@
                 },
                 "currency2": {
                     "displayName": "単位文字 2",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "caption2": {
+                    "displayName": "右上の見出し 2",
                     "type": {
                         "text": true
                     }
@@ -1001,6 +1013,12 @@
                         "text": true
                     }
                 },
+                "caption3": {
+                    "displayName": "右上の見出し 3",
+                    "type": {
+                        "text": true
+                    }
+                },
                 "target4": {
                     "displayName": "対象 4",
                     "type": {
@@ -1051,6 +1069,12 @@
                 },
                 "currency4": {
                     "displayName": "単位文字 4",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "caption4": {
+                    "displayName": "右上の見出し 4",
                     "type": {
                         "text": true
                     }
@@ -1109,6 +1133,12 @@
                         "text": true
                     }
                 },
+                "caption5": {
+                    "displayName": "右上の見出し 5",
+                    "type": {
+                        "text": true
+                    }
+                },
                 "target6": {
                     "displayName": "対象 6",
                     "type": {
@@ -1159,6 +1189,12 @@
                 },
                 "currency6": {
                     "displayName": "単位文字 6",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "caption6": {
+                    "displayName": "右上の見出し 6",
                     "type": {
                         "text": true
                     }
@@ -1217,6 +1253,12 @@
                         "text": true
                     }
                 },
+                "caption7": {
+                    "displayName": "右上の見出し 7",
+                    "type": {
+                        "text": true
+                    }
+                },
                 "target8": {
                     "displayName": "対象 8",
                     "type": {
@@ -1267,6 +1309,12 @@
                 },
                 "currency8": {
                     "displayName": "単位文字 8",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "caption8": {
+                    "displayName": "右上の見出し 8",
                     "type": {
                         "text": true
                     }
@@ -4042,6 +4090,95 @@
                     "displayName": "画像のコピー",
                     "type": {
                         "bool": true
+                    }
+                }
+            }
+        },
+        "words": {
+            "displayName": "用語",
+            "properties": {
+                "latest": {
+                    "displayName": "最新見込み",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "priorYear": {
+                    "displayName": "前年同期",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "diff": {
+                    "displayName": "差",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "ratio": {
+                    "displayName": "比",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "rate": {
+                    "displayName": "率",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "quarter": {
+                    "displayName": "四半期",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "firstHalf": {
+                    "displayName": "上期",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "secondHalf": {
+                    "displayName": "下期",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "fullYear": {
+                    "displayName": "通期",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "ytd": {
+                    "displayName": "累計",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "sum": {
+                    "displayName": "合計の列",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "allPeriods": {
+                    "displayName": "全期間",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "year": {
+                    "displayName": "年度",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "unit": {
+                    "displayName": "右上の単位の見出し",
+                    "type": {
+                        "text": true
                     }
                 }
             }

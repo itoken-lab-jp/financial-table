@@ -78,7 +78,7 @@ export function PickDialog({ parents, current, left, top, onPick, onClose }: Pic
             ref={ref}
             className="ft-pick-pop"
             role="dialog"
-            aria-label="見せる行"
+            aria-label="表示する行"
             style={{ left: x, top, maxHeight: `calc(100% - ${top}px - 0.5em)` }}
             onKeyDown={(e) => {
                 if (e.key === "Escape") {
@@ -95,7 +95,7 @@ export function PickDialog({ parents, current, left, top, onPick, onClose }: Pic
             }}
         >
             <div className="ft-pick-title">
-                <span>見せる行</span>
+                <span>表示する行</span>
                 <button type="button" className="ft-pick-close" onClick={() => onClose(true)}>
                     閉じる
                 </button>

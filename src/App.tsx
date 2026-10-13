@@ -9,7 +9,7 @@
  *   組織の名前と、区分・中分類の小計の行の前のしるしで開き閉じする（見る人の選択として保存。visual.ts）
  */
 import * as React from "react";
-import { LayoutPlan, LayoutHeader } from "./hierarchy";
+import { LayoutPlan, LayoutHeader, planRows } from "./hierarchy";
 import { ValueParts } from "./valueParts";
 import powerbi from "powerbi-visuals-api";
 
@@ -20,7 +20,7 @@ import { SCROLL_STARTS, useScrollStart } from "./shared/scrollStart";
 import { OrgCell } from "./orgs";
 import { GridPosition, SpannedCell, VisibleRows, buildGrid, foldOf, isClearKey, isMenuKey, isSelectKey, moveInGrid, moveOf, positionOf } from "./keyboard";
 import { SelectTarget, cellActive, orgSelected, periodActive, plainCellActive, plainRowActive, rowActive, targetKey } from "./selection";
-import { Band, Cell, EventMenu, SlotView, TableRow, TooltipItem, ViewModel, periodNameOf, textOn } from "./viewModel";
+import { Band, Cell, EventMenu, SlotView, TableRow, TooltipItem, ViewModel, periodNameOf, tableUnitOf, textOn } from "./viewModel";
 import { ComparePatch, PeriodPatch, PickPatch, VisualState } from "./visualState";
 import { CompareDialog } from "./CompareDialog";
 import { PeriodDialog } from "./PeriodDialog";
@@ -640,18 +640,26 @@ export function App({
             table.style.minWidth = `${width}px`;
             const offsets = new Map<string, number>();
             const columns = Array.from(table.querySelectorAll<HTMLTableColElement>("col"));
-            const origin = columns[0]?.getBoundingClientRect().left ?? 0;
+            // 止める位置は表の外枠の左端から（列は外枠の線の内側から始まる）。列の左端から測ると、スクロールしたとき外枠の幅だけ左にずれて止まった
+            const origin = table.getBoundingClientRect().left;
             let namesWidth = 0;
             for (const col of columns) {
                 const rect = col.getBoundingClientRect();
-                offsets.set(col.dataset.widthKey!, (rect.left - origin) / scale);
+                // 列の幅は整数（上の Math.ceil）なので、左の位置も整数。測った値は倍率の割り戻しで端数が出るので丸める。
+                // 端数のまま残すと、拡大縮小した画面でスクロールしたとき、残す列どうしの止まる位置がずれて隙間から下の字が透けた
+                offsets.set(col.dataset.widthKey!, Math.round((rect.left - origin) / scale));
                 if (!col.dataset.widthKey?.startsWith("v")) namesWidth += rect.width / scale;
             }
             const sticky = namesWidth < viewport.width * 0.65;
             for (const cell of Array.from(table.querySelectorAll<HTMLElement>("th[data-width-key]"))) {
                 if (cell.dataset.widthKey?.startsWith("v")) continue;
-                // 1px 左（スクロールの箱の縁の内側）で止める。Desktop の端数の倍率で、縁の線とのあいだに隙間ができて下の字が透けた（visual.less の .ft-scrolled-x）
-                cell.style.left = sticky ? `${(offsets.get(cell.dataset.widthKey!) ?? 0) - 1}px` : "";
+                // 置いた位置のまま止める。以前は 1px 左（スクロールの箱の縁の内側）で止めて縁との隙間を埋めていたが、スクロールすると見出しが 1px 動いて見えた。
+                // スクロールすると外枠の線が流れて、縁とのあいだに外枠の幅の隙間ができる。左端の列のセルの左に地の色を伸ばして埋める（visual.less の data-stick-edge）
+                const offset = offsets.get(cell.dataset.widthKey!) ?? 0;
+                cell.style.left = sticky ? `${offset}px` : "";
+                // 印は data 属性で付ける（class だと、選択で薄くするなど React が class を書き直したときに消える）
+                if (sticky && cell.dataset.widthKey === columns[0]?.dataset.widthKey) cell.dataset.stickEdge = "";
+                else delete cell.dataset.stickEdge;
                 cell.style.position = sticky ? "sticky" : "relative";
             }
         }
@@ -1270,7 +1278,7 @@ function LayoutView(props: LayoutViewProps): React.JSX.Element {
     </div>;
     const style = props.viewModel.style;
     const ownTable = (p: LayoutPlan): boolean => p.kind === "table" || (p.kind === "stack" && p.children.some(ownTable));
-    const unit = plan.style === "split" && ownTable(plan.content) && style.unitPlace === UNIT_PLACES.right ? props.viewModel.unitCaption : undefined;
+    const unit = plan.style === "split" && ownTable(plan.content) && style.unitPlace === UNIT_PLACES.right ? tableUnitOf(planRows(plan.content), props.viewModel.unitCaption).caption : undefined;
     const fill = plan.header.kind === "org" ? (style.segmentFill ? style.segmentColors[0] : style.background) : (style.bandFill ? style.bandColors[0] : style.background);
     return <section className={`ft-layout-frame ft-layout-frame-${plan.header.kind} ft-layout-${plan.style}`} style={{ ["--ft-frame-fill" as string]: fill, ["--ft-frame-text" as string]: textOn(fill, style) }}>
         <FrameLabel {...props} header={plan.header} unit={unit} />
@@ -1288,7 +1296,7 @@ function FrameLabel({ header, unit, viewModel, selection = [], onSelect, onConte
     const active = header.row ? nameActive(header.row, selection) : plainRowActive(selection, header.org ?? null);
     return <div className={`ft-layout-label${active ? "" : " ft-dim"}`} tabIndex={0} data-cell={header.key}
         {...pickProps(picking, target, toggle ? { open: header.open!, toggle } : undefined)}>
-        <span className="ft-layout-title"><span className="ft-toggle-slot">{toggle && <Toggle open={header.open!} above={header.above} label={header.label} onClick={toggle} />}</span>{header.label}</span>
+        <span className="ft-layout-title"><span className="ft-toggle-slot">{toggle && <Toggle open={header.open!} above={header.above} label={header.label} onClick={toggle} />}</span>{header.hideLabel ? "" : header.label}</span>
         {unit && <span className="ft-layout-unit">{unit}</span>}
     </div>;
 }
@@ -1303,9 +1311,55 @@ function kindChangeAt(viewModel: ViewModel, columnIndex: number): boolean {
     return before !== undefined && kind !== before;
 }
 
+/**
+ * 見出しの下の線と、行の名前の列と数字の列のあいだの縦線は、セルごとの枠線ではなく表に 1 本ずつ重ねて引く。
+ * Power BI はページに合わせるときビジュアルを端数の倍率で描き、セルごとの 1px の枠線はセルごとにぼかし方が違って、
+ * 同じ線が行や列によって濃く・薄く、段違いに見えた（原寸なら出ない）。1 本なら倍率に依らず同じ濃さ
+ */
+// 見出しの下の線は見出しの一番左のセルに、縦線は左上の角（行の名前の列の見出し）に付ける。どちらもセルの端そのもの（下の端・右の端）から
+// 引くので、位置を測らない（測った端数で置くと、行の区切りの線と半画素ずれて隙間が見えた）。長さだけを表の変数で受ける
+const HEAD_LINE = <span className="ft-line-head" />;
+/** 見出しの一番左のセルが 1 段目だけのとき（年度を左上の角に置いた表）。下の端が見出しの下でないので、測った高さに置く */
+const HEAD_LINE_MEASURED = <span className="ft-line-head ft-line-head-measured" />;
+const NAME_LINE = <span className="ft-line-name" />;
+
+/** 重ねて引く線の位置（見出しの一番左のセルからの距離）を表の変数に書く。拡大縮小の倍率は外して、表の中の座標で測る */
+function useGridLines(table: React.RefObject<HTMLTableElement | null>, on: boolean): void {
+    React.useLayoutEffect(() => {
+        const t = table.current;
+        if (!t || !on) return;
+        const measure = () => {
+            const head = t.tHead;
+            const first = head?.rows[0]?.cells[0];
+            const body = t.tBodies[0];
+            if (!head || !first || !body) return;
+            const box = t.getBoundingClientRect();
+            const scale = t.offsetWidth > 0 ? box.width / t.offsetWidth : 1;
+            const left = first.getBoundingClientRect().left;
+            const top = first.getBoundingClientRect().top;
+            const at = (name: string, value: number) => t.style.setProperty(name, `${value / scale}px`);
+            at("--ft-lines-head", head.getBoundingClientRect().bottom - top);
+            at("--ft-lines-width", box.right - left);
+            at("--ft-lines-body", body.getBoundingClientRect().height);
+        };
+        measure();
+        const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+        observer?.observe(t);
+        return () => observer?.disconnect();
+    });
+}
+
 function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { kind: "table" }> }): React.JSX.Element {
     const { plan, viewModel, selection = [], onSelect, onContextMenu, onClearSelection, openMenu, tooltip, onToggleRow, onToggleOrg } = props;
-    const model = React.useMemo<ViewModel>(() => ({ ...viewModel, rows: plan.rows, layout: undefined, orgColumns: Array.from({ length: plan.orgColumns ?? 0 }, () => viewModel.style.headers.segment) }), [viewModel, plan]);
+    // 表の右上の単位は表ごと（左右に分けた台数の表は「台数：台」）。自前の単位を右上に出す表は、数字からその字を外す
+    const unit = React.useMemo(() => tableUnitOf(plan.rows, viewModel.unitCaption), [plan.rows, viewModel.unitCaption]);
+    const rows = React.useMemo(() => {
+        const strip = unit.strip;
+        if (strip === undefined || viewModel.style.unitPlace !== UNIT_PLACES.right) return plan.rows;
+        const bare = (cell: Cell): Cell => (cell.parts?.suffix === strip ? { ...cell, parts: { ...cell.parts, suffix: "" } } : cell);
+        return plan.rows.map((row) => (row.measure?.kind === "own" ? { ...row, cells: row.cells.map(bare) } : row));
+    }, [plan.rows, unit.strip, viewModel.style.unitPlace]);
+    const model = React.useMemo<ViewModel>(() => ({ ...viewModel, rows, layout: undefined, orgColumns: Array.from({ length: plan.orgColumns ?? 0 }, () => viewModel.style.headers.segment) }), [viewModel, plan, rows]);
     const keyboard = useKeyboard(model, onClearSelection, onContextMenu, openMenu);
     const picking: Picking = { selection, onSelect, onContextMenu, periods: new Map(viewModel.periods.map(p => [p.key, p])),
         focused: keyboard.focused, onFocusCell: keyboard.onFocusCell, keyMenu: keyboard.keyMenu };
@@ -1313,6 +1367,9 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
     const starts = new Set(viewModel.style.periodLines ? viewModel.columns.flatMap((c, i) => i && c.periodKey !== viewModel.columns[i - 1].periodKey ? [i] : []) : []);
     const cornerUnit = viewModel.style.unitPlace === UNIT_PLACES.corner ? viewModel.unitCaption : undefined;
     const cornerTitle = viewModel.style.titleInCorner ? viewModel.title : "";
+    // 線を重ねて引くのは行の名前の列があるとき（名前を隠した表は、境の縦線が無い）
+    const singleLines = !viewModel.hideNames;
+    useGridLines(keyboard.table, singleLines);
     /** セグメントの列（横積みで段ごとに並ぶ）の見出し。「セグメント」を段の数だけ並べず 1 つにまとめる */
     const orgHeadCell = (rowSpan: number) => {
         const header = plan.orgHeader;
@@ -1321,24 +1378,27 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
             {...focusProps(picking, cellKey.orgHead(0))}
             {...pickProps(picking, null, toggle ? { open: header!.open!, toggle } : undefined)}>
             {toggle && <span className="ft-toggle-slot"><Toggle open={header!.open!} label={header!.label} onClick={toggle} /></span>}{model.orgColumns[0]}
+            {singleLines && rowSpan === 2 && HEAD_LINE}
         </th>;
     };
-    return <table className={`ft-table ft-layout-table${viewModel.twoLines ? " ft-two-lines" : ""}`} data-layout={plan.key} data-column-shape={`${plan.nameColumns}:${plan.orgColumns ?? 0}`}
+    return <table className={`ft-table ft-layout-table${viewModel.twoLines ? " ft-two-lines" : ""}${singleLines ? " ft-single-lines" : ""}`} data-layout={plan.key} data-column-shape={`${plan.nameColumns}:${plan.orgColumns ?? 0}`}
         role="grid" aria-label={viewModel.title || "財務諸表"} aria-multiselectable={onSelect ? true : undefined}
         ref={keyboard.table} {...keyboard.tableProps}>
-        {!props.unitInBand && viewModel.unitCaption && viewModel.style.unitPlace === UNIT_PLACES.right && <caption className="ft-block-unit">{viewModel.unitCaption}</caption>}
+        {!props.unitInBand && unit.caption && viewModel.style.unitPlace === UNIT_PLACES.right && <caption className="ft-block-unit">{unit.caption}</caption>}
         <colgroup>{model.orgColumns.map((_, i) => <col data-width-key={`o${i}`} key={`o${i}`} />)}
             {Array.from({ length: viewModel.hideNames ? 0 : plan.nameColumns }, (_, i) => <col data-width-key={`n${i}`} key={i} />)}
             {viewModel.columns.map((_, i) => <col data-width-key={`v${i}`} key={`v${i}`} />)}</colgroup>
         <thead><tr>
             {/* セグメントの列（横積みで段ごとに並ぶ）は、見出しを 1 つにまとめる（「セグメント」を段の数だけ並べない） */}
-            {model.orgColumns.length > 0 && cornerTitle && !viewModel.hideNames && <th className="ft-corner ft-corner-title" colSpan={model.orgColumns.length + plan.nameColumns}>{cornerTitle}</th>}
+            {model.orgColumns.length > 0 && cornerTitle && !viewModel.hideNames && <th className="ft-corner ft-corner-title" colSpan={model.orgColumns.length + plan.nameColumns}>{cornerTitle}{HEAD_LINE_MEASURED}</th>}
             {model.orgColumns.length > 0 && !(cornerTitle && !viewModel.hideNames) && orgHeadCell(2)}
             {/* 年度を左上の角に置くときは、角を 2 段に分け、上の段（期間の見出しと同じ段）に年度を置く */}
             {!viewModel.hideNames && (cornerTitle
-                ? (model.orgColumns.length > 0 ? null : <th className="ft-corner ft-corner-title" colSpan={plan.nameColumns}>{cornerTitle}</th>)
+                ? (model.orgColumns.length > 0 ? null : <th className="ft-corner ft-corner-title" colSpan={plan.nameColumns}>{cornerTitle}{HEAD_LINE_MEASURED}</th>)
                 : <th className="ft-corner" data-width-key="n0" rowSpan={2} colSpan={plan.nameColumns} {...focusProps(picking, cellKey.corner)}>
                     <span className={cornerUnit ? "ft-corner-unit" : "ft-corner-label"}>{cornerUnit || viewModel.style.headers.row}</span>
+                    {model.orgColumns.length === 0 && HEAD_LINE}
+                    {NAME_LINE}
                 </th>)}
             {viewModel.periods.map((p, i) => <th key={p.key} className={`ft-period ft-period-${p.kind}${i > 0 && viewModel.style.periodLines ? " ft-period-start" : ""}${i > 0 && p.kind !== viewModel.periods[i - 1].kind ? " ft-period-agg" : ""}`} colSpan={p.span}
                 {...focusProps(picking, cellKey.period(p.key))} {...pickProps(picking, periodTarget(viewModel, p.key))}
@@ -1351,6 +1411,7 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
             </th>)}
         </tr><tr>{model.orgColumns.length > 0 && cornerTitle && !viewModel.hideNames && orgHeadCell(1)}{!viewModel.hideNames && cornerTitle && <th className="ft-corner" data-width-key="n0" colSpan={plan.nameColumns} {...focusProps(picking, cellKey.corner)}>
                 <span className={cornerUnit ? "ft-corner-unit" : "ft-corner-label"}>{cornerUnit || viewModel.style.headers.row}</span>
+                {NAME_LINE}
             </th>}{viewModel.columns.map((c, i) => <th key={`${c.periodKey}:${c.slot ?? "main"}`} data-width-key={`v${i}`}
             className={`ft-colhead ft-col-${c.kind}${starts.has(i) ? " ft-period-start" : ""}${starts.has(i) && kindChangeAt(viewModel, i) ? " ft-period-agg" : ""}`}
             {...focusProps(picking, cellKey.column(i))} {...pickProps(picking, periodTarget(viewModel, c.periodKey))} {...tooltipProps(c.tooltip, tooltip)}
@@ -1358,8 +1419,8 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
             <div>{c.header}</div>{c.sub && <div className="ft-colhead-sub">{c.sub}</div>}
             {starts.has(i) && <span className="ft-period-line" />}
         </th>)}</tr></thead>
-        <tbody>{plan.rows.map((row, i) => <Row key={row.key} row={row} viewModel={model} picking={picking} periodStarts={starts}
-            boxEdge={i > 0 && isBoxEdge(plan.rows[i - 1], row)} left={() => undefined} top={0} tooltip={tooltip}
+        <tbody>{rows.map((row, i) => <Row key={row.key} row={row} viewModel={model} picking={picking} periodStarts={starts}
+            boxEdge={i > 0 && isBoxEdge(rows[i - 1], row)} left={() => undefined} top={0} tooltip={tooltip}
             onToggleRow={onToggleRow} onToggleOrg={onToggleOrg} />)}</tbody>
     </table>;
 }

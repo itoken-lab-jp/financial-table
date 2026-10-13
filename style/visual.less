@@ -264,10 +264,12 @@
     display: none;
 }
 
-// 見出しのセルも位置の基準にする（上に残すのは thead の sticky で、セルは基準を持っていなかった。持たないと部品が thead を基準に置かれ、1 段目の線が消えた）
+// 見出しのセルも位置の基準にする（上に残すのは thead の sticky で、セルは基準を持っていなかった。持たないと部品が thead を基準に置かれ、1 段目の線が消えた）。
+// z-index で重なりの文脈を作り、線をセルの中に閉じ込める（無いと、横にスクロールしたとき線が左に残す行の見出しと左上の角の上を横切った）
 .ft-table tbody td.ft-period-start,
 .ft-table thead th.ft-period-start {
     position: relative;
+    z-index: 0;
 }
 
 .ft-table .ft-period-start > .ft-period-line {
@@ -1106,3 +1108,78 @@ thead th.ft-dim {
 // 左上の列の見出し（「セグメント」「項目」）
 .ft-bold-segment-head .ft-table thead th.ft-org-head { font-weight: 600 !important; }
 .ft-bold-row-head .ft-corner-label { font-weight: 600 !important; }
+
+/*
+ * 見出しの下の線と、行の名前の列と数字の列のあいだの縦線は、表に 1 本ずつ重ねて引く（App.tsx の HEAD_LINE・NAME_LINE）。
+ * Power BI がページに合わせて端数の倍率で描くと、セルごとの 1px の枠線はセルごとにぼかし方が違い、同じ線が行・列で濃く・薄く、
+ * 段違いに見えた（原寸なら出ない）。セルの枠線は幅を残したまま透明にし（消すと中身が 1px ずれる）、線はセルの端そのものから引く
+ * （見出しの下の線は見出しの一番左のセルの下の端、縦線は左上の角の右の端。どちらも上と左に残る）。長さは表の変数（--ft-lines-*）で、App.tsx が測る
+ */
+.ft-table.ft-single-lines {
+    thead tr:nth-child(2) th,
+    thead th[rowspan="2"] {
+        border-bottom-color: transparent;
+    }
+
+    tbody th.ft-name,
+    thead th.ft-corner[data-width-key="n0"] {
+        border-right-color: transparent;
+    }
+}
+
+.ft-line-head,
+.ft-line-name {
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    // 選択の覆い（z-index 2）より上
+    z-index: 3;
+}
+
+// 見出しの一番左のセル（2 段をまたぐ）の下の枠線の所から、表の右の端まで
+.ft-line-head {
+    left: 0;
+    top: 100%;
+    width: var(--ft-lines-width, 0px);
+    border-top: 1px solid var(--ft-line-head);
+}
+
+.ft-line-head-measured {
+    top: calc(var(--ft-lines-head, 0px) - 1px);
+}
+
+// 左上の角の右の枠線の所に、角の上の端から表の下の端まで（角の右の枠線も透明にして、この 1 本にする。角の枠線と半画素ずれて段になった）
+.ft-line-name {
+    left: 100%;
+    top: 0;
+    height: auto;
+    bottom: calc(-1px - var(--ft-lines-body, 0px));
+    border-left: 1px solid var(--ft-line-name);
+}
+
+// 「期間の区切り」を入れているときは、行の名前の列と数字の列のあいだの線も期間の区切りの色（セルの枠線と同じ）
+.ft-period-lines .ft-line-name {
+    border-left-color: var(--ft-line-period);
+}
+
+/*
+ * 左に残す列の左端のセル。置いた位置のまま止めるので、スクロールすると外枠の線が流れたあとに外枠の幅（1px）の隙間ができ、
+ * 下の字が透ける。地の色を左へ伸ばして埋める（以前は 1px 左で止めていたが、スクロールすると見出しが 1px 動いて見えた）。
+ * 埋めるのはスクロールしているときだけ（スクロールしていないと、外枠の線を地の色で覆って左の線が消えた）
+ */
+.ft-scrolled-x .ft-table th[data-stick-edge] {
+    box-shadow: -2px 0 0 0 var(--ft-bg);
+}
+
+.ft-scrolled-x .ft-table.ft-layout-table thead tr th[data-stick-edge] {
+    box-shadow: -2px 0 0 0 var(--ft-head-bg, var(--ft-bg));
+}
+
+/*
+ * 左に残す列の中の段の境（横積みの親の名前のセルの右）。拡大縮小した画面でスクロールすると、残すセルどうしが端数の画素で丸められて
+ * 境に細い隙間ができ、後ろを流れる数字が透けた。親の名前のセルの地を右へ 1px 伸ばして埋める（右のセルが上に描かれるので、隙間の所だけに出る）
+ */
+.ft-table tbody th.ft-hierarchy-name {
+    box-shadow: 1px 0 0 0 var(--ft-bg);
+}

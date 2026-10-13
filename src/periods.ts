@@ -4,6 +4,7 @@
  * 期首の月と年度の呼び方は決め打ちしない（書式で選ぶ）。月の名前だけで引くと、別の年度の同じ月が混ざるので、
  * 前年同期も「月番号 − 12」で引く（年度つきのキー）。
  */
+import { DEFAULT_WORDS, Words, fillWord, fillYear } from "./words";
 
 /** 月番号。2025 年 4 月 = 2025 × 12 + 3 */
 export type MonthIndex = number;
@@ -70,6 +71,8 @@ export interface FiscalCalendar {
     /** 期首の月（1〜12） */
     startMonth: number;
     yearLabel: YearLabel;
+    /** 用語（書式ペインの「用語」カード）。無ければ既定 */
+    words?: Words;
 }
 
 /** 月が属する年度の、期首の月の月番号 */
@@ -80,8 +83,10 @@ export function fiscalYearStart(m: MonthIndex, cal: FiscalCalendar): MonthIndex 
 
 /** 年度の見出し。start の年で 2025年度、end の年で FY2026（期首が 1 月なら同じ年） */
 export function fiscalYearName(start: MonthIndex, cal: FiscalCalendar): string {
-    if (cal.yearLabel === "end") return `FY${yearOf(start + 11)}`;
-    return `${yearOf(start)}年度`;
+    const year = cal.yearLabel === "end" ? yearOf(start + 11) : yearOf(start);
+    // 言葉のカードで年度の形を書いていれば、{年} に開始年か終了年（年度の表記の選択）を入れる
+    if (cal.words?.year) return fillYear(cal.words.year, year);
+    return cal.yearLabel === "end" ? `FY${year}` : `${year}年度`;
 }
 
 /** sum は見る人が選んだ、出している月を足した列 */
@@ -107,8 +112,8 @@ export interface PeriodOptions {
  * 年度の列を並べる。月のあとに集計の列をまとめる：4月 … 3月 1Q 2Q 3Q 4Q 上期 下期 通期 累計。
  * 累計は期首から lastMonth（主にデータのある最後の月）まで。lastMonth がこの年度に無ければ累計は出さない
  */
-export function buildPeriodColumns(fyStart: MonthIndex, options: PeriodOptions, lastMonth: MonthIndex | null, calendar?: FiscalCalendar): PeriodColumn[] {
-    const columns = buildYearColumns(fyStart, options, lastMonth);
+export function buildPeriodColumns(fyStart: MonthIndex, options: PeriodOptions, lastMonth: MonthIndex | null, calendar?: FiscalCalendar, words: Words = DEFAULT_WORDS): PeriodColumn[] {
+    const columns = buildYearColumns(fyStart, options, lastMonth, words);
     // 年度をまたぐ表（見る人が選んだ）では、集計の列のキーに年度を付け（1Q が 2 つ並んでもぶつからない）、見出しに年・年度を添える
     //
     if (!calendar) return columns;
@@ -121,22 +126,22 @@ export function buildPeriodColumns(fyStart: MonthIndex, options: PeriodOptions, 
     );
 }
 
-function buildYearColumns(fyStart: MonthIndex, options: PeriodOptions, lastMonth: MonthIndex | null): PeriodColumn[] {
+function buildYearColumns(fyStart: MonthIndex, options: PeriodOptions, lastMonth: MonthIndex | null, words: Words): PeriodColumn[] {
     const columns: PeriodColumn[] = [];
     const range = (from: number, count: number) => Array.from({ length: count }, (_, i) => fyStart + from + i);
     if (options.showMonths) {
         for (const m of range(0, 12)) columns.push({ key: `m${m}`, kind: "month", label: `${monthOf(m)}月`, months: [m] });
     }
     if (options.showQuarters) {
-        for (let q = 0; q < 4; q++) columns.push({ key: `q${q + 1}`, kind: "quarter", label: `${q + 1}Q`, months: range(q * 3, 3) });
+        for (let q = 0; q < 4; q++) columns.push({ key: `q${q + 1}`, kind: "quarter", label: fillWord(words.quarter, "{n}", q + 1), months: range(q * 3, 3) });
     }
     if (options.showHalves) {
-        columns.push({ key: "h1", kind: "half", label: "上期", months: range(0, 6) }, { key: "h2", kind: "half", label: "下期", months: range(6, 6) });
+        columns.push({ key: "h1", kind: "half", label: words.firstHalf, months: range(0, 6) }, { key: "h2", kind: "half", label: words.secondHalf, months: range(6, 6) });
     }
-    if (options.showYear) columns.push({ key: "fy", kind: "year", label: "通期", months: range(0, 12) });
+    if (options.showYear) columns.push({ key: "fy", kind: "year", label: words.fullYear, months: range(0, 12) });
     if (options.showYtd && lastMonth !== null && lastMonth >= fyStart && lastMonth < fyStart + 12) {
         const count = lastMonth - fyStart + 1;
-        const label = count === 12 ? "累計" : `累計（${monthOf(fyStart)}〜${monthOf(lastMonth)}月）`;
+        const label = count === 12 ? words.ytd : `${words.ytd}（${monthOf(fyStart)}〜${monthOf(lastMonth)}月）`;
         columns.push({ key: "ytd", kind: "ytd", label, months: range(0, count) });
     }
     return columns;
@@ -160,19 +165,19 @@ export function periodIdOf(period: { kind: PeriodKind; months: MonthIndex[] }): 
 }
 
 /** 出している月を足した列。月がつながっていれば「4〜6月計」（12 か月を超えれば年を付けて「2024年4月〜2025年4月計」）、飛んでいれば「5か月計」 */
-export function sumColumn(months: MonthIndex[]): PeriodColumn | null {
+export function sumColumn(months: MonthIndex[], words: Words = DEFAULT_WORDS): PeriodColumn | null {
     const sorted = Array.from(new Set(months)).sort((a, b) => a - b);
     if (sorted.length === 0) return null;
     const first = sorted[0];
     const last = sorted[sorted.length - 1];
     const joined = last - first + 1 === sorted.length;
     const label = !joined
-        ? `${sorted.length}か月計`
+        ? `${sorted.length}か月${words.sum}`
         : first === last
-          ? `${monthOf(first)}月計`
+          ? `${monthOf(first)}月${words.sum}`
           : last - first >= 12
-            ? `${yearOf(first)}年${monthOf(first)}月〜${yearOf(last)}年${monthOf(last)}月計`
-            : `${monthOf(first)}〜${monthOf(last)}月計`;
+            ? `${yearOf(first)}年${monthOf(first)}月〜${yearOf(last)}年${monthOf(last)}月${words.sum}`
+            : `${monthOf(first)}〜${monthOf(last)}月${words.sum}`;
     return { key: "sum", kind: "sum", label, months: sorted };
 }
 
@@ -215,8 +220,9 @@ export function tablePeriods(
     calendar: FiscalCalendar,
     pick: PeriodPick | null
 ): TablePeriods {
+    const words = calendar.words ?? DEFAULT_WORDS;
     const authorTable = (): TablePeriods => ({
-        columns: buildPeriodColumns(selectedStart, author, lastMonth),
+        columns: buildPeriodColumns(selectedStart, author, lastMonth, undefined, words),
         starts: [selectedStart],
         title: fiscalYearName(selectedStart, calendar),
         fromPick: false,
@@ -225,16 +231,16 @@ export function tablePeriods(
     if (pick.columns.length === 0) return { columns: [], starts: [selectedStart], title: fiscalYearName(selectedStart, calendar), fromPick: true };
     const chosen = new Set(pick.columns);
     const ascending = [...starts].sort((a, b) => a - b);
-    const byYear = ascending.map((start) => ({ start, columns: buildPeriodColumns(start, ALL_PERIODS, lastMonth).filter((c) => chosen.has(periodIdOf(c))) }));
+    const byYear = ascending.map((start) => ({ start, columns: buildPeriodColumns(start, ALL_PERIODS, lastMonth, undefined, words).filter((c) => chosen.has(periodIdOf(c))) }));
     const used = byYear.filter((y) => y.columns.length > 0);
     if (used.length === 0) return authorTable();
     const multi = used.length > 1;
     const byOrder = used.flatMap((y) =>
-        multi ? buildPeriodColumns(y.start, ALL_PERIODS, lastMonth, calendar).filter((c) => chosen.has(periodIdOf(c))) : y.columns
+        multi ? buildPeriodColumns(y.start, ALL_PERIODS, lastMonth, calendar, words).filter((c) => chosen.has(periodIdOf(c))) : y.columns
     );
     // 年度をまたいでも、月をすべて先に並べ、集計の列はそのあとに年度の順でまとめる
     const columns = [...byOrder.filter((c) => c.kind === "month"), ...byOrder.filter((c) => c.kind !== "month")];
-    const total = pick.total ? sumColumn(columns.filter((c) => c.kind === "month").flatMap((c) => c.months)) : null;
+    const total = pick.total ? sumColumn(columns.filter((c) => c.kind === "month").flatMap((c) => c.months), words) : null;
     if (total) columns.push(total);
     const months = columns.flatMap((c) => c.months);
     const first = Math.min(...months);
@@ -252,6 +258,6 @@ export function periodChoices(starts: MonthIndex[], lastMonth: MonthIndex | null
         .map((start) => ({
             key: ym(start),
             name: fiscalYearName(start, calendar),
-            columns: buildPeriodColumns(start, ALL_PERIODS, lastMonth).map((c) => ({ id: periodIdOf(c), kind: c.kind, label: c.label, months: c.months })),
+            columns: buildPeriodColumns(start, ALL_PERIODS, lastMonth, undefined, calendar.words).map((c) => ({ id: periodIdOf(c), kind: c.kind, label: c.label, months: c.months })),
         }));
 }

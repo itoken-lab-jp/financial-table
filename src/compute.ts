@@ -399,18 +399,49 @@ export class Calculator {
 
     /** 比べる範囲（主と比較の両方がある月）で、比較の側が使ったイベント（科目のまとまりがあれば科目だけで見る） */
     compareEventsByMonth(main: EventRef, compare: EventRef, months: MonthIndex[]): Map<MonthIndex, string[]> {
-        const basis = this.basisMonths(main, compare, months);
-        const resolution = this.resolution(compare);
+        return this.compareEventsByOrgMonth(main, compare, months, false).get("") ?? new Map();
+    }
+
+    /**
+     * 期間の月ごとに使ったイベントを組織ごとに（列の見出しのツールチップで、どの組織がどのイベントかを出す）。
+     * 組織の欄が無ければ組織は "" の 1 つ
+     */
+    eventsByOrgMonth(ref: EventRef, months: MonthIndex[]): Map<string, Map<MonthIndex, string[]>> {
+        const resolution = this.resolution(ref);
+        return this.usedByOrg(ref, months, Array.from(resolution.keys(), (slot) => [slot, months] as [Slot, MonthIndex[]]), resolution, true);
+    }
+
+    /** compareEventsByMonth を組織ごとに */
+    compareEventsByOrgMonth(main: EventRef, compare: EventRef, months: MonthIndex[], byOrg = true): Map<string, Map<MonthIndex, string[]>> {
+        return this.usedByOrg(compare, months, Array.from(this.basisMonths(main, compare, months)), this.resolution(compare), byOrg);
+    }
+
+    private usedByOrg(
+        ref: EventRef,
+        months: MonthIndex[],
+        basis: Array<[Slot, MonthIndex[]]>,
+        resolution: Resolution,
+        byOrg: boolean
+    ): Map<string, Map<MonthIndex, string[]>> {
         const accountsOnly = this.hasAccountSlots();
-        const result = new Map<MonthIndex, string[]>();
-        for (const m of months) {
-            const used = new Set<string>();
-            for (const [slot, slotMonths] of basis) {
-                if (!slotMonths.includes(m) || (accountsOnly && !this.accountSlot(slot))) continue;
+        const used = new Map<string, Map<MonthIndex, Set<string>>>();
+        for (const [slot, slotMonths] of basis) {
+            if (accountsOnly && !this.accountSlot(slot)) continue;
+            const org = byOrg ? this.slots.get(slot)!.org : "";
+            for (const m of months) {
+                if (!slotMonths.includes(m)) continue;
                 const event = resolution.get(slot)?.get(m);
-                if (event !== undefined) used.add(event);
+                if (event !== undefined) getOrSet(getOrSet(used, org, () => new Map<MonthIndex, Set<string>>()), m, () => new Set<string>()).add(event);
             }
-            if (used.size > 0) result.set(m, compare.events.filter((e) => used.has(e)));
+        }
+        const result = new Map<string, Map<MonthIndex, string[]>>();
+        for (const [org, byMonth] of used) {
+            const sorted = new Map<MonthIndex, string[]>();
+            for (const m of months) {
+                const events = byMonth.get(m);
+                if (events) sorted.set(m, ref.events.filter((e) => events.has(e)));
+            }
+            result.set(org, sorted);
         }
         return result;
     }
