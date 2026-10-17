@@ -89,6 +89,9 @@ export interface CalcChoices {
     places: Array<{ value: string; displayName: string }>;
 }
 
+/** 「その他」の行のコード（親の行のコードに付ける。picks.ts）。指標の置く場所「その他の後ろ」も同じ値（OTHERS_KEY + 親の行のコード） */
+export const OTHERS_KEY = "§others:";
+
 export interface RowModel {
     rows: Map<string, RowDef>;
     display: DisplayRow[];
@@ -100,6 +103,11 @@ export interface RowModel {
     attached: Map<string, string[]>;
     /** 行の後ろに置いた指標（置く場所の行のコード → 指標の行のコード）。折りたたみで、子の後ろに置いた指標も一緒に隠す */
     following: Map<string, string[]>;
+    /**
+     * 「その他の後ろ」に置いた指標（親の行のコード → 指標の行のコード）。見る人が科目を選ぶ前は親の最後の子の後ろに置き（following は最後の子）、
+     * 選んで「その他」ができたら picks.ts がその他の後ろへ移す
+     */
+    othersAfter?: Map<string, string[]>;
     /** 科目のコード → 区分（一番上の段の名前。科目名だけの表は科目ごとの区分の名前） */
     sectionOf: Map<string, string>;
 }
@@ -712,7 +720,9 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
               ? `計算行 ${key.slice(CALC_KEY.length)}`
               : key.startsWith(INDICATOR_KEY)
                 ? (indicatorNames.get(key) ?? key.slice(INDICATOR_KEY.length))
-                : (rows.get(key)?.name ?? key);
+                : key.startsWith(OTHERS_KEY)
+                  ? `${rows.get(key.slice(OTHERS_KEY.length))?.name ?? key.slice(OTHERS_KEY.length)}の最後（その他の後ろ）`
+                  : (rows.get(key)?.name ?? key);
     /**
      * 行のうち（親の行のコード → うちの行のコード）。区分・中分類の合計行と計算行の小計のうちは、親の子（children）にしない
      * （子にすると囲みの帯が合計行の下まで伸び、下囲みの底が合計行でなくなる）ので、ここで持つ
@@ -740,6 +750,27 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     const underTail = new Map<string, string>();
     /** 表の最初に置いた指標の数（表の最初の指標どうしは書式ペインの並びで並べる） */
     let atStart = 0;
+    const othersAfter = new Map<string, string[]>();
+    /** 「その他の後ろ」：親の子（区分・中分類の中の行）の最後の後ろに、子と同じ深さで置く。その他ができたら picks.ts がその他の後ろへ移す */
+    const placeAfterOthers = (spec: IndicatorSpec, parent: RowDef) => {
+        if (spec.mode === "under") warn(`指標「${spec.name}」は「${parent.name}」のその他のうちにできない。後ろに置いた`);
+        const kids = parent.type === "subtotal" ? parent.children : parent.summands.map((s) => s.code);
+        const positions = new Map(display.map((d, i): [string, number] => [d.def.code, i]));
+        const shown = kids.filter((code) => positions.has(code));
+        const last = shown.reduce<string | undefined>((best, code) => (best === undefined || blockEnd(code) > blockEnd(best) ? code : best), undefined);
+        const row = add({ code: spec.code, name: spec.name, type: "measure", sign: 1, good: spec.good, aggregation: spec.aggregation, format: spec.format });
+        noteName(spec.name, spec.code);
+        if (last === undefined) {
+            display.push({ def: row, depth: 0 });
+            return;
+        }
+        const tail = afterTail.get(OTHERS_KEY + parent.code);
+        const at = tail !== undefined ? blockEnd(tail) : Math.max(blockEnd(last), ...(following.get(last) ?? []).map(blockEnd));
+        display.splice(at + 1, 0, { def: row, depth: display[positions.get(last)!].depth });
+        afterTail.set(OTHERS_KEY + parent.code, row.code);
+        following.set(last, [...(following.get(last) ?? []), row.code]);
+        othersAfter.set(parent.code, [...(othersAfter.get(parent.code) ?? []), row.code]);
+    };
     const placeIndicator = (spec: IndicatorSpec, target: string | null) => {
         const parent = target === null ? undefined : rows.get(target);
         let mode = spec.mode;
@@ -753,6 +784,11 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             if (parent.type === "measure" || (parent.type === "breakdown" && !traits.has(parent.code))) {
                 // 指標の行のうち：値は届いたまま。集計・書式・良し悪しは親の指標と同じ
                 row = add({ code: spec.code, name: spec.name, type: "breakdown", sign: 1, good: parent.good, aggregation: parent.aggregation, format: parent.format });
+            } else if (spec.format.kind !== "amount") {
+                // 金額の行のうちに置いた、金額でない指標（書式に h・人・% などを書いた指標）：値は届いたまま使う（符号を裏返さず、書式・集計は
+                // 指標のまま）。前は金額の持ち方とみなしたので、時間を百万円で割り、親が貸方なら符号も裏返した（通し確認の 9。2026-10-17
+                // ユーザー「うちでもとどいたままでいいんじゃない？」）。区分の合計にも親の合計にも足さない（traits を持たない）
+                row = add({ code: spec.code, name: spec.name, type: "breakdown", sign: 1, good: parent.good, aggregation: spec.aggregation, format: spec.format });
             } else {
                 // 金額の行のうち：値は金額と同じ持ち方（CALCULATE([金額], 製品[区分] = "新製品") の形）なので、親の性質で借方プラスにそろえ
                 // （signs.ts）、親の行と同じ向きで見せる。区分の合計にも親の合計にも足さない
@@ -802,6 +838,12 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             }
             if (spec.target === null) {
                 placeIndicator(spec, null);
+                continue;
+            }
+            if (spec.target.startsWith(OTHERS_KEY)) {
+                const parent = rows.get(spec.target.slice(OTHERS_KEY.length));
+                if (parent && (parent.type === "subtotal" || parent.code === TOTAL_KEY) && display.some((d) => d.def.code === parent.code)) placeAfterOthers(spec, parent);
+                else warn(`指標「${spec.name}」の挿入位置「${placeLabel(spec.target)}」が表に無い。出さなかった`);
                 continue;
             }
             const target = placeOf(spec.target);
@@ -880,5 +922,5 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
 
     const sectionOf = new Map<string, string>();
     for (const section of sectionMap.values()) for (const account of section.accounts) sectionOf.set(account.code, section.label);
-    return { rows, display, warnings, traits, calcChoices, attached, following, sectionOf };
+    return { rows, display, warnings, traits, calcChoices, attached, following, ...(othersAfter.size > 0 ? { othersAfter } : {}), sectionOf };
 }

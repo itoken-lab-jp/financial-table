@@ -163,6 +163,8 @@ function compactOrgColumns(plan: LayoutPlan): LayoutPlan {
     const visit = (p: LayoutPlan, column: number): void => {
         if (p.kind === "table") { rows.push(...p.rows.map(r => ({ ...r }))); return; }
         if (p.kind === "stack") { p.children.forEach(c => visit(c, column)); return; }
+        // 全社の合計を出さない根（名前を隠した根）は列を持たない。子のセグメントが一番左の列になる
+        if (p.header.hideLabel && p.header.org === null) { visit(p.content, column); return; }
         const start = rows.length;
         visit(p.content, column + 1);
         if (rows.length === start) return;
@@ -260,6 +262,15 @@ export function accountPlan(
         flush();
         return pieces.length === 1 ? pieces[0] : stack(at, pieces);
     };
+    // 最上位を分けた表には、セグメントの分割と同じく、上に名前の帯を置く（どの表が台数・利益かが分かるように。単位も帯の右に出る）。
+    // 分割の囲み（frame）になった区分は、もう帯があるのでそのまま
+    const titled = (n: AccountNode): LayoutPlan => {
+        const plan = compile([n], 0, `${key}:${n.row.def.code}`);
+        if (plan.kind === "frame") return plan;
+        const row = value(n);
+        return { kind: "frame", key: `root:${n.row.def.code}`, style: "split", content: plan,
+            header: { key: `frame:root:${n.row.def.code}`, label: n.row.def.name, kind: "account", ...(row ? { row } : {}) } };
+    };
     return roots.length > 1 && rootDirection !== "joined"
-        ? { ...stack(key, roots.map(n => compile([n], 0, `${key}:${n.row.def.code}`)), rootDirection === "horizontal" ? "horizontal" : "vertical"), preserveTables: true } as LayoutPlan : compile(roots, 0, key);
+        ? { ...stack(key, roots.map(titled), rootDirection === "horizontal" ? "horizontal" : "vertical"), preserveTables: true } as LayoutPlan : compile(roots, 0, key);
 }

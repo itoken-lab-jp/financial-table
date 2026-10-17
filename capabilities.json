@@ -194,27 +194,33 @@
                     }
                 },
                 "latestHeader": {
-                    "displayName": "最新見込みの見出し",
+                    "displayName": "見出しの書き換え",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "confirmedScenario": {
-                    "displayName": "確定とみなすシナリオ",
+                    "displayName": "指定するシナリオ",
                     "type": {
                         "text": true
                     }
                 },
                 "confirmedLabel": {
-                    "displayName": "確定だけのときの見出し",
+                    "displayName": "指定したシナリオだけのときの見出し",
                     "type": {
                         "text": true
                     }
                 },
                 "forecastLabel": {
-                    "displayName": "それ以外の見出し",
+                    "displayName": "ほかのシナリオが入るときの見出し",
                     "type": {
                         "text": true
+                    }
+                },
+                "relabelMonths": {
+                    "displayName": "月の列も書き換える",
+                    "type": {
+                        "bool": true
                     }
                 },
                 "diffSwap": {
@@ -424,6 +430,12 @@
         "rows": {
             "displayName": "行",
             "properties": {
+                "scope": {
+                    "displayName": "適用先",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "accountStyle": {
                     "displayName": "表示",
                     "type": {
@@ -677,12 +689,24 @@
                     "type": {
                         "bool": true
                     }
+                },
+                "valueBold": {
+                    "displayName": "数字をすべて太字",
+                    "type": {
+                        "bool": true
+                    }
                 }
             }
         },
         "segments": {
             "displayName": "セグメント",
             "properties": {
+                "scope": {
+                    "displayName": "適用先",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "orgStyle": {
                     "displayName": "表示",
                     "type": {
@@ -740,32 +764,44 @@
                         ]
                     }
                 },
+                "rootTotal": {
+                    "displayName": "合計",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "rootName": {
                     "displayName": "合計の名前",
                     "type": {
                         "text": true
                     }
                 },
+                "subtotalName": {
+                    "displayName": "計の名前",
+                    "type": {
+                        "text": true
+                    }
+                },
                 "hideEmptyAccounts": {
-                    "displayName": "データなしの行を非表示",
+                    "displayName": "データの無い行を隠す",
                     "type": {
                         "bool": true
                     }
                 },
                 "segmentHeader": {
-                    "displayName": "セグメントの列の見出し",
+                    "displayName": "セグメントの名前の列の見出し",
                     "type": {
                         "text": true
                     }
                 },
                 "segmentFill": {
-                    "displayName": "セグメントの塗り",
+                    "displayName": "囲みの塗り",
                     "type": {
                         "bool": true
                     }
                 },
                 "segmentColor": {
-                    "displayName": "セグメントの色（1 段目）",
+                    "displayName": "囲みの色（1 段目）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -775,7 +811,7 @@
                     }
                 },
                 "segmentColor2": {
-                    "displayName": "セグメントの色（2 段目）",
+                    "displayName": "囲みの色（2 段目）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -785,7 +821,7 @@
                     }
                 },
                 "segmentColor3": {
-                    "displayName": "セグメントの色（3 段目）",
+                    "displayName": "囲みの色（3 段目）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -795,7 +831,7 @@
                     }
                 },
                 "segmentColor4": {
-                    "displayName": "セグメントの色（4 段目から）",
+                    "displayName": "囲みの色（4 段目から）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -805,7 +841,7 @@
                     }
                 },
                 "blockLine": {
-                    "displayName": "セグメントの囲み線",
+                    "displayName": "囲み線の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -829,7 +865,7 @@
                     }
                 },
                 "segmentHeaderBold": {
-                    "displayName": "セグメントの列の見出しを太字",
+                    "displayName": "セグメントの名前の列の見出しを太字",
                     "type": {
                         "bool": true
                     }
@@ -837,7 +873,7 @@
             }
         },
         "rowNumbers": {
-            "displayName": "行別の数値書式",
+            "displayName": "行別の書式",
             "properties": {
                 "target1": {
                     "displayName": "対象 1",
@@ -881,6 +917,24 @@
                         "enumeration": []
                     }
                 },
+                "negativeValue1": {
+                    "displayName": "マイナスの値 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue1": {
+                    "displayName": "プラスの値 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good1": {
+                    "displayName": "良し悪し 1",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "format1": {
                     "displayName": "書式 1",
                     "type": {
@@ -897,6 +951,12 @@
                     "displayName": "右上の見出し 1",
                     "type": {
                         "text": true
+                    }
+                },
+                "bold1": {
+                    "displayName": "太字 1",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "target2": {
@@ -941,6 +1001,24 @@
                         "enumeration": []
                     }
                 },
+                "negativeValue2": {
+                    "displayName": "マイナスの値 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue2": {
+                    "displayName": "プラスの値 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good2": {
+                    "displayName": "良し悪し 2",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "format2": {
                     "displayName": "書式 2",
                     "type": {
@@ -957,6 +1035,12 @@
                     "displayName": "右上の見出し 2",
                     "type": {
                         "text": true
+                    }
+                },
+                "bold2": {
+                    "displayName": "太字 2",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "target3": {
@@ -1001,6 +1085,24 @@
                         "enumeration": []
                     }
                 },
+                "negativeValue3": {
+                    "displayName": "マイナスの値 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue3": {
+                    "displayName": "プラスの値 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good3": {
+                    "displayName": "良し悪し 3",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "format3": {
                     "displayName": "書式 3",
                     "type": {
@@ -1017,6 +1119,12 @@
                     "displayName": "右上の見出し 3",
                     "type": {
                         "text": true
+                    }
+                },
+                "bold3": {
+                    "displayName": "太字 3",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "target4": {
@@ -1061,6 +1169,24 @@
                         "enumeration": []
                     }
                 },
+                "negativeValue4": {
+                    "displayName": "マイナスの値 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue4": {
+                    "displayName": "プラスの値 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good4": {
+                    "displayName": "良し悪し 4",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "format4": {
                     "displayName": "書式 4",
                     "type": {
@@ -1077,6 +1203,12 @@
                     "displayName": "右上の見出し 4",
                     "type": {
                         "text": true
+                    }
+                },
+                "bold4": {
+                    "displayName": "太字 4",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "target5": {
@@ -1121,6 +1253,24 @@
                         "enumeration": []
                     }
                 },
+                "negativeValue5": {
+                    "displayName": "マイナスの値 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue5": {
+                    "displayName": "プラスの値 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good5": {
+                    "displayName": "良し悪し 5",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "format5": {
                     "displayName": "書式 5",
                     "type": {
@@ -1137,6 +1287,12 @@
                     "displayName": "右上の見出し 5",
                     "type": {
                         "text": true
+                    }
+                },
+                "bold5": {
+                    "displayName": "太字 5",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "target6": {
@@ -1181,6 +1337,24 @@
                         "enumeration": []
                     }
                 },
+                "negativeValue6": {
+                    "displayName": "マイナスの値 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue6": {
+                    "displayName": "プラスの値 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good6": {
+                    "displayName": "良し悪し 6",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "format6": {
                     "displayName": "書式 6",
                     "type": {
@@ -1197,6 +1371,12 @@
                     "displayName": "右上の見出し 6",
                     "type": {
                         "text": true
+                    }
+                },
+                "bold6": {
+                    "displayName": "太字 6",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "target7": {
@@ -1241,6 +1421,24 @@
                         "enumeration": []
                     }
                 },
+                "negativeValue7": {
+                    "displayName": "マイナスの値 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue7": {
+                    "displayName": "プラスの値 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good7": {
+                    "displayName": "良し悪し 7",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "format7": {
                     "displayName": "書式 7",
                     "type": {
@@ -1257,6 +1455,12 @@
                     "displayName": "右上の見出し 7",
                     "type": {
                         "text": true
+                    }
+                },
+                "bold7": {
+                    "displayName": "太字 7",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "target8": {
@@ -1301,6 +1505,24 @@
                         "enumeration": []
                     }
                 },
+                "negativeValue8": {
+                    "displayName": "マイナスの値 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue8": {
+                    "displayName": "プラスの値 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "good8": {
+                    "displayName": "良し悪し 8",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "format8": {
                     "displayName": "書式 8",
                     "type": {
@@ -1318,12 +1540,24 @@
                     "type": {
                         "text": true
                     }
+                },
+                "bold8": {
+                    "displayName": "太字 8",
+                    "type": {
+                        "enumeration": []
+                    }
                 }
             }
         },
         "calcRows": {
             "displayName": "計算行",
             "properties": {
+                "scope": {
+                    "displayName": "適用先",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "kind1": {
                     "displayName": "種類",
                     "type": {
@@ -2289,6 +2523,12 @@
         "indicators": {
             "displayName": "指標",
             "properties": {
+                "scope": {
+                    "displayName": "適用先",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "after": {
                     "displayName": "挿入位置",
                     "type": {
@@ -2324,12 +2564,24 @@
                     "type": {
                         "enumeration": []
                     }
+                },
+                "bold": {
+                    "displayName": "太字",
+                    "type": {
+                        "enumeration": []
+                    }
                 }
             }
         },
         "numbers": {
             "displayName": "数値",
             "properties": {
+                "scope": {
+                    "displayName": "適用先",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "amountSign": {
                     "displayName": "符号の持ち方",
                     "type": {
@@ -2382,6 +2634,18 @@
                     "displayName": "丸めた 0 の符号",
                     "type": {
                         "bool": true
+                    }
+                },
+                "negativeValue": {
+                    "displayName": "マイナスの値",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "positiveValue": {
+                    "displayName": "プラスの値",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "unitPlace": {
@@ -4005,6 +4269,251 @@
                 }
             }
         },
+        "segmentRows": {
+            "displayName": "セグメントごとに隠す行",
+            "properties": {
+                "org1": {
+                    "displayName": "セグメント 1",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row1": {
+                    "displayName": "隠す行 1",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org2": {
+                    "displayName": "セグメント 2",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row2": {
+                    "displayName": "隠す行 2",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org3": {
+                    "displayName": "セグメント 3",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row3": {
+                    "displayName": "隠す行 3",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org4": {
+                    "displayName": "セグメント 4",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row4": {
+                    "displayName": "隠す行 4",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org5": {
+                    "displayName": "セグメント 5",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row5": {
+                    "displayName": "隠す行 5",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org6": {
+                    "displayName": "セグメント 6",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row6": {
+                    "displayName": "隠す行 6",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org7": {
+                    "displayName": "セグメント 7",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row7": {
+                    "displayName": "隠す行 7",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org8": {
+                    "displayName": "セグメント 8",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row8": {
+                    "displayName": "隠す行 8",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org9": {
+                    "displayName": "セグメント 9",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row9": {
+                    "displayName": "隠す行 9",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org10": {
+                    "displayName": "セグメント 10",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row10": {
+                    "displayName": "隠す行 10",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org11": {
+                    "displayName": "セグメント 11",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row11": {
+                    "displayName": "隠す行 11",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org12": {
+                    "displayName": "セグメント 12",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row12": {
+                    "displayName": "隠す行 12",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org13": {
+                    "displayName": "セグメント 13",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row13": {
+                    "displayName": "隠す行 13",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org14": {
+                    "displayName": "セグメント 14",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row14": {
+                    "displayName": "隠す行 14",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org15": {
+                    "displayName": "セグメント 15",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row15": {
+                    "displayName": "隠す行 15",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org16": {
+                    "displayName": "セグメント 16",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row16": {
+                    "displayName": "隠す行 16",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org17": {
+                    "displayName": "セグメント 17",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row17": {
+                    "displayName": "隠す行 17",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org18": {
+                    "displayName": "セグメント 18",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row18": {
+                    "displayName": "隠す行 18",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org19": {
+                    "displayName": "セグメント 19",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row19": {
+                    "displayName": "隠す行 19",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "org20": {
+                    "displayName": "セグメント 20",
+                    "type": {
+                        "text": true
+                    }
+                },
+                "row20": {
+                    "displayName": "隠す行 20",
+                    "type": {
+                        "text": true
+                    }
+                }
+            }
+        },
         "table": {
             "displayName": "表全体",
             "properties": {
@@ -4014,6 +4523,44 @@
                         "formatting": {
                             "fontFamily": true
                         }
+                    }
+                },
+                "textColor": {
+                    "displayName": "文字の色",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "mutedColor": {
+                    "displayName": "薄い文字の色",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "yearLabel": {
+                    "displayName": "年度の表記",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "titlePlace": {
+                    "displayName": "年度の位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "unitPlace": {
+                    "displayName": "単位の位置",
+                    "type": {
+                        "enumeration": []
                     }
                 },
                 "fontSize": {
@@ -4098,7 +4645,7 @@
             "displayName": "用語",
             "properties": {
                 "latest": {
-                    "displayName": "最新見込み",
+                    "displayName": "最新値",
                     "type": {
                         "text": true
                     }

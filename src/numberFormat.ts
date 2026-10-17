@@ -87,7 +87,13 @@ export interface SignOptions {
     zero: string;
     diffZero: string;
     negativeZero: boolean;
+    /** 主・比較の値のマイナス・プラスの見せ方（VALUE_SHOWS。既定はそのまま）。差・比・率には効かせない */
+    negativeValue?: string;
+    positiveValue?: string;
 }
+
+/** 値の見せ方：そのまま・空欄・「-」（マイナスの値・プラスの値を出さないとき） */
+export const VALUE_SHOWS = { show: "show", blank: "blank", dash: "dash" } as const;
 
 /** 記号を付けない書き方（-1,234、0、差も 0。丸めて 0 のマイナスは 0） */
 export const PLAIN_SIGN: SignOptions = { negative: NEGATIVE_STYLES.minus, zero: ZERO_STYLES.zero, diffZero: ZERO_STYLES.zero, negativeZero: false };
@@ -117,6 +123,9 @@ function capped(value: number, format: RowFormat, unit: AmountUnit, style: Parti
 /** 行の値の文字。空欄は空文字。cap を渡すと、比率の行の値をその上限（倍）で止める */
 export function formatRowValue(value: number | null, format: RowFormat, unit: AmountUnit, sign: SignOptions = PLAIN_SIGN, cap?: number): string {
     if (value === null) return "";
+    // マイナス・プラスの値を出さない（見た目だけ。足し算・差・比は値のまま）。丸めて 0 になる値は 0 の書き方のまま
+    const show = value < 0 ? sign.negativeValue : value > 0 ? sign.positiveValue : undefined;
+    if (show && show !== VALUE_SHOWS.show && shownValue(value, format, unit) !== 0) return show === VALUE_SHOWS.dash ? "-" : "";
     return capped(value, format, unit, { negative: sign.negative, zero: sign.zero, negativeZero: sign.negativeZero, plus: false }, "%", cap);
 }
 
@@ -166,10 +175,13 @@ export function formatRatio(main: number | null, compare: number | null, decimal
     return `${plain(ratio * 100, decimals, true)}%`;
 }
 
-/** 率（+1.2%）。（実績 − 比較）÷ |比較|。比較が 0 なら「―」。比較が負でも向きが保たれる。マイナスと 0 は差と同じ書き方 */
+/**
+ * 率（+1.2%）。（実績 − 比較）÷ |比較|。比較が 0 のときと符号がまたがるとき（赤字から黒字）は「―」（比とそろえる。2026-10-16 ユーザー）。
+ * 比較が負でも向きが保たれる。マイナスと 0 は差と同じ書き方
+ */
 export function formatRate(main: number | null, compare: number | null, sign: SignOptions = PLAIN_SIGN, decimals = 1, cap = RATIO_CAP): string {
     if (main === null || compare === null) return "";
-    if (compare === 0) return NOT_AVAILABLE;
+    if (compare === 0 || main * compare < 0) return NOT_AVAILABLE;
     const rate = (main - compare) / Math.abs(compare);
     const style = { negative: sign.negative, zero: sign.diffZero, negativeZero: sign.negativeZero, plus: true };
     const limit = capPercent(cap);

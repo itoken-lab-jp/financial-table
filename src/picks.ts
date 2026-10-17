@@ -9,7 +9,7 @@
  * - 行の組み立て（rows.ts）のあとに、表示の並びだけを組み直す。書式ペインの選択肢（計算行・指標の置く場所）は選択で変えない
  */
 import { INDICATOR_KEY } from "./data";
-import { DisplayRow, RowDef, RowModel, TOTAL_KEY } from "./rows";
+import { DisplayRow, OTHERS_KEY, RowDef, RowModel, TOTAL_KEY } from "./rows";
 
 /** others：選ばなかった科目を「その他」にまとめる。under：選んだ科目を親のうちにし、残りは出さない */
 export type PickMode = "others" | "under";
@@ -22,8 +22,8 @@ export interface RowPick {
     codes: string[];
 }
 
-/** 「その他」の行のコード（親の行のコードに付ける） */
-export const OTHERS_KEY = "§others:";
+/** 「その他」の行のコード（親の行のコードに付ける）。指標の置く場所にも使うので rows.ts に置く */
+export { OTHERS_KEY } from "./rows";
 /** 小計をうちにした行のコード（小計の行のコードに付ける）。小計の値を足す（summands）1 行 */
 export const UNDER_KEY = "§under:";
 
@@ -96,6 +96,26 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
         return into;
     };
 
+    /**
+     * 「その他の後ろ」に置いた指標（rows.ts の othersAfter）を、anchor の行（その他・うちの親）とその下の行の後ろへ移す。
+     * 並びの位置と、木（hierarchy.ts）で続ける行（following）の両方を移す
+     */
+    const moveAfter = (codes: string[], anchor: string) => {
+        if (codes.length === 0) return;
+        const moving = new Set<string>();
+        for (const code of codes) subtree(code, moving);
+        for (const [key, list] of following) if (list.some((c) => codes.includes(c))) following.set(key, list.filter((c) => !codes.includes(c)));
+        following.set(anchor, [...(following.get(anchor) ?? []), ...codes]);
+        const rowsMoving = display.filter((d) => moving.has(d.def.code));
+        display = display.filter((d) => !moving.has(d.def.code));
+        const block = subtree(anchor);
+        let end = -1;
+        display.forEach((d, i) => {
+            if (block.has(d.def.code)) end = i;
+        });
+        display.splice(end + 1, 0, ...rowsMoving);
+    };
+
     const done = new Set<string>();
     for (const pick of picks) {
         const parent = rows.get(pick.parent);
@@ -115,6 +135,11 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
         const depth = display[parentAt].depth + 1;
         const removed = new Set<string>();
         for (const code of hidden) subtree(code, removed);
+        // 「その他の後ろ」の指標は、まとめた科目と一緒に消さない（最後の子の後ろに置いてあるので、その子の下の行に入っている）
+        const pinned = model.othersAfter?.get(parent.code) ?? [];
+        const pinnedRows = new Set<string>();
+        for (const code of pinned) subtree(code, pinnedRows);
+        for (const code of pinnedRows) removed.delete(code);
 
         if (pick.mode === "others") {
             if (hidden.length === 0) continue;
@@ -138,6 +163,7 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
             // 区分の中の最後（子と、その下の行の後ろ）
             const inBlock = new Set<string>();
             for (const child of kidsOf(parent)) subtree(child, inBlock);
+            for (const code of pinnedRows) inBlock.delete(code);
             display = display.filter((d) => !removed.has(d.def.code));
             let end = -1;
             display.forEach((d, i) => {
@@ -147,6 +173,7 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
             // 区分・中分類の小計は子を組み直す。根の合計行は子を持たないので、まとめた「その他」だけを子にする（表の木で合計行の下に置く）
             rows.set(parent.code, { ...parent, children: [...(parent.type === "subtotal" ? parent.children.filter((c) => !removed.has(c)) : parent.children), code] });
             if (host !== parent) rows.set(host.code, { ...host, children: [...host.children.filter((c) => !removed.has(c)), code] });
+            moveAfter(pinned, code);
             continue;
         } else {
             // うち：選んだ科目（とその下の行）を親の行の下へ移し、うちの行にする。親の子からは科目を外す（囲みの帯を引かない）。
@@ -192,6 +219,8 @@ export function applyPicks(model: RowModel, picks: readonly RowPick[]): RowModel
             attached.set(host.code, [...underCodes, ...(attached.get(host.code) ?? [])]);
             if (parent.type === "subtotal") rows.set(parent.code, { ...parent, children: parent.children.filter((c) => !pickable.includes(c)) });
             if (host !== parent) rows.set(host.code, { ...host, children: host.children.filter((c) => !pickable.includes(c)) });
+            // うち：その他が無いので、親の行（とうち）の後ろ
+            moveAfter(pinned, host.code);
             continue;
         }
         display = display.filter((d) => !removed.has(d.def.code));

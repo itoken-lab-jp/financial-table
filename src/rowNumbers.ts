@@ -3,8 +3,9 @@
  *
  * - 対象は段（その深さの行すべて）か行（区分・中分類・科目。その行と下の行）。上書きの順は 表全体 → 段 → 行 で、行は上の行から継いで
  *   自分に近い行ほど後に効く。設定ごとに継ぐ（単位だけ区分で変え、マイナスの書き方は科目で変える、ができる）
- * - 効くのは科目の木の行（区分・中分類の小計、科目、科目のうち、見る人がまとめた「その他」）。計算行と、後ろに置いた指標の行は表全体のまま
- *   （区分をまたぐ行なので）
+ * - 段と、上の行から継ぐ上書きが効くのは科目の木の行（区分・中分類の小計、科目、科目のうち、見る人がまとめた「その他」）。計算行と、
+ *   後ろに置いた指標の行は、その行を対象に選んだときだけ効く（区分をまたぐ行なので、段・上の行からは継がない。2.1.7.15 から。それまでは
+ *   表全体のままで、書式・良し悪し・太字は計算行・指標のカードにあった）
  * - 選べる表示単位は固定の単位だけ。表全体の単位と違えば、親と単位の違う行の名前に単位を添える
  * - 保存のキーは行のコード（区分は「§sec:区分」、中分類は「§grp:区分:中分類」、科目はコード）と段（「§level:深さ」）。枠の番号や並びでは覚えない
  */
@@ -22,11 +23,18 @@ export type RowNumberOverride = Partial<Omit<RowNumberSaved, "target">>;
 export interface RowNumberTarget {
     value: string;
     displayName: string;
+    /** 計算行・後ろに置いた指標の行（太字が効くのはこの行だけ） */
+    own?: boolean;
 }
 
 /** 科目の木の行か（段と行の上書きが効く行）。指標の行のうちは親の行と同じ見せ方なので入れ、後ろに置いた指標（measure）は入れない */
 function inTree(def: RowDef): boolean {
     return def.code === TOTAL_KEY || def.type === "detail" || def.type === "subtotal" || def.type === "heading" || def.type === "others" || def.type === "breakdown";
+}
+
+/** 計算行・後ろに置いた指標の行か（その行を選んだときだけ上書きが効く行） */
+export function ownRow(def: RowDef): boolean {
+    return def.type === "calc" || def.type === "step" || def.type === "measure";
 }
 
 /** 行 → 親の行（子とうちから引く） */
@@ -50,9 +58,15 @@ export function rowNumberTargets(model: RowModel): RowNumberTarget[] {
     // 同じ名前の行（コードの違う同じ名前の行）は、コードを添えて見分ける
     const count = new Map<string, number>();
     for (const t of named) count.set(t.displayName, (count.get(t.displayName) ?? 0) + 1);
+    // 計算行と後ろに置いた指標の行（表の並び）。名前の頭に種類を付ける
+    const own = model.display
+        // 合計行は科目の木の行として上で並べたので、ここでは外す（「合計」と「計算行：合計」が 2 回並んだ。通し確認の 12）
+        .filter((d) => ownRow(d.def) && d.def.code !== TOTAL_KEY)
+        .map((d) => ({ value: d.def.code, displayName: `${d.def.type === "measure" ? "指標" : "計算行"}：${d.def.name || d.def.code}`, own: true }));
     return [
         ...depths.map((depth) => ({ value: LEVEL_KEY + depth, displayName: `${depth + 1} 段目の行すべて` })),
         ...named.map((t) => (count.get(t.displayName)! > 1 ? { ...t, displayName: `${t.displayName}（${t.value}）` } : t)),
+        ...own,
     ];
 }
 
@@ -77,11 +91,11 @@ export function rowNumberOverrides(
         // 何も上書きしない枠は何もしない（対象を取らず、知らせない）
         if (Object.keys(override).length === 0) return;
         if (!targets.includes(slot.target)) {
-            warn(`行別の数値書式の設定 ${i + 1} の対象「${slot.target}」が表に無い。効かせていない`);
+            warn(`「数値」カードの適用先「${slot.target}」が表に無い。効かせていない`);
             return;
         }
         if (result.has(slot.target)) {
-            warn(`行別の数値書式の設定 ${i + 1} の対象は、番号の小さい設定でも決めている。番号の小さい設定を使った`);
+            warn(`「数値」カードの適用先に同じ行が 2 つある。先に足した方を使った`);
             return;
         }
         result.set(slot.target, override);
@@ -91,7 +105,7 @@ export function rowNumberOverrides(
 
 /**
  * 行のコード → 効く上書き（表全体 → 段 → 上の行から自分の行の順に重ねたもの）。上書きの無い行は入れない。
- * 計算行・後ろの指標の行は入れない（表全体のまま）
+ * 計算行・後ろの指標の行は、その行の上書きだけ
  */
 export function resolveRowNumbers(model: RowModel, overrides: ReadonlyMap<string, RowNumberOverride>): Map<string, RowNumberOverride> {
     const result = new Map<string, RowNumberOverride>();
@@ -103,6 +117,11 @@ export function resolveRowNumbers(model: RowModel, overrides: ReadonlyMap<string
         return chain;
     };
     for (const { def, depth } of model.display) {
+        if (ownRow(def)) {
+            const own = overrides.get(def.code);
+            if (own && Object.keys(own).length > 0) result.set(def.code, { ...own });
+            continue;
+        }
         if (!inTree(def)) continue;
         const merged: RowNumberOverride = { ...(overrides.get(LEVEL_KEY + depth) ?? {}) };
         for (const code of chainOf(def.code)) {

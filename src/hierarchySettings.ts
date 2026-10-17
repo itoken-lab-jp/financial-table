@@ -6,7 +6,7 @@ export type TotalPosition = "none" | "top" | "bottom";
 export type SplitDirection = "vertical" | "horizontal";
 export interface HierarchyOptions { style: HierarchyStyle; total: TotalPosition; direction: SplitDirection }
 export interface HierarchyOverride { target: string; style: string; total: string; direction: string }
-export interface HierarchyFormat { targets: powerbi.IEnumMember[]; saved: HierarchyOverride[] }
+export interface HierarchyFormat { targets: powerbi.IEnumMember[]; saved: HierarchyOverride[]; scopes?: Partial<Record<"account" | "org", string>> }
 export const HIERARCHY_SLOTS = 20;
 export const STYLE_ITEMS: powerbi.IEnumMember[] = [
     { value: "plain", displayName: "囲みなし" }, { value: "box", displayName: "囲み" },
@@ -33,7 +33,21 @@ export interface HierarchyDefaults {
     orgDirection: f.ItemDropdown;
 }
 
+/** 枠を見せるカード：行（account）かセグメント（org） */
+export type HierarchyKind = "account" | "org";
+
+/** 対象を選んでいない枠を、どちらのカードに見せるか（前の半分は行、後ろの半分はセグメント） */
+export const HIERARCHY_ACCOUNT_SLOTS = HIERARCHY_SLOTS / 2;
+
+/** 枠の種類：対象を選んでいればその種類、選んでいなければ番号で分ける */
+export function hierarchyKindOf(target: string, slot: number): HierarchyKind {
+    if (target.startsWith("account:")) return "account";
+    if (target.startsWith("org:")) return "org";
+    return slot <= HIERARCHY_ACCOUNT_SLOTS ? "account" : "org";
+}
+
 class HierarchyItem extends f.SimpleCard {
+    kind: HierarchyKind = "account";
     target: f.ItemDropdown;
     style: f.ItemDropdown;
     total: f.ItemDropdown;
@@ -42,17 +56,17 @@ class HierarchyItem extends f.SimpleCard {
         super();
         this.name = `hierarchyItem${slot}`;
         this.displayName = `設定 ${slot}`;
-        this.target = dropdown(`target${slot}`, "階層または要素", [none]);
+        this.target = dropdown(`target${slot}`, "対象", [none]);
         this.style = dropdown(`style${slot}`, "表示", [inherit, ...STYLE_ITEMS]);
         this.total = dropdown(`total${slot}`, "展開時の合計", [inherit, ...TOTAL_ITEMS]);
-        this.direction = dropdown(`direction${slot}`, "子の分割方向", [inherit, ...DIRECTION_ITEMS]);
+        this.direction = dropdown(`direction${slot}`, "分割の向き", [inherit, ...DIRECTION_ITEMS]);
         this.slices = [this.target, this.style, this.total, this.direction];
     }
 }
 export class HierarchyOverrides extends f.CompositeCard {
     name = "hierarchyOverrides";
     displayName = "段・行ごとの配置";
-    description = "「行」「セグメント」の表示・合計・分割の向きを、段か行ごとに上書きする。同じ対象を複数指定した場合は後の設定を優先。分割の向きは対象の子の並び方";
+    description = "「行」「セグメント」の表示・合計・分割の向きを、段か行ごとに上書きする。同じ対象を複数指定した場合は後の設定を優先。分割の向きは対象の子の並び方。書式ペインでは行・セグメントのカードの「配置」に入れて見せる（arrangeCards）";
     items = Array.from({ length: HIERARCHY_SLOTS }, (_, i) => new HierarchyItem(i + 1));
     groups = [new f.Group({ name: "entries", displayName: "個別設定", slices: [],
         container: new f.Container({ displayName: "編集対象", containerItems: this.items }) })];
@@ -60,7 +74,10 @@ export class HierarchyOverrides extends f.CompositeCard {
         this.items.forEach((item, i) => {
             const saved = data?.saved[i];
             const target = saved?.target ?? "";
-            item.target.items = [none, ...(data?.targets ?? [])];
+            // 行とセグメントのカードに分けて見せる（arrangeCards）。対象の選択肢はその種類だけにし、頭の「行：」「セグメント：」は外す
+            item.kind = hierarchyKindOf(target, i + 1);
+            const own = (data?.targets ?? []).filter((t) => String(t.value).startsWith(`${item.kind}:`));
+            item.target.items = [none, ...own.map((t) => ({ ...t, displayName: String(t.displayName).replace(/^(行|セグメント)：/, "") }))];
             if (target && !item.target.items.some(v => v.value === target)) item.target.items.push({ value: target, displayName: `${target}（表に無い）` });
             for (const prop of ["target", "style", "total", "direction"] as const) {
                 const select = item[prop];

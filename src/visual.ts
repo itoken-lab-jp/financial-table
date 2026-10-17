@@ -17,7 +17,8 @@ import { App, CellTooltip } from "./App";
 import { SelectionNodes } from "./data";
 import { InputLoader, SUBTOTAL_WAIT_MS, subtotalAction } from "./loading";
 import { SelectTarget, selectableView, nextSelection, reconcileSelection, sameSelection, targetKey } from "./selection";
-import { DataDrivenFormat, VisualFormattingSettingsModel } from "./settings";
+import { Reservation } from "./scope";
+import { DataDrivenFormat, VisualFormattingSettingsModel, arrangeCards } from "./settings";
 import { INDICATOR_NOTICE, INDICATOR_SUBTOTAL_WARNING, LOADING_NOTICE, TRUNCATED_NOTICE, ViewModel, transform } from "./viewModel";
 import {
     EMPTY_VISUAL_STATE,
@@ -63,6 +64,9 @@ export class Visual implements IVisual {
     private lastOptions: VisualUpdateOptions | null = null;
     /** 見る人が選んだ主と比較。ページを移ってもレポートから読み直す */
     private visualState: VisualState = EMPTY_VISUAL_STATE;
+    /** 適用先の対象を書き込んだ中身と時刻（persistReservations） */
+    private pendingReservation: string | null = null;
+    private pendingReservationAt = 0;
     /** persistProperties 直後の値。保存が返る前の古い dataView で選択を巻き戻さないための印 */
     private pendingVisualState: string | null = null;
     private pendingAt = 0;
@@ -138,6 +142,8 @@ export class Visual implements IVisual {
         // 色の既定はレポートのテーマから（書式ペインで決めた色はそのまま）
         const theme = themeOf(this.host.colorPalette as ISandboxExtendedColorPalette);
         const objects = dataView?.metadata?.objects;
+        // 置き場所を移した項目は、新しい置き場所に保存が無ければ前の置き場所の保存値を使う（2.1.7.8）
+        this.formattingSettings.applyMoved(objects);
         this.formattingSettings.applyTheme(theme, (object, property) => objects?.[object]?.[property] !== undefined);
 
         // 行が 30,000 を超えると、Power BI は続きを残して届ける（metadata.segment）。1 回分ずつ取りにいき（fetchMoreData(false)）、
@@ -152,6 +158,7 @@ export class Visual implements IVisual {
         // 主と比較・年度の選択肢はデータ次第なので、populate のあとに流し込む
         this.formattingSettings.applyData(viewModel.format);
         this.lastFormat = viewModel.format;
+        if (fromUpdate) this.persistReservations(this.formattingSettings.reservations);
         const loading = state?.loading ?? false;
 
         // 作り手が書式ペインで主・比較の列を決め直して古くなった見る人の選択は捨て、捨てた状態を保存し直す
@@ -391,6 +398,23 @@ export class Visual implements IVisual {
         }, SUBTOTAL_WAIT_MS + 500);
     }
 
+    /**
+     * 書式ペインの適用先に選んだ対象を、空いた枠に書き込む（scope.ts）。書き込んだ update では枠が見つかるので、もう書かない（輪にならない）。
+     * 返る前の古い dataView で同じ書き込みを繰り返さない
+     */
+    private persistReservations(reservations: Reservation[]): void {
+        if (reservations.length === 0) return;
+        const key = JSON.stringify(reservations);
+        if (key === this.pendingReservation && Date.now() - this.pendingReservationAt < PENDING_TIMEOUT_MS) return;
+        this.pendingReservation = key;
+        this.pendingReservationAt = Date.now();
+        try {
+            this.host.persistProperties({ merge: reservations.map((r): powerbi.VisualObjectInstance => ({ objectName: r.objectName, properties: r.properties, selector: null })) });
+        } catch (error) {
+            console.error("適用先の対象を保存できませんでした", error);
+        }
+    }
+
     /** 保存済みの見る人の選択を読み戻す */
     private restoreVisualState(dataView: powerbi.DataView | undefined): void {
         if (this.pendingVisualState !== null && Date.now() - this.pendingAt > PENDING_TIMEOUT_MS) this.pendingVisualState = null;
@@ -413,7 +437,7 @@ export class Visual implements IVisual {
 
     /** 書式設定ペインを開くたび / 値変更のたびに呼ばれる */
     public getFormattingModel(): powerbi.visuals.FormattingModel {
-        return this.formattingSettingsService.buildFormattingModel(this.formattingSettings);
+        return arrangeCards(this.formattingSettingsService.buildFormattingModel(this.formattingSettings), this.formattingSettings);
     }
 
     public destroy(): void {

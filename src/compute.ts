@@ -301,12 +301,16 @@ export class Calculator {
         return row.refs.filter((r) => this.row(r)?.aggregation === "flow");
     }
 
-    /** 行のどれにも値のある月（組織ごと、months の並びのまま）。どれかに無い組織は入れない */
+    /**
+     * 行のどれにも値のある月（組織ごと、months の並びのまま）。そろえるのは、その組織が持つ行どうしだけ。分子か分母をデータのどこにも
+     * 持たない組織（時間の無い共通費）は、持つ行の月をそのまま使う（そろえると、合計の行の比率から共通費の利益が抜け、表に出る
+     * 合計の利益 ÷ 合計の時間と合わなかった。2026-10-16 ユーザー）
+     */
     private commonByOrg(refs: string[], ref: EventRef, months: MonthIndex[]): Map<string, MonthIndex[]> {
         const present = refs.map((r) => this.presentByOrg(r, ref, months));
         const result = new Map<string, MonthIndex[]>();
-        for (const org of present[0]?.keys() ?? []) {
-            const kept = months.filter((m) => present.every((byOrg) => byOrg.get(org)?.has(m) ?? false));
+        for (const org of new Set(present.flatMap((byOrg) => Array.from(byOrg.keys())))) {
+            const kept = months.filter((m) => present.every((byOrg) => !byOrg.has(org) || byOrg.get(org)!.has(m)));
             if (kept.length > 0) result.set(org, kept);
         }
         return result;
@@ -331,7 +335,8 @@ export class Calculator {
         const result = new Map<Slot, MonthIndex[]>();
         for (const [slot, slotMonths] of months) {
             const org = this.slots.get(slot)!.org;
-            const kept = slotMonths.filter((m) => present.every((byOrg) => byOrg.get(org)?.has(m) ?? false));
+            // 分子か分母を持たない組織は、その行ではそろえない（commonByOrg と同じ）
+            const kept = slotMonths.filter((m) => present.every((byOrg) => !byOrg.has(org) || byOrg.get(org)!.has(m)));
             if (kept.length > 0) result.set(slot, kept);
         }
         return result;

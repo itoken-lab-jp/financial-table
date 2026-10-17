@@ -9,6 +9,7 @@ import powerbi from "powerbi-visuals-api";
 import { AccountNode, HierarchyCell, LayoutPlan, accountTree, accountPlan, compactOrgBoxes, planRows, stack } from "./hierarchy";
 import { HierarchyDefaults, hierarchyOptions, readHierarchyOverrides } from "./hierarchySettings";
 import { NO_ORG_LABEL, ROOT_FOLD } from "./orgs";
+import { hiddenRowsIn, readSegmentRows } from "./segmentRows";
 import { DEFAULT_WORDS, Words, wordsOf } from "./words";
 import { ValueParts, valueParts } from "./valueParts";
 
@@ -62,8 +63,8 @@ import {
     toggleablePaths,
 } from "./orgs";
 import { OTHERS_KEY, PickParent, RowPick, UNDER_KEY, applyPicks, isAccountRow, pickParents } from "./picks";
-import { RowNumberOverride, overrideKey, parentsOf, resolveRowNumbers, rowNumberOverrides, rowNumberTargets } from "./rowNumbers";
-import { CalcRowSpec, DisplayRow, IndicatorSpec, RowDef, RowType, TOTAL_KEY, buildRows } from "./rows";
+import { RowNumberOverride, overrideKey, ownRow, parentsOf, resolveRowNumbers, rowNumberOverrides, rowNumberTargets } from "./rowNumbers";
+import { CalcChoices, CalcRowSpec, DisplayRow, GoodDirection, IndicatorSpec, RowDef, RowModel, RowType, TOTAL_KEY, buildRows } from "./rows";
 import { AmountSign, resolveSigns, toDebitPlus } from "./signs";
 import { EMPTY_VISUAL_STATE, VisualState, shownSlots, slotsOf } from "./visualState";
 import { DEFAULT_THEME, Theme } from "./theme";
@@ -98,6 +99,7 @@ import {
     LATEST_YEAR,
     PRIOR_YEAR,
     TOTAL_ROW,
+    ROOT_TOTAL,
     UNIT_PLACES,
     TITLE_PLACES,
     ROW_HEIGHTS,
@@ -253,6 +255,8 @@ export interface TableRow {
     select?: RowSelect;
     /** 組織のブロックの道筋（組織を選んだときに薄くするかを決める。組織の欄が無い・全社は null） */
     orgPath?: string | null;
+    /** 行の名前と数字の太字（行別の書式で選んだ計算行・指標の行）。true は太字、false は太字にしない、無ければ表の決まり */
+    bold?: boolean;
 }
 
 export interface ViewModel {
@@ -356,6 +360,7 @@ export function indicatorSettings(input: InputData, eventModel: EventModel): Ind
             aggregation: saved.aggregation === "stock" ? "stock" : "flow",
             format: saved.format ?? "",
             good: saved.good === "up" || saved.good === "down" ? saved.good : "neutral",
+            bold: saved.bold === "on" ? "on" : "off",
             event: horizontal ? event : null,
             eventChoices: horizontal ? measures : [],
         };
@@ -409,7 +414,8 @@ export function calcSpecs(saved: CalcSaved[]): CalcRowSpec[] {
                   {
                       slot: i + 1,
                       kind: s.kind,
-                      name: s.name.trim(),
+                      // 名前が空でも仮の名前で出す（適用先・数値の対象の一覧と同じ名前。通し確認の 11、2026-10-17 ユーザー）
+                      name: s.name.trim() || `計算行 ${i + 1}`,
                       from: s.from === "" || s.from === CALC_TABLE_START ? null : s.from,
                       after: s.after === "" || s.after === CALC_TABLE_END ? null : s.after,
                       numerator: s.numerator || null,
@@ -538,6 +544,8 @@ export function transform(
     // 指標：書式ペインのメジャーごとの設定。横持ちは、指標の値を書式ペインで選んだイベントに割り当てる
     const indicatorSaved = indicatorSettings(input, eventModel);
     const indicators = indicatorFacts(input, indicatorSaved, eventModel);
+    // 太字にした指標の行（後ろに置いた指標だけ。うちは親の行と同じ見せ方）
+    const boldRows = new Set(indicatorSaved.filter((s) => s.bold === "on" && s.placement === INDICATOR_MODES.after).map((s) => s.code));
     // 指標の値は組織 × イベント × 月の小計で読む。小計が届いていなければ visual.ts が小計を入れる設定を保存する
     const indicatorSubtotals =
         input.indicators.length > 0 && input.facts.length > 0 && !input.indicatorLevel.subtotals && input.indicatorLevel.queryName !== null
@@ -582,7 +590,7 @@ export function transform(
 
     const calendar: FiscalCalendar = {
         startMonth: Number(dropdownValue(settings.periods.fiscalStartMonth, "4")) || 4,
-        yearLabel: (dropdownValue(settings.periods.yearLabel, "start") === "end" ? "end" : "start") as YearLabel,
+        yearLabel: (dropdownValue(settings.table.yearLabel, "start") === "end" ? "end" : "start") as YearLabel,
         words,
     };
     // 符号の持ち方：表全体の設定（数値のカード）。自動はシナリオごとに見分けて借方プラスにそろえる（2.0 でシナリオ・メジャーごとの設定はやめた）
@@ -690,12 +698,13 @@ export function transform(
         mainItems: mainValues.map((value) => ({ value, displayName: choiceLabel(value) })),
         main: authorMain,
         measureSettings: eventModel.measureSettings,
-        rowNumbers: { targets: rowNumberTargets(built), saved: readRowNumbersSaved(dataView) },
+        rowNumbers: { targets: rowNumberTargets(built), saved: readRowNumbersSaved(dataView), scope: savedText(dataView, "numbers", "scope") ?? "" },
         years,
         fiscalYear,
-        calcChoices: model.calcChoices,
+        calcChoices: { ...model.calcChoices, places: withOthersPlaces(built.calcChoices.places, built, pickChoices) },
         calcSaved,
         indicatorSettings: indicatorSaved,
+        scopes: { calcRows: savedText(dataView, "calcRows", "scope") ?? "", indicators: savedText(dataView, "indicators", "scope") ?? "" },
         hasOrgs: input.orgLevelNames.length > 0,
         hasPeriods: !noPeriods,
     };
@@ -764,12 +773,18 @@ export function transform(
     const ownFormatOf = (code: string): RowFormat | null => {
         const text = rowOverride.get(code)?.format?.trim();
         if (!text) return null;
-        if (!formatCache.has(text)) {
-            const parsed = parseRowFormat(text);
-            if (!parsed.ok) warnings.push(`行別の数値書式の書式「${text}」が読めない。金額のまま出した`);
-            formatCache.set(text, parsed.ok ? (parsed.format.kind === "amount" ? { ...parsed.format, kind: "number" } : parsed.format) : null);
+        // 計算行・指標の行は「金額」と書けば金額（表示単位で割る）。科目の木の行の書式は、字の無い形も数（割らない）
+        const own = ((def) => def !== undefined && ownRow(def))(model.rows.get(code) ?? built.rows.get(code));
+        const cacheKey = `${own ? "own" : "tree"}\u0000${text}`;
+        if (!formatCache.has(cacheKey)) {
+            if (own && (text === "金額" || text === "値")) formatCache.set(cacheKey, AMOUNT_FORMAT);
+            else {
+                const parsed = parseRowFormat(text);
+                if (!parsed.ok) warnings.push(`「数値」カードの設定の書式「${text}」が読めない。その行の書式のまま出した`);
+                formatCache.set(cacheKey, parsed.ok ? (parsed.format.kind === "amount" ? { ...parsed.format, kind: "number" } : parsed.format) : null);
+            }
         }
-        return formatCache.get(text) ?? null;
+        return formatCache.get(cacheKey) ?? null;
     };
     // 表の単位は、固定の単位か書式で上書きした行を除いて決める（除かないと、千円で見せる区分の大きさで表全体の単位が決まる）。
     // 上書きごとの最大は、単位だけ変えて桁を表全体（自動）に合わせるときの桁に使う
@@ -796,7 +811,8 @@ export function transform(
         divisor: unitDef.divisor,
         decimals: precision === "auto" ? (maxAbs / unitDef.divisor < 100 && unitDef.divisor > 1 ? 1 : 0) : Math.max(0, parseInt(precision, 10) || 0),
     };
-    const currency = settings.numbers.currency.value?.trim() || DEFAULT_CURRENCY;
+    // 単位文字は書式ペインの字のまま。空にすれば付けない（値の欄は金額とは限らない。以前は空でも「円」に戻していた）。保存が無ければ既定の「円」
+    const currency = (settings.numbers.currency.value ?? DEFAULT_CURRENCY).trim();
     // 表の上の単位は、表全体の単位で出す金額の行があるときだけ（どの行も単位か書式を上書きし、計算行も無ければ出さない）
     const hasAmountRows = valueRows.some(
         (d) => d.def.format.kind === "amount" && !ownFormatOf(d.def.code) && rowOverride.get(d.def.code)?.unitType === undefined && rowOverride.get(d.def.code)?.currency === undefined
@@ -807,6 +823,8 @@ export function transform(
         zero: dropdownValue(settings.numbers.zeroStyle, ZERO_STYLES.zero),
         diffZero: dropdownValue(settings.numbers.diffZeroStyle, ZERO_STYLES.plusMinus),
         negativeZero: settings.numbers.negativeZero.value,
+        negativeValue: dropdownValue(settings.numbers.negativeValue, "show"),
+        positiveValue: dropdownValue(settings.numbers.positiveValue, "show"),
     };
     interface RowNumbers {
         unit: AmountUnit;
@@ -845,10 +863,16 @@ export function transform(
                 zero: override.zeroStyle ?? sign.zero,
                 diffZero: override.diffZeroStyle ?? sign.diffZero,
                 negativeZero: override.negativeZero !== undefined ? override.negativeZero === "on" : sign.negativeZero,
+                negativeValue: override.negativeValue ?? sign.negativeValue,
+                positiveValue: override.positiveValue ?? sign.positiveValue,
             } as SignOptions,
             // 表全体と違う単位・通貨の行に添える。表の上の単位を出していない（どの金額の行も単位を上書きした）なら、同じ単位の行にも添える
             // （添えないと、単位がどこにも出ない表になった）
-            suffix: (own || rowCurrency !== currency) && (def.divisor !== unitDef.divisor || rowCurrency !== currency || !hasAmountRows) ? `（${def.unitWord}${rowCurrency}）` : "",
+            // 書式で字を付けた行（#,0台）は金額でないので添えない（表示単位を変えると「台数（円）」になっていた）
+            suffix:
+                (own || rowCurrency !== currency) && (def.divisor !== unitDef.divisor || rowCurrency !== currency || !hasAmountRows) && (ownFormatOf(code)?.kind ?? "amount") === "amount"
+                    ? `（${def.unitWord}${rowCurrency}）`
+                    : "",
             word: def.unitWord,
             currency: rowCurrency,
             format: ownFormatOf(code),
@@ -877,10 +901,11 @@ export function transform(
         const specs = specsAt(period.key);
         const here = periodSlots.get(period.key)!;
         periods.push({ key: period.key, label: period.label, kind: period.kind, span: 1 + specs.length, months: period.months, slots: here.views, own: here.own });
-        // 最新見込みの主は、期間に使ったイベントが 1 つならその名前、混ざれば「最新見込み」を名乗る
+        // 最新値の主は、期間に使ったイベントが 1 つならその名前、混ざれば一番弱い名前（書き換えれば、その見出し）
+        const isMonth = period.kind === "month";
         const mainUsed = main === LATEST ? calc.eventsByMonth(mainRef, period.months) : null;
         // データの無い期間は「―」（空の見出しだと、列がずれたように見える）
-        const mainHeader = mainUsed ? latestName(mainUsed, latestRule) || "―" : main;
+        const mainHeader = mainUsed ? latestName(mainUsed, latestRule, isMonth) || "―" : main;
         const mainItems = main === LATEST ? byOrgItems(breakdownItems(mainUsed), calc.eventsByOrgMonth(mainRef, period.months)) : undefined;
         columns.push({ periodKey: period.key, periodKind: period.kind, kind: "main", header: mainHeader, sub: "", ...titled(mainItems) });
         for (const spec of specs) {
@@ -890,7 +915,11 @@ export function transform(
             const used = at.ref.events.length > 1 ? calc.compareEventsByMonth(mainRef, at.ref, period.months) : null;
             const merged = at.compare === PRIOR_YEAR || at.compare === LATEST ? breakdownItems(used) : breakdownItems(used, at.compare);
             const items = used ? byOrgItems(merged, calc.compareEventsByOrgMonth(mainRef, at.ref, period.months)) : merged;
-            const [header, sub] = compareHeaderLines(at.label, spec.view, swap, words);
+            // 比較の最新値も、主と同じ決まりで名乗る（使ったうち一番弱い名前か、書き換えた見出し）。同じ期間のほかの比較の列と
+            // 同じ名前になるなら「最新値」（修正予算の列と並んで「修正予算差」が 2 本になるのを避ける）
+            const ownLatest = at.compare === LATEST && used ? latestName(used, latestRule, isMonth) : "";
+            const compareName = ownLatest && !specs.some((other) => other.partner.compare !== LATEST && other.partner.label === ownLatest) ? ownLatest : at.label;
+            const [header, sub] = compareHeaderLines(compareName, spec.view, swap, words);
             columns.push({
                 periodKey: period.key,
                 periodKind: period.kind,
@@ -907,8 +936,10 @@ export function transform(
     }
 
     // 組織のブロックの木。組織の欄が無ければ null（表は 1 つ）
-    const tree = buildOrgTree(input.orgs, input.orgLevelNames.length, settings.segments.rootName.value.trim() || DEFAULT_ROOT_NAME);
+    const tree = buildOrgTree(input.orgs, input.orgLevelNames.length, settings.segments.rootName.value.trim() || DEFAULT_ROOT_NAME, settings.segments.subtotalName.value.trim());
     format.hasRoot = tree?.root.path === null;
+    const hasSubtotal = (node: OrgNode): boolean => node.children.some((child) => child.children.length > 0 || hasSubtotal(child));
+    format.hasSubtotals = tree !== null && ((tree.root.path !== null && tree.root.children.length > 1) || hasSubtotal(tree.root));
     const hierarchy = accountTree(model, settings.rows.stepParents.value);
     const hierarchySaved = readHierarchyOverrides(dataView.metadata.objects);
     const hierarchyTargets: powerbi.IEnumMember[] = [];
@@ -931,8 +962,23 @@ export function transform(
         hierarchyTargets.push({ value: `org:node:${node.path ?? ROOT_FOLD}`, displayName: `セグメント：${node.path?.split(ORG_SEPARATOR).join(" / ") ?? node.label}` });
     }
     hierarchyTargets.unshift(...(["account", "org"] as const).flatMap(kind => Array.from(hierarchyLevels[kind]).sort((a, b) => a - b)
-        .map(level => ({ value: `${kind}:level:${level}`, displayName: `${kind === "account" ? "行" : "セグメント"} 表示階層 ${level + 1}` }))));
-    format.hierarchy = { targets: hierarchyTargets, saved: hierarchySaved };
+        .map(level => ({ value: `${kind}:level:${level}`, displayName: `${level + 1} 段目の${kind === "account" ? "行" : "セグメント"}すべて` }))));
+    format.hierarchy = { targets: hierarchyTargets, saved: hierarchySaved, scopes: { account: savedText(dataView, "rows", "scope") ?? "", org: savedText(dataView, "segments", "scope") ?? "" } };
+    // セグメントごとに隠す行（書式ペイン）。選択肢はセグメント（全社を含む）と、表の行（科目・指標・計算行。名前は上の行からの道筋）
+    const segmentRowsSaved = readSegmentRows(dataView.metadata.objects);
+    const rowChildren = new Map<string, string[]>();
+    for (const [kid, parent] of parentOfRow) rowChildren.set(parent, [...(rowChildren.get(parent) ?? []), kid]);
+    if (tree) {
+        const rowPath = (code: string): string[] => {
+            const parent = parentOfRow.get(code);
+            return [...(parent !== undefined ? rowPath(parent) : []), model.rows.get(code)?.name ?? code];
+        };
+        format.segmentRows = {
+            orgs: allNodes(tree.root).map((node) => ({ value: node.path ?? ROOT_FOLD, displayName: node.path?.split(ORG_SEPARATOR).join(" / ") ?? node.label })),
+            rows: model.display.filter((d) => d.def.type !== "heading" && d.def.type !== "blank").map((d) => ({ value: d.def.code, displayName: rowPath(d.def.code).join(" / ") })),
+            saved: segmentRowsSaved,
+        };
+    }
     // 折りたたみ：閉じた行の下の行を隠す（どの組織のブロックでも同じ）。囲みの帯は見えている行で引き直す。
     // 組織のブロックがあれば、行は既定で閉じる。組織の欄が無ければ既定で開く。見る人の保存は既定から切り替えた行
     // セグメントのブロックがあれば、行の開き閉じはブロックごとに覚える（保存はブロックの道筋とコードの組 = 行のキー）。1 つのブロックで科目を
@@ -1006,7 +1052,7 @@ export function transform(
         // 「その他」にまとめた行が小計（中分類）なら、その下の行にデータがあるか（小計そのものはファクトを持たない）
         const hasRow = (code: string): boolean => has(code) || (model.rows.get(code)?.summands ?? []).some((s) => s.code !== code && hasRow(s.code));
         const ownHeaders = new Map(
-            periodColumns.map((period): [string, string | null] => [period.key, !whole && main === LATEST ? latestName(calc.eventsByMonth(mainRef, period.months), latestRule) || null : null])
+            periodColumns.map((period): [string, string | null] => [period.key, !whole && main === LATEST ? latestName(calc.eventsByMonth(mainRef, period.months), latestRule, period.kind === "month") || null : null])
         );
         const ownCompares = new Map(
             usedCompares.map((value): [string, Map<string, string | null>] => [
@@ -1017,7 +1063,7 @@ export function transform(
                         if (whole || at.compare === PRIOR_YEAR || at.ref.events.length <= 1) return [period.key, null];
                         const used = new Set(Array.from(calc.compareEventsByMonth(mainRef, at.ref, period.months).values()).flat());
                         if (used.size <= 1) return [period.key, used.size === 1 ? Array.from(used)[0] : null];
-                        return [period.key, at.compare === LATEST ? latestName(used, latestRule) : at.ref.events.filter((e) => used.has(e)).join("・")];
+                        return [period.key, at.compare === LATEST ? latestName(used, latestRule, period.kind === "month") : at.ref.events.filter((e) => used.has(e)).join("・")];
                     })
                 ),
             ])
@@ -1027,8 +1073,11 @@ export function transform(
             const { unit: rowUnit, sign: rowSign, word, currency: rowCurrency, format: ownFormat } = numbersOf(row.def.code);
             const suffix = rowSuffix(row.def.code);
             const plain = othersNamed(row.def, hasRow, settings.rows.othersCount.value);
-            // 行別の数値書式で書式を上書きした行（#,0h）は、その書式で出す（金額の行だけ）
-            const formatted = ownFormat && plain.format.kind === "amount" ? { ...plain, format: ownFormat } : plain;
+            // 行別の書式で書式を上書きした行（#,0h）は、その書式で出す（科目の木は金額の行だけ。計算行・指標の行は比率の行も）
+            const reformatted = ownFormat && (plain.format.kind === "amount" || ownRow(plain)) ? { ...plain, format: ownFormat } : plain;
+            // 行別の数値書式で良し悪し（差の色の向き）を上書きした行
+            const ownGood = goodOfSaved(rowOverride.get(row.def.code)?.good);
+            const formatted = ownGood !== null ? { ...reformatted, good: ownGood } : reformatted;
             // 単位を数字のあとに置くとき、金額の行は数字に単位の字を付ける（ツールチップは円まで出すので付けない）
             const named = unitInCell && formatted.format.kind === "amount" ? { ...formatted, format: { ...formatted.format, suffix: `${word}${rowCurrency}` } } : formatted;
             const blankRow = named.type === "heading" || named.type === "blank";
@@ -1058,18 +1107,23 @@ export function transform(
                 const ownName = (ref: EventRef, fallback: string, latestLike = true) => {
                     if (!def.code.startsWith(INDICATOR_KEY) || ref.events.length <= 1) return fallback;
                     const used = calc.rowEventsByMonth(def.code, ref, period.months);
-                    if (latestLike) return latestName(used, latestRule) || fallback;
+                    if (latestLike) return latestName(used, latestRule, period.kind === "month") || fallback;
                     const all = new Set(Array.from(used.values()).flat());
                     return all.size === 0 ? fallback : ref.events.filter((e) => all.has(e)).join("・");
                 };
                 const mainName = ownName(mainRef, columnMain);
                 // 比較の相手ごとに、比較の値・差と、比か率（その相手の列が率を出していれば率、比を出していれば比、どちらも無ければ比）。
                 // 同じ名前で同じ値の相手（同じシナリオを 2 つの列に選んだとき、組織のブロックで落とした先が同じになった相手）は 1 度だけ。
-                // 名前だけでまとめない：別々の相手が期間の中でイベントが混ざって同じ「最新見込み」を名乗っても、値が違えば両方出す
+                // 名前だけでまとめない：別々の相手が期間の中でイベントが混ざって同じ名前を名乗っても、値が違えば両方出す
                 const partners: TooltipItem[] = [];
-                const keys = specs.map((spec, i) => {
+                const named = specs.map((spec) => {
                     const at = spec.partner;
-                    const name = at.compare === PRIOR_YEAR ? at.label : ownName(at.ref, ownCompares.get(spec.compare)?.get(period.key) ?? at.label, at.compare === LATEST);
+                    return at.compare === PRIOR_YEAR ? at.label : ownName(at.ref, ownCompares.get(spec.compare)?.get(period.key) ?? at.label, at.compare === LATEST);
+                });
+                // 最新値の相手が、ほかの相手と同じ名前（一番弱いシナリオの名前）になるなら「最新値」を名乗る（見分けられるように）
+                const keys = specs.map((spec, i) => {
+                    const clash = spec.partner.compare === LATEST && named.some((other, j) => j !== i && specs[j].partner.compare !== LATEST && other === named[i]);
+                    const name = clash ? spec.partner.label : named[i];
                     return { name, key: `${name}\u0001${results[i].compare}` };
                 });
                 specs.forEach((_, i) => {
@@ -1136,6 +1190,8 @@ export function transform(
                 ...(foldable(row) ? { open: !closedSet.has(def.code), fold: foldKey(prefix, def.code), ...(subtotalsBelow ? { toggleAbove: true } : {}) } : {}),
                 ...(codesOf(def.code) ? { select: { codes: codesOf(def.code)!, org: orgPath } } : {}),
                 orgPath,
+                // 太字：行別の書式で選んでいればそれ、無ければ指標カードの古い設定（2.1.7.14 まで）
+                ...((bold) => (bold === "on" ? { bold: true } : bold === "off" ? { bold: false } : boldRows.has(def.code) ? { bold: true } : {}))(ownRow(def) ? rowOverride.get(def.code)?.bold : undefined),
             };
         });
     };
@@ -1167,6 +1223,8 @@ export function transform(
                 const valued = (code: string) => ownCalc.hasValue(code, shownRefs, shownMonths, hideZero);
                 for (const code of emptyAccountRows(model.display, model.attached, code => inShown.has(code) && valued(code), model.rows, true)) empty.add(code);
             }
+            // 書式ペインの「セグメントごとに隠す行」：このブロックで隠す行と、その下の行（見た目だけ。値の計算は変えない）
+            if (node) for (const code of hiddenRowsIn(segmentRowsSaved, node.path ?? ROOT_FOLD, (c) => rowChildren.get(c) ?? [])) empty.add(code);
             const shown = model.display.filter(r => !empty.has(r.def.code));
             const full = shown.length ? shown : model.display;
             const values = tableRows(ownCalc, prefix, node?.label ?? null, !node || node === tree?.root, full,
@@ -1177,10 +1235,15 @@ export function transform(
         const orgPlan = (node: OrgNode, level: number): LayoutPlan => {
             const id = node.path ?? ROOT_FOLD;
             const fold = node === tree!.root ? ROOT_FOLD : id;
-            const open = node.children.length > 0 && (node === tree!.root ? !viewer.openOrgs.includes(ROOT_FOLD) : viewer.openOrgs.includes(id));
-            const opt = options("org", id, level);
+            // 「セグメント」カードの「合計」を非表示：束ねる根（一番上の段が 2 つ以上）を、合計なしで開いたままにする（畳めない。囲み・分割の形は
+            // 根の「展開時の合計」を「なし」にして開いたときと同じ。根を外して子を並べると、囲みが子ごとの別の表に分かれた）
+            const noRootTotal = node === tree!.root && node.path === null && dropdownValue(settings.segments.rootTotal, ROOT_TOTAL.on) === ROOT_TOTAL.off;
+            const open = node.children.length > 0 && (noRootTotal || (node === tree!.root ? !viewer.openOrgs.includes(ROOT_FOLD) : viewer.openOrgs.includes(id)));
+            const opt = noRootTotal ? { ...options("org", id, level), total: "none" as const } : options("org", id, level);
+            // 分割は子ごとの表を並べるだけにする（根の帯を残すと、名前の無い帯が上に出た）
+            if (noRootTotal && opt.style === "split") return stack(`${id}:children`, node.children.map(n => orgPlan(n, level + 1)), opt.direction);
             const header = { key: `org:${id}`, kind: "org" as const, label: node.label, org: node.path,
-                ...(node.children.length ? { open, fold } : {}) };
+                ...(node.children.length && !noRootTotal ? { open, fold } : {}) };
             let content = block(node);
             if (open) {
                 const children = stack(`${id}:children`, node.children.map(n => orgPlan(n, level + 1)), opt.style === "split" ? opt.direction : "vertical");
@@ -1197,7 +1260,7 @@ export function transform(
                 }
             }
             // 分割で合計なしを開いているあいだは、合計の名前を出さない（囲みの合計なしと同じ。閉じれば名前と合計の表）
-            const bare = open && opt.style === "split" && opt.total === "none";
+            const bare = (open && opt.style === "split" && opt.total === "none") || noRootTotal;
             return { kind: "frame", key: `org:${id}`, style: opt.style, header: bare ? { ...header, hideLabel: true } : header, content };
         };
         layout = tree ? compactOrgBoxes(orgPlan(tree.root, 0)) : block();
@@ -1209,9 +1272,9 @@ export function transform(
         title: table.title,
         yearKey: table.starts.map(yearKey).join(","),
         // 単位を行の名前の横に置くときは、表の上には出さない
-        // 頭は 1 つ（用語の「右上の単位の見出し」、既定「単位」）。以前は率・時間などの行が混ざると「金額：」にしていたが、値の欄は
+        // 頭は 1 つ（用語の「単位の見出し」、既定「単位」）。以前は率・時間などの行が混ざると「金額：」にしていたが、値の欄は
         // 台数・人数でも入れられるので金額とは限らない（ユーザー、2026-10-13）。字の付く行（台・%・h）は数字に字が出る
-        unitCaption: hasAmountRows && !unitByName && !unitInCell ? `${words.unit}：${unitDef.unitWord}${currency}` : "",
+        unitCaption: hasAmountRows && !unitByName && !unitInCell && `${unitDef.unitWord}${currency}` !== "" ? `${words.unit}：${unitDef.unitWord}${currency}` : "",
         mainLabel: label(main),
         compareLabel,
         periods,
@@ -1316,7 +1379,13 @@ function headerNames(settings: VisualFormattingSettingsModel): { segment: string
     };
 }
 
-function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableStyle {
+function styleOf(settings: VisualFormattingSettingsModel, themeColors: Theme): TableStyle {
+    // 書式ペインの「文字の色」「薄い文字の色」を決めていれば、テーマの字の色の代わりに使う（見出し・塗りの上の字もこの色から選ぶ）
+    const theme: Theme = {
+        ...themeColors,
+        text: settings.table.textColor.value?.value || themeColors.text,
+        muted: settings.table.mutedColor.value?.value || themeColors.muted,
+    };
     const size = (value: number | undefined, fallback: number) => Math.min(40, Math.max(6, value || fallback));
     const color = (slice: { value: { value: string } | undefined }, fallback: string) => slice.value?.value || fallback;
     const { comparison, periods, rows, segments, table } = settings;
@@ -1342,7 +1411,7 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
         // 見出しの背景を濃くしても字が読めるように、囲みの塗りと同じく明るさで字の色を選ぶ（明るい背景ならテーマの字の色）
         headText: textOn(headBackground, theme),
         headMuted: readableText(headBackground, theme.muted, 4.5),
-        // 字・副文字・地（書式ペインに無いので、いつもテーマの色）
+        // 字・副文字は書式ペインの「表全体」の色（空ならテーマの色）、地はいつもテーマの色
         text: theme.text,
         muted: theme.muted,
         background: theme.background,
@@ -1359,17 +1428,17 @@ function styleOf(settings: VisualFormattingSettingsModel, theme: Theme): TableSt
         },
         periodLines: periods.periodLines.value,
         aggregateDouble: periods.aggregateDouble.value,
-        unitPlace: unitPlaceOf(dropdownValue(settings.numbers.unitPlace, UNIT_PLACES.right)),
-        titleInCorner: dropdownValue(periods.titlePlace, TITLE_PLACES.top) === TITLE_PLACES.corner,
+        unitPlace: unitPlaceOf(dropdownValue(settings.table.unitPlace, UNIT_PLACES.right)),
+        titleInCorner: dropdownValue(settings.table.titlePlace, TITLE_PLACES.top) === TITLE_PLACES.corner,
         bandFill: settings.rows.bandFill.value,
         boldAggregates: settings.rows.boldAggregates.value,
         rowHeight: rowHeightOf(dropdownValue(settings.table.rowHeight, "normal")),
         alignTails: settings.numbers.alignTails.value,
         bold: Object.fromEntries(BOLD_KEYS.map((key) => {
-            // 行の名前と数字の太さは「行」カードの「合計行を太字」1 つで決める（入れれば行の種類で太さを変える、切れば太字にしない）
+            // 行の名前と数字の太さは「行」カードの「集計行を太字」1 つで決める（入れれば行の種類で太さを変える、切れば太字にしない）
             // 「行名をすべて太字」「数字をすべて太字」を入れれば、行の種類によらず太字
             if (key === "name" && settings.rows.allNamesBold.value) return [key, "on"];
-            if ((key === "main" || key === "compare" || key === "sub") && settings.comparison.valueBold.value) return [key, "on"];
+            if ((key === "main" || key === "compare" || key === "sub") && settings.rows.valueBold.value) return [key, "on"];
             if (key === "name" || key === "main" || key === "compare" || key === "sub") return [key, (settings.rows.totalBold.value ?? true) ? "auto" : "off"];
             const card = {"org":"segments","period":"periods","column":"comparison","compareHead":"comparison"}[key as "org" | "period" | "column" | "compareHead"] as "segments" | "periods" | "comparison";
             const value = dropdownValue((settings[card] as unknown as Record<string, Parameters<typeof dropdownValue>[0]>)[`${key}Bold`], "auto");
@@ -1441,53 +1510,84 @@ function foldsOf(orgs: string[], rows: string[], rowsClosedByDefault: boolean, c
     };
 }
 
+/**
+ * 指標の挿入位置の選択肢に「〇〇のその他」を足す（見る人が科目を選べる親ごと。見る人が選ぶ前から選べる）。
+ * 置く所は、その親の中の行（子・孫）の最後の選択肢の後ろ
+ */
+export function withOthersPlaces(places: CalcChoices["places"], model: RowModel, parents: PickParent[]): CalcChoices["places"] {
+    const result = places.slice();
+    for (const parent of parents) {
+        const inside = new Set<string>();
+        const walk = (code: string) => {
+            for (const kid of model.rows.get(code)?.children ?? []) if (!inside.has(kid)) (inside.add(kid), walk(kid));
+        };
+        for (const account of parent.accounts) (inside.add(account.code), walk(account.code));
+        let at = -1;
+        result.forEach((p, i) => {
+            if (inside.has(p.value)) at = i;
+        });
+        const choice = { value: OTHERS_KEY + parent.code, displayName: `${parent.name}の最後（その他の後ろ）` };
+        if (at < 0) result.push(choice);
+        else result.splice(at + 1, 0, choice);
+    }
+    return result;
+}
+
+/** 行別の数値書式の良し悪しの保存値を向きにする。上書きしない（行の向きのまま）なら null */
+export function goodOfSaved(value: string | undefined): GoodDirection | null {
+    return value === "up" ? 1 : value === "down" ? -1 : value === "neutral" ? 0 : null;
+}
+
 /** 書式ペインの「最新見込みの見出し」と文字の欄から、見出しの決まりを作る */
 function latestHeaderRuleOf(settings: VisualFormattingSettingsModel, latest: string[], words: Words): LatestHeaderRule {
     const c = settings.comparison;
-    const mode = dropdownValue(c.latestHeader, LATEST_HEADERS.label);
-    const latestLabel = words.latest;
-    if (mode === LATEST_HEADERS.scenario) return { newestFirst: latest, latestLabel };
-    if (mode !== LATEST_HEADERS.custom) return { latestLabel };
+    const base = { newestFirst: latest, latestLabel: words.latest };
+    if (dropdownValue(c.latestHeader, LATEST_HEADERS.scenario) !== LATEST_HEADERS.custom) return base;
     return {
-        latestLabel,
+        ...base,
         confirmed: (c.confirmedScenario.value ?? "")
             .split(/[,、]/)
             .map((name) => name.trim())
             .filter((name) => name !== ""),
         confirmedLabel: (c.confirmedLabel.value ?? "").trim(),
         forecastLabel: (c.forecastLabel.value ?? "").trim(),
+        months: c.relabelMonths.value,
     };
 }
 
-/** 書式の「最新見込みの見出し」の決まり。何も無ければ、混ざったときは「最新見込み」 */
+/** 書式の「見出しの書き換え」の決まり。何も無ければ、混ざったときは「最新値」 */
 export interface LatestHeaderRule {
-    /** シナリオの名前：比較順の大きい順。混ざったときは使ったうち比較順のいちばん前（確度の低い）名前 */
+    /** シナリオの名前：比較順の大きい順。混ざったときは使ったうち比較順のいちばん前（一番弱い）名前 */
     newestFirst?: string[];
-    /** 文字で決める：確定とみなすシナリオ。これだけなら confirmedLabel、ほかが入れば forecastLabel */
+    /** 書き換え：指定したシナリオ。これだけなら confirmedLabel、ほかが入れば forecastLabel */
     confirmed?: string[];
     confirmedLabel?: string;
     forecastLabel?: string;
-    /** 混ざったときの名乗り（用語の「最新見込み」）。無ければ「最新見込み」 */
+    /** 月の列も書き換えるか。無ければ書き換える */
+    months?: boolean;
+    /** 弱い順の名前が決まらないときの名乗り（用語の「最新値」） */
     latestLabel?: string;
 }
 
 /**
- * 最新見込みの期間の名乗り：使ったイベントが 1 つならその名前、月か組織でイベントが混ざれば「最新見込み」。
- * 「シナリオの名前」なら、混ざったときは確度の低い名前（実績と見通しなら見通し、予定と実績なら予定）。
- * 「文字で決める」なら、確定とみなすシナリオだけの期間は確定の見出し（空ならそのシナリオの名前）、ほかが入れば別の見出し（空なら「最新見込み」）。
- * 月ごとの内訳は見出しの点線とツールチップ
+ * 最新値の列の名乗り：使ったイベントが 1 つならその名前、月か組織でイベントが混ざれば、使ったうち一番弱い（比較順の前の）名前
+ * （実績と見通しなら見通し、予定と実績なら予定。2026-10-16 ユーザー決定。それまでの既定は「最新見込み」と名乗った）。
+ * 書き換えるなら、指定したシナリオだけの期間はその見出し（空ならそのシナリオの名前）、ほかが入れば別の見出し（空なら一番弱い名前）。
+ * month が真で「月の列も書き換える」を切っていれば書き換えない。月ごとの内訳は見出しの点線とツールチップ
  */
-export function latestName(used: Map<MonthIndex, string[]> | Set<string>, rule: LatestHeaderRule = {}): string {
+export function latestName(used: Map<MonthIndex, string[]> | Set<string>, rule: LatestHeaderRule = {}, month = false): string {
     const all = used instanceof Set ? used : new Set(Array.from(used.values()).flat());
     if (all.size === 0) return "";
-    if (rule.confirmed) {
+    const weakest = () => {
+        if (all.size === 1) return Array.from(all)[0];
+        return (rule.newestFirst ? [...rule.newestFirst].reverse().find((e) => all.has(e)) : undefined) ?? rule.latestLabel ?? LATEST_LABEL;
+    };
+    if (rule.confirmed && rule.confirmed.length > 0 && !(month && rule.months === false)) {
         const confirmed = rule.confirmed;
         if (Array.from(all).every((e) => confirmed.includes(e))) return rule.confirmedLabel || (confirmed.find((e) => all.has(e)) ?? "");
-        return rule.forecastLabel || (rule.latestLabel ?? LATEST_LABEL);
+        return rule.forecastLabel || weakest();
     }
-    if (all.size === 1) return Array.from(all)[0];
-    const mixed = rule.latestLabel ?? LATEST_LABEL;
-    return rule.newestFirst ? ([...rule.newestFirst].reverse().find((e) => all.has(e)) ?? mixed) : mixed;
+    return weakest();
 }
 
 /** 行の数字の書き方（表ごとの単位を決める）。金額は表の単位で割る行、字の付く数（#,0台）は自前の単位の行 */

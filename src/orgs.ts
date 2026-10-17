@@ -28,6 +28,16 @@ export interface OrgNode {
     /** 左の何列目か（組織の段。束ねる根は -1） */
     column: number;
     children: OrgNode[];
+    /** 子を足した計の表の名前（「第一事業部計」）。束ねる根は label のまま */
+    totalLabel?: string;
+}
+
+/** セグメントの計の名前の既定。{名前} にセグメントの名前が入る */
+export const DEFAULT_SUBTOTAL_NAME = "{名前}計";
+
+/** セグメントの計の名前の形（書式の「セグメントの計の名前」）を埋める。{名前} が無ければ、書いた字のまま */
+export function subtotalLabel(label: string, template: string = DEFAULT_SUBTOTAL_NAME): string {
+    return (template || DEFAULT_SUBTOTAL_NAME).split("{名前}").join(label);
 }
 
 /** 左の列のセル。column から colSpan 列、rowSpan 行にかかる */
@@ -76,7 +86,7 @@ export type OrgTotalPosition = "after" | "before";
 /**
  * 道筋から組織の木を組む。orgs は届いた順（Power BI の並べ替えの順）。組織を入れていなければ（段が 0）null
  */
-export function buildOrgTree(orgs: string[], levels: number, rootName: string): { root: OrgNode; columns: number } | null {
+export function buildOrgTree(orgs: string[], levels: number, rootName: string, subtotalName: string = DEFAULT_SUBTOTAL_NAME): { root: OrgNode; columns: number } | null {
     if (levels === 0 || orgs.length === 0) return null;
     const top: OrgNode[] = [];
     const byPath = new Map<string, OrgNode>();
@@ -92,6 +102,7 @@ export function buildOrgTree(orgs: string[], levels: number, rootName: string): 
                     label: segments[i] === "" ? NO_ORG_LABEL : segments[i],
                     column: i,
                     children: [],
+                    totalLabel: subtotalLabel(segments[i] === "" ? NO_ORG_LABEL : segments[i], subtotalName),
                 };
                 byPath.set(path, node);
                 siblings.push(node);
@@ -181,7 +192,7 @@ export function layoutOrgs(
         const nameCell: OrgCell | null =
             node.path === null ? null : { label: node.label, path: node.path, column: col, colSpan: 1, rowSpan: childRows, toggle: toggleOf(node, true), total: false };
         const totalCell: OrgCell = {
-            label: node.path === null ? node.label : `${node.label}計`,
+            label: node.path === null ? node.label : (node.totalLabel ?? subtotalLabel(node.label)),
             path: node.path,
             column: col,
             colSpan: columns - col,
