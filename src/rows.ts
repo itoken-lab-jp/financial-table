@@ -20,6 +20,8 @@
  * - 比率の行は、分子と分母の行を期間で集計してから割る
  * - 並び：区分の中は科目の並び → コード。小計を科目の上か下に置くかは表全体で選ぶ。うちは親の行の下
  */
+import { maxOf } from "./shared/minMax";
+import { compareJa } from "./collate";
 import { AccountRecord, INDICATOR_KEY, TOTAL_ACCOUNT } from "./data";
 import { Expr, FormulaError, parseFormula } from "./formula";
 import { AMOUNT_FORMAT, RowFormat, parseRowFormat } from "./numberFormat";
@@ -191,7 +193,7 @@ export function parseFlag(value: string | null | undefined): boolean | null {
 }
 
 /** コードの並び（並びが同じか無いとき）。数字どうしは数として比べる */
-const compareCode = (a: string, b: string) => a.localeCompare(b, "ja", { numeric: true });
+const compareCode = compareJa;
 
 const PERCENT_FORMAT: RowFormat = parseRowFormat("0.0%").format;
 
@@ -765,7 +767,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             return;
         }
         const tail = afterTail.get(OTHERS_KEY + parent.code);
-        const at = tail !== undefined ? blockEnd(tail) : Math.max(blockEnd(last), ...(following.get(last) ?? []).map(blockEnd));
+        const at = tail !== undefined ? blockEnd(tail) : Math.max(blockEnd(last), maxOf((following.get(last) ?? []).map(blockEnd)));
         display.splice(at + 1, 0, { def: row, depth: display[positions.get(last)!].depth });
         afterTail.set(OTHERS_KEY + parent.code, row.code);
         following.set(last, [...(following.get(last) ?? []), row.code]);
@@ -869,11 +871,11 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             const label = isSection || key.startsWith(CALC_KEY) || key.startsWith(INDICATOR_KEY) ? placeLabel(key) : key;
             const found = (isSection ? sectionValue.get(key.slice(SECTION_KEY.length)) : undefined) ?? (rows.has(key) ? key : nameIndex.has(key) ? nameIndex.get(key) : undefined);
             if (found !== undefined && found !== null && rows.get(found)?.type === "calc") {
-                warn(`比率の行「${row.name}」の「${label}」は比率の行なので、分子・分母にできない。空欄にした`);
+                warn(`割り算の行「${row.name}」の「${label}」は割り算の行なので、分子・分母にできない。空欄にした`);
                 return null;
             }
-            if (found === undefined) warn(`比率の行「${row.name}」の「${label}」が表に無い。空欄にした`);
-            else if (found === null) warn(`比率の行「${row.name}」の「${label}」は同じ名前の行が 2 つ以上あり決められない`);
+            if (found === undefined) warn(`割り算の行「${row.name}」の「${label}」が表に無い。空欄にした`);
+            else if (found === null) warn(`割り算の行「${row.name}」の「${label}」は同じ名前の行が 2 つ以上あり決められない`);
             return found ?? null;
         };
         const num = resolve(numerator);
@@ -883,7 +885,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             row.formula = parseFormula(`[${num}] / [${den}]`);
             row.refs = [num, den];
         } catch (error) {
-            warn(`比率の行が組めない（${row.name}：${error instanceof FormulaError ? error.message : String(error)}）`);
+            warn(`割り算の行が組めない（${row.name}：${error instanceof FormulaError ? error.message : String(error)}）`);
         }
     }
 

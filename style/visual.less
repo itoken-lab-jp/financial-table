@@ -75,16 +75,55 @@
 .ft-scroll.ft-layout-scroll { border: 1px solid transparent; }
 .ft-scroll.ft-layout-scroll:not([data-single]).ft-scrolled-x { border-left-color: var(--ft-line-outer); }
 .ft-scroll.ft-layout-scroll:not([data-single]).ft-scrolled-y { border-top-color: var(--ft-line-outer); }
-// 表が 1 つのとき（App.tsx の data-single）は、外枠の 4 辺とも表が引き、箱の縁には引かない。左は左のかたまりの表の枠線で、表ごと左に残る。
-// 上は見出しの 1 段目のセルの中に引き（表の上の枠線は 0）、見出しごと上に残る。箱の縁の線に引き継ぐと、スクロールで 1px 跳ねた（2026-10-15）。
+// 表が 1 つのとき（App.tsx の data-single）は、右と下は表の枠線、上と左は箱の外に重ねた部品（下の .ft-frame-lines）が引き、箱の縁には引かない。
 // 箱の内側の右と下に 1px の余白を足し、箱の切り取りの端を表の右と下の線から離す（ちょうど重なると、Desktop の拡大で端の丸めに線が切られ、
-// 一番下の線が薄くなったり消えたりした）。箱の縁に線を引かないので、余白の分だけ線がはみ出すこともない
+// 一番下の線が薄くなったり消えたりした）。上と左の線の長さは表の端までなので、余白の分だけ線がはみ出すこともない
 .ft-scroll.ft-layout-scroll[data-single] { padding: 0 1px 1px 0; }
 .ft-table.ft-layout-table[data-touch-top] { border-top-width: 0; }
+.ft-table.ft-layout-table[data-touch-left] { border-left-width: 0; }
+// 表が 1 つのときの外枠の上と左の線・見出しの下の線は、スクロールの箱の外に重ねた部品が引く（位置と長さは App.tsx の frameLines）。
+// 上に残す見出しと左に残す表は、スクロールの位置によって画面の画素の途中に止まり、そこに引いた線が 1 画素動いた（Desktop の 125%）。
+// 箱の縁の線にすると、右の 1px の余白とスクロールバーの分だけ角がはみ出すので、長さを表の端までにした部品で引く
+.ft-frame-lines {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    // 左に残す表（z-index 3）・重ねた線（4）より上、メニュー（20）より下
+    z-index: 5;
+    pointer-events: none;
+
+    > span {
+        position: absolute;
+        background: var(--ft-line-outer);
+        // 線ごとに自分の層で描く。層を持たないと、細い線がスクロールの箱の層の下に回り、上に残す見出しに隠れたり、スクロールの位置で
+        // 見え方が変わったりした（ハーネスの Chromium、表示倍率 1.25）
+        will-change: transform;
+    }
+
+    > .ft-frame-head {
+        background: var(--ft-line-head);
+    }
+}
+
+.ft-frame-lines[hidden],
+.ft-frame-lines > span[hidden] {
+    display: none;
+}
+
+// 重ねた部品が引くので、見出しの中の上の線と見出しの下の線は描かない（スクロールで 1 画素動いて、部品の線と 2 本に見える）
+.ft-scroll.ft-layout-scroll[data-frame-top] :is(.ft-line-top, .ft-line-head) {
+    visibility: hidden;
+}
+
+.ft-scroll.ft-layout-scroll[data-frame-split] .ft-freeze-left .ft-line-name {
+    visibility: hidden;
+}
 // 残す見出しは、縁の内側へ 1px 食い込ませて止める。Desktop はビジュアルを端数の倍率で拡大するので、
 // 0 で止めると縁の線とのあいだに 1px 足らずの隙間ができ、下を流れる字がうっすら透けた
 .ft-table.ft-layout-table thead { top: -1px; }
-// 上の線を見出しのセルが引く表は、見出しは置いた位置のまま止める（-1px だと、スクロールし始めに見出しが 1px 上がる）。
+// 箱の上の縁に着いている表は、見出しは置いた位置のまま止める（-1px だと、スクロールし始めに見出しが 1px 上がる）。
 // 箱の縁とのあいだの端数の隙間は、見出しの地を上へ伸ばして埋める（箱の外は切られて見えない）
 .ft-table.ft-layout-table[data-touch-top] thead { top: 0; }
 .ft-block-unit { text-align: right; color: var(--ft-muted); padding: 0.25em 0.5em; font-size: var(--ft-size-unit); }
@@ -421,7 +460,7 @@ td.ft-col-compare {
     }
 }
 
-tbody .ft-row:first-child {
+tbody:where(:first-of-type) .ft-row:first-child {
     th,
     td {
         border-top-color: transparent;
@@ -527,6 +566,8 @@ tbody .ft-row:first-child {
 
 .ft-table tbody th.ft-org,
 .ft-table tbody th.ft-hierarchy-name { padding-left: var(--ft-label-inset); }
+// セグメントの名前は右の列との間を空ける（0.5em だと名前が右の線に詰まって見えた。2026-10-21 ユーザー）。列の幅は右の余白ごと測る（App.tsx）
+.ft-table tbody th.ft-org { padding-right: 1em; }
 
 .ft-table tbody .ft-row-total th.ft-name {
     padding-top: calc(var(--ft-row-pad, 0.15em) + 4px);
@@ -566,9 +607,9 @@ tbody .ft-row:first-child {
 
 .ft-row-blank .ft-name-line,
 .ft-row-blank .ft-box-line,
-tbody .ft-row:first-child .ft-name-line,
-tbody .ft-row:first-child .ft-box-line,
-tbody .ft-row:first-child .ft-seg-box-line {
+tbody:where(:first-of-type) .ft-row:first-child .ft-name-line,
+tbody:where(:first-of-type) .ft-row:first-child .ft-box-line,
+tbody:where(:first-of-type) .ft-row:first-child .ft-seg-box-line {
     display: none;
 }
 
@@ -725,11 +766,11 @@ tbody .ft-row:first-child .ft-seg-box-line {
     }
 }
 
-tbody .ft-row-block:first-child .ft-seg-line {
+tbody:where(:first-of-type) .ft-row-block:first-child .ft-seg-line {
     display: none;
 }
 
-tbody .ft-row-block:first-child {
+tbody:where(:first-of-type) .ft-row-block:first-child {
     th,
     td {
         border-top-color: transparent;
@@ -752,12 +793,34 @@ tbody .ft-row-block:first-child {
 /* 組織の名前は、その組織の行が見えているあいだ列の見出しの下に残す（top は App.tsx が見出しの高さを測って渡す） */
 .ft-org-label {
     position: sticky;
+    // 左右に分けた表は、行に top を渡さず、測った見出しの下の端を表に置く（App.tsx）
+    // セルの上の余白（th.ft-org の padding-top）のぶん下げて、見出しの線に字が付かないようにする
+    top: calc(var(--ft-org-top, 0px) + var(--ft-row-pad, 0.15em) + 1px);
 }
 
-// 2 段の行（差と比など）では、セグメントの名前を 1 行目の行の名前と同じ高さに置く（数字の 2 段の真ん中）
+// 囲む親の名前。その親の名前が画面に見えていないあいだだけ、名前の上に小さく出す（App.tsx の placeOrgLabels）
+.ft-org-parents {
+    display: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ft-org-parents-text {
+    font-weight: 400;
+    font-size: 0.8em;
+    color: var(--ft-muted);
+}
+
+.ft-org-parents[data-shown] {
+    display: block;
+}
+
+// 2 段の行（差と比など）では、セグメントの名前を 1 行目の行の名前と同じ高さに置く（数字の 2 段の真ん中）。親の名前・上に重ねる名前は縦に並べる
 .ft-two-lines tbody th.ft-org .ft-org-label {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    justify-content: center;
     min-height: calc((var(--ft-size-compare) + var(--ft-size-sub)) * var(--ft-row-two, 1.35));
 }
 
@@ -788,6 +851,17 @@ tbody .ft-row-block:first-child {
     background: rgba(255, 255, 255, 0.65);
     pointer-events: none;
     z-index: 2;
+}
+
+/*
+ * 行の名前の列の横線（セルの中に置いた線）は覆いより上に出す。数字の列の線はセルの枠線で覆いの外なので、名前の列の線だけが覆いの下に
+ * 入ると、選んだ行のすぐ下の線（下の薄くした行が引く）が名前の列だけ白に寄って見えた
+ */
+.ft-dim .ft-name-line,
+.ft-dim .ft-box-line,
+.ft-dim .ft-seg-box-line,
+.ft-dim .ft-box-bottom {
+    z-index: 3;
 }
 
 /* 値のセルは z-index で重なりの文脈を作り、覆いをセルの中に閉じ込める（無いと、スクロールで上と左に残す見出しの上に覆いが重なった） */
@@ -851,14 +925,11 @@ thead th.ft-dim {
         outline-offset: -2px;
     }
 
-    // 地の色で引く見出しの線は色を強制されると消えるので、字の色で引く。上の端の線（box-shadow）も消えるので、表の枠線に戻す
-    .ft-line-head {
+    // 地の色で引く線（見出しの下の線・表が 1 つのときの外枠の上と左）は色を強制されると消えるので、字の色で引く
+    .ft-line-head,
+    .ft-frame-lines > span {
         forced-color-adjust: none;
         background: CanvasText;
-    }
-
-    .ft-table.ft-layout-table[data-touch-top] {
-        border-top-width: 1px;
     }
 }
 
@@ -1064,6 +1135,25 @@ thead th.ft-dim {
     min-height: 0;
 }
 
+// 画像としてコピーで表全体を写すときの写しの箱（App.tsx の fullSheetImage）。ルートの左上に重ね、見えないように切る（位置と大きさは測れる）。
+// スクロールの箱は大きさの上限を外して中身の大きさにする。はみ出しを切るのは画面と同じにする（見出しの上へ伸ばした覆いなどを箱の外に出さない）。
+// 箱は sticky の基準のままで、中身の大きさなので、残す見出し・列・行は端に掛からず自分の場所に来る
+.ft-full-capture {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: max-content;
+    clip-path: inset(50%);
+    pointer-events: none;
+
+    > .ft-sheet > .ft-scroll {
+        overflow: hidden;
+        max-width: none;
+        max-height: none;
+        flex: none;
+    }
+}
+
 // 下に置いた合計は、その下でまとまりを締める。境界は上下のセルで重ねて引かない。
 .ft-table .ft-row-end {
     > td { border-top: 1px solid var(--ft-line-row); }
@@ -1112,18 +1202,18 @@ thead th.ft-dim {
 }
 // 表の最後の行が締めの行なら、締めの線は引かず、表の外枠で締める（外枠を消して締めの線に任せると、締めの線の無い左の列
 // （セグメント・行の名前）の下だけ線が切れ、色も外枠でなく小計の線になった）
-.ft-table.ft-layout-table tbody > .ft-row-end:last-child {
+.ft-table.ft-layout-table tbody:where(:last-of-type) > .ft-row-end:last-child {
     > th.ft-name, > td { border-bottom: 0; }
     .ft-box-bottom { display: none; }
 }
-.ft-layout-table tbody > .ft-row-collapsed:first-child > td { border-top-width: 0; }
+.ft-layout-table tbody:where(:first-of-type) > .ft-row-collapsed:first-child > td { border-top-width: 0; }
 
 // 上合計はまとまりの開始側を区切る。先頭は列見出しの下線だけにする。
-.ft-table .ft-row-start:not(:first-child) {
+.ft-table .ft-row-start:not(:where(tbody:first-of-type) > :first-child) {
     > td { border-top: 1px solid var(--ft-line-subtotal); }
     .ft-name-line, .ft-box-line { display: block; border-top: 1px solid var(--ft-line-subtotal); }
 }
-.ft-table .ft-row-start:first-child > td { border-top-width: 0; }
+.ft-table :where(tbody:first-of-type) > .ft-row-start:first-child > td { border-top-width: 0; }
 
 // 開いた行・閉じた行とも、太字は名前だけ。数字の太字は段階の行（利益・合計）だけにする（docs/financialTable.md の「強弱の付け方」。
 // 2.0 で配置の描き方がいつも効くようになり、区分の数字まで太字だと、閉じた損益計算書で行の半分以上が太字になって段階利益が埋もれた）
@@ -1141,14 +1231,14 @@ thead th.ft-dim {
 .ft-root tr.ft-row.ft-row-plain > td :is(div, .ft-sub) { font-weight: 400 !important; }
 
 // 横積みでは新しく始まる親セルから右だけを区切り、継続中の上位セルを横断しない。
-.ft-layout-table .ft-row-hierarchy-start:not(:first-child) {
+.ft-layout-table .ft-row-hierarchy-start:not(:where(tbody:first-of-type) > :first-child) {
     > th.ft-hierarchy-name, > td { border-top: 1px solid var(--ft-line-subtotal); }
     .ft-name-line, .ft-box-line { display: block; border-top: 1px solid var(--ft-line-subtotal); }
 }
 
 // 事業境界は次のブロックの上辺だけで描き、左の囲みと数値列を同じ高さにする。横積みの親の名前のセルも同じ線（無いと、囲みの下の辺が
 // 親の名前の列だけ行の線の色になって途中で切れて見えた。2026-10-15）
-.ft-layout-table .ft-row-block:not(:first-child) {
+.ft-layout-table .ft-row-block:not(:where(tbody:first-of-type) > :first-child) {
     > td, > th.ft-hierarchy-name { border-top: 1px solid var(--ft-line-block); }
     .ft-name-line, .ft-box-line { display: block; border-top: 1px solid var(--ft-line-block); }
 }
@@ -1249,6 +1339,11 @@ thead th.ft-dim {
     pointer-events: none;
 }
 
+// セグメントの列どうしの境はセグメントの箱の線（囲み線の色）。横積みの右の列に囲みの計（塗らない段）が来ても、境が見える
+.ft-org > .ft-edge-line {
+    border-left-color: var(--ft-line-block);
+}
+
 /*
  * 左に残す列（セグメントの列と行の見出し）は、数字の表とは別の表（.ft-freeze-left）にまとめ、その表ごと左に残す（App.tsx の PresentedTable）。
  * セルごとに残していたときは、端数の倍率で描くと残すセルの境ごとに画素の丸めが食い違い、隙間から後ろの数字が透けたり、重なって線が消えたりした
@@ -1283,7 +1378,7 @@ thead th.ft-dim {
 
 // 2 つの表を別の層（will-change: transform）にはしない。層にすると、Desktop の拡大でスクロールしたとき層ごと画素の途中に置かれ、上の線・
 // 見出しの下の線・左の線・左のかたまりの中の横線が 2〜4 画素ににじんだ（2026-10-15）。層にしていた理由（左右の表の行の横線の 1 画素の
-// 段違い）は、行の境を画面の画素に合わせ（App.tsx の行の高さそろえ）、層にしなくてもハーネスでは出ない
+// 段違い）は、行の高さを CSS の整数 px にそろえて（App.tsx の行の高さそろえ、rowHeights.ts。2026-10-24 に画素の目に合わせる形から改めた）、層にしなくても出ない
 
 .ft-table.ft-layout-table.ft-freeze-right {
     border-left-width: 0;
@@ -1293,3 +1388,29 @@ thead th.ft-dim {
 .ft-table thead th.ft-line-anchor {
     position: relative;
 }
+
+/*
+ * 左に残す表の線を th の罫線で引く（src/frozenLines.ts、2026-10-24）。div の線を th の罫線に写したあとの部品の置き直し。
+ * React が style に置いた top・height などに勝たせるので !important。--ft-fl-bw・--ft-fl-bwb は th に置いた上と下の罫線の太さ、
+ * --ft-fl-br は外した右の透明な枠線の太さ
+ *   ft-fl-hide          今まで線を引いていた div。罫線にしたので描かない
+ *   ft-fl-cover         箱の帯が上の行から続く所（線を引かない所）。罫線の上に帯の色を重ねて消す。上の行へ 1px、罫線の下へ 1px はみ出す
+ *                       （帯を 1px 上へ重ねて塗る NestedBox の span と同じ形）。帯の色が無ければ地の色で消す。左の縦線は ft-box の枠線のまま
+ *   ft-fl-cover-bottom  締めの線を段の内側から引くとき、外の段の帯（下の行へ続く）の所の下の罫線を消す
+ *   ft-fl-rise・ft-fl-sink  箱の帯と名前の所の span を上下の罫線の分だけ外へ伸ばす。伸ばした所は透明な枠線にして塗りを枠線の内側だけにし、
+ *                       左の縦線（枠線）だけを罫線の所まで届かせる。伸ばさないと端数の倍率で角の 1 画素が薄くなった（余白で空けると、塗りの端が
+ *                       画素の途中に来て罫線ににじんだ）
+ *   ft-fl-inset         右の透明な枠線を外したセルで、右の端まで塗る span を枠線の幅だけ内へ戻す（塗りは今までどおり枠線の手前で止める）
+ *   ft-fl-edge          左の列との境の縦線（ft-edge-line）を、上下の罫線の分だけ伸ばす（伸ばさないと罫線の所で縦線が切れる）
+ * セグメントの列は、描く範囲をセルの外の端で切る。切らないと、セグメントの名前（sticky）と箱の span が重なって、セルごと別の層で端数の位置に
+ * 描かれ、罫線が 3〜4 画素ににじんだ（div の線でも同じ。ハーネスの 125%・175%）。左右だけ・上下だけ・外へ余白を足して切る形では、にじみが残った。
+ * 切るとセグメントの列どうしの境の縦線（右のセルの ft-edge-line。セルの外の左に引く）も切れるので、左のセルの右の枠線で引く（frozenLines.ts の orgEdges）
+ */
+.ft-fl-hide { display: none !important; }
+.ft-fl-cover { top: calc(-1px - var(--ft-fl-bw, 0px)) !important; height: calc(var(--ft-fl-bw, 0px) + 2px) !important; bottom: auto !important; background-color: var(--ft-bg); }
+.ft-fl-cover-bottom { position: absolute; top: auto !important; bottom: calc(-1px - var(--ft-fl-bwb, 0px)) !important; height: calc(var(--ft-fl-bwb, 0px) + 3px) !important; background-color: var(--ft-bg); }
+.ft-fl-rise { top: calc(-1 * var(--ft-fl-bw, 0px)) !important; border-top: var(--ft-fl-bw, 0px) solid transparent !important; background-clip: padding-box !important; }
+.ft-fl-sink { bottom: calc(-1 * var(--ft-fl-bwb, 0px)) !important; border-bottom: var(--ft-fl-bwb, 0px) solid transparent !important; background-clip: padding-box !important; }
+.ft-fl-inset { right: var(--ft-fl-br, 0px) !important; }
+.ft-fl-edge { top: calc(-1 * var(--ft-fl-bw, 0px)) !important; bottom: calc(-1 * var(--ft-fl-bwb, 0px)) !important; }
+.ft-table tbody th.ft-org { overflow: clip; overflow-clip-margin: border-box; }

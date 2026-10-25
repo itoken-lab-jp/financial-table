@@ -4,17 +4,17 @@
             "name": "account",
             "kind": "Grouping",
             "displayName": "行",
-            "description": "行の階層を上の段から入れる（任意。1〜5 段）。例：区分 → 中分類 → 科目名、商品分類 → 商品。一番下の段が行に出す名前で、上の段ごとに小計の行を付ける（一番上の段は区分）。1 段だけなら行ごとに区分になり、入れなければ値をすべて足した合計の 1 行になる。並びはモデルの「列で並べ替え」の順（段ごとに設定する）。それで決まらない所は「行の順序」の欄で決める。区分の名前には意味を持たせない（向きは貸方フラグ、残高は残高フラグから）"
+            "description": "行の階層を上のレベルから入れる（任意。1〜5 レベル）。例：区分 → 中分類 → 科目名、商品分類 → 商品。一番下のレベルが行見出しに出す名前で、上のレベルごとに小計の行を付ける（レベル 1 は区分）。1 レベルだけなら行ごとに区分になり、入れなければ値をすべて足した合計の 1 行になる。並びはモデルの「列で並べ替え」の順（レベルごとに設定する）。一番下のレベルは「行の順序」フィールドを入れればその順で、上のレベルの中の並びが決まらない所も「行の順序」フィールドで決める。区分の名前には意味を持たせない（向きは「貸方フラグ」フィールド、残高は「残高フラグ」フィールドから）"
         },
         {
             "displayName": "行コード",
-            "description": "行を見分けるコード（任意。科目コード・商品コードなど）。無ければ上の段からの名前の道筋で見分ける",
+            "description": "行を見分けるコード（任意。科目コード・商品コードなど）。無ければ上のレベルからの名前の道筋で見分ける",
             "name": "accountCode",
             "kind": "Grouping"
         },
         {
             "displayName": "行の順序",
-            "description": "行の並びの数値（任意）。並びはモデルの「列で並べ替え」の順で、この欄はそれで決まらない所（セグメントやシナリオごとに行の顔ぶれが違うとき）だけを決める。決まらない所があれば表の上で知らせるので、そのときに入れる",
+            "description": "行の並びの数値（任意）。区分・中分類の中の行はこの値の順に並べ、モデルの「列で並べ替え」の順と違えば表の上で知らせる（同じ科目名が別の区分に違う並びであって「列で並べ替え」を設定できないときに入れる）。区分・中分類どうしの並びは「列で並べ替え」の順で、このフィールドはそれで決まらない所（セグメントやシナリオごとに行の顔ぶれが違うとき）だけを決める。決まらない所があれば表の上で知らせる",
             "name": "accountOrder",
             "kind": "Grouping"
         },
@@ -38,19 +38,19 @@
         },
         {
             "displayName": "シナリオ",
-            "description": "実績・予算・見通しなどの名前の列（縦持ち）。無ければ、値の欄に入れたメジャーの名前をシナリオにする（横持ち。シナリオの順序は書式ペインでメジャーごとに決める）",
+            "description": "実績・予算・見通しなどの名前の列（縦持ち）。無ければ、「値」フィールドに入れたメジャーの名前をシナリオにする（横持ち。シナリオの順序は書式ペインでメジャーごとに決める）",
             "name": "event",
             "kind": "Grouping"
         },
         {
             "displayName": "シナリオの順序",
-            "description": "シナリオの順序。予算 1・見通し 2・実績 3 のように、後ろほど確かになる数か日付（ファイルの更新日など）を入れる。最新見込みは月ごとに後ろのシナリオから採り、比較の既定は先頭のシナリオ。前年実績のように比べるだけのシナリオは空にする",
+            "description": "シナリオの順序。予算 1・見通し 2・実績 3 のように、後ろほど確かになる数か日付（ファイルの更新日など）を入れる。最新値は月ごとに後ろのシナリオから採り、比較の既定は先頭のシナリオ。前年の数字を入れたシナリオのように比べるだけのシナリオは空にする",
             "name": "eventOrder",
             "kind": "Grouping"
         },
         {
             "displayName": "セグメント",
-            "description": "事業・部門など（任意）。最大 3 段（会社 → 事業 → 部門など）で、段を重ねるときは上の段から入れる（道筋でセグメントを見分ける）。表はセグメントごとのブロックと、それを足した計のブロックを並べ、セグメントの名前を左の列に出す（見る人が開き閉じする）。最新見込みと比較は、一番下の段のセグメントごとに月の数字のあるシナリオを採ってから足す。セグメントの合計行（全社の行）は持たず、セグメントの足し算にする",
+            "description": "事業・部門など（任意）。最大 3 レベル（会社 → 事業 → 部門など）で、レベルを重ねるときは上のレベルから入れる（道筋でセグメントを見分ける）。表はセグメントごとのブロックと、それを足した小計のブロックを並べ、セグメントの名前を左の列に出す（見る人が開き閉じする）。最新値と比較は、一番下のレベルのセグメントごとに月の数字のあるシナリオを採ってから足す。セグメントの合計行（全社の行）は持たず、セグメントの足し算にする",
             "name": "organization",
             "kind": "Grouping"
         },
@@ -62,7 +62,7 @@
         },
         {
             "displayName": "指標",
-            "description": "表に行として足すメジャー（人数・時間・台数などの量、EBITDA のような会社独自の行、「うち」）。セグメント × シナリオ × 月の値（行の欄を外した値）を読む。挿入位置・期間の集計・書式・良し悪しは書式ペインの「指標」でメジャーごとに決める",
+            "description": "表に行として足すメジャー（人数・時間・台数などの量、EBITDA のような会社独自の行、「うち」）。セグメント × シナリオ × 月の値（「行」フィールドを外した値）を読む。挿入位置・期間の集計・書式・良し悪しは書式ペインの「指標」でメジャーごとに決める",
             "name": "indicator",
             "kind": "Measure"
         }
@@ -230,13 +230,13 @@
                     }
                 },
                 "toneMode": {
-                    "displayName": "差の色",
+                    "displayName": "塗り方",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "good": {
-                    "displayName": "良い差",
+                    "displayName": "良い差の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -246,7 +246,7 @@
                     }
                 },
                 "bad": {
-                    "displayName": "悪い差",
+                    "displayName": "悪い差の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -256,7 +256,7 @@
                     }
                 },
                 "columnSize": {
-                    "displayName": "基準列の見出し",
+                    "displayName": "基準列の見出しの文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -270,7 +270,7 @@
                     }
                 },
                 "compareHeadSize": {
-                    "displayName": "比較列の見出し",
+                    "displayName": "比較列の見出しの文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -284,7 +284,7 @@
                     }
                 },
                 "mainSize": {
-                    "displayName": "基準列の数字",
+                    "displayName": "基準列の数字の文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -292,7 +292,7 @@
                     }
                 },
                 "compareSize": {
-                    "displayName": "比較列の数字",
+                    "displayName": "比較列の数字の文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -300,7 +300,7 @@
                     }
                 },
                 "subSize": {
-                    "displayName": "2 段目の数字",
+                    "displayName": "2 段目の数字の文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -336,7 +336,7 @@
                     }
                 },
                 "fiscalYear": {
-                    "displayName": "年度",
+                    "displayName": "表示する年度",
                     "type": {
                         "enumeration": []
                     }
@@ -396,7 +396,7 @@
                     }
                 },
                 "aggregateDouble": {
-                    "displayName": "集計の列の区切りを二重線",
+                    "displayName": "期間の種類の境を二重線",
                     "type": {
                         "bool": true
                     }
@@ -412,7 +412,7 @@
                     }
                 },
                 "periodSize": {
-                    "displayName": "期間の見出しの文字",
+                    "displayName": "期間の見出しの文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -431,13 +431,13 @@
             "displayName": "行",
             "properties": {
                 "scope": {
-                    "displayName": "適用先",
+                    "displayName": "対象",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "accountStyle": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
@@ -460,12 +460,12 @@
                     }
                 },
                 "accountTotal": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -500,7 +500,7 @@
                     }
                 },
                 "accountRoot": {
-                    "displayName": "最上位の配置",
+                    "displayName": "レベル 1 の配置",
                     "type": {
                         "enumeration": [
                             {
@@ -531,19 +531,19 @@
                     }
                 },
                 "totalRow": {
-                    "displayName": "合計行",
+                    "displayName": "表示",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "rowHeader": {
-                    "displayName": "行の名前の列の見出し",
+                    "displayName": "行見出しの列の見出し",
                     "type": {
                         "text": true
                     }
                 },
                 "totalName": {
-                    "displayName": "合計行の名前",
+                    "displayName": "名前",
                     "type": {
                         "text": true
                     }
@@ -555,7 +555,7 @@
                     }
                 },
                 "bandColor": {
-                    "displayName": "囲みの色（1 段目）",
+                    "displayName": "囲みの色（レベル 1）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -565,7 +565,7 @@
                     }
                 },
                 "bandColor2": {
-                    "displayName": "囲みの色（2 段目）",
+                    "displayName": "囲みの色（レベル 2）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -575,7 +575,7 @@
                     }
                 },
                 "bandColor3": {
-                    "displayName": "囲みの色（3 段目）",
+                    "displayName": "囲みの色（レベル 3）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -585,7 +585,7 @@
                     }
                 },
                 "bandColor4": {
-                    "displayName": "囲みの色（4 段目から）",
+                    "displayName": "囲みの色（レベル 4 から）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -595,7 +595,7 @@
                     }
                 },
                 "bandLine": {
-                    "displayName": "囲み線",
+                    "displayName": "囲み線の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -605,7 +605,7 @@
                     }
                 },
                 "rowLine": {
-                    "displayName": "行間の線",
+                    "displayName": "行間の線の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -615,7 +615,7 @@
                     }
                 },
                 "subtotalLine": {
-                    "displayName": "小計の上線",
+                    "displayName": "小計の線の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -625,7 +625,7 @@
                     }
                 },
                 "totalLine": {
-                    "displayName": "段階利益の二重線",
+                    "displayName": "計算行の二重線の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -635,13 +635,13 @@
                     }
                 },
                 "breakdownBrackets": {
-                    "displayName": "数字をかっこで囲む",
+                    "displayName": "数字を [ ] で囲む",
                     "type": {
                         "bool": true
                     }
                 },
                 "breakdownMuted": {
-                    "displayName": "灰色にする",
+                    "displayName": "薄い文字の色にする",
                     "type": {
                         "bool": true
                     }
@@ -659,13 +659,13 @@
                     }
                 },
                 "boldAggregates": {
-                    "displayName": "集計の数字を太字",
+                    "displayName": "小計の行の数字も太字",
                     "type": {
                         "bool": true
                     }
                 },
                 "nameSize": {
-                    "displayName": "行名の文字",
+                    "displayName": "行見出しの文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -673,19 +673,19 @@
                     }
                 },
                 "totalBold": {
-                    "displayName": "合計行を太字",
+                    "displayName": "集計行を太字",
                     "type": {
                         "bool": true
                     }
                 },
                 "rowHeaderBold": {
-                    "displayName": "行の名前の列の見出しを太字",
+                    "displayName": "行見出しの列の見出しを太字",
                     "type": {
                         "bool": true
                     }
                 },
                 "allNamesBold": {
-                    "displayName": "行名をすべて太字",
+                    "displayName": "行見出しをすべて太字",
                     "type": {
                         "bool": true
                     }
@@ -702,13 +702,13 @@
             "displayName": "セグメント",
             "properties": {
                 "scope": {
-                    "displayName": "適用先",
+                    "displayName": "対象",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "orgStyle": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
@@ -731,12 +731,12 @@
                     }
                 },
                 "orgTotal": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -765,7 +765,7 @@
                     }
                 },
                 "rootTotal": {
-                    "displayName": "合計",
+                    "displayName": "合計の表示",
                     "type": {
                         "enumeration": []
                     }
@@ -777,13 +777,13 @@
                     }
                 },
                 "subtotalName": {
-                    "displayName": "計の名前",
+                    "displayName": "小計の名前",
                     "type": {
                         "text": true
                     }
                 },
                 "hideEmptyAccounts": {
-                    "displayName": "データの無い行を隠す",
+                    "displayName": "セグメントにデータの無い行を隠す",
                     "type": {
                         "bool": true
                     }
@@ -801,7 +801,7 @@
                     }
                 },
                 "segmentColor": {
-                    "displayName": "囲みの色（1 段目）",
+                    "displayName": "囲みの色（レベル 1）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -811,7 +811,7 @@
                     }
                 },
                 "segmentColor2": {
-                    "displayName": "囲みの色（2 段目）",
+                    "displayName": "囲みの色（レベル 2）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -821,7 +821,7 @@
                     }
                 },
                 "segmentColor3": {
-                    "displayName": "囲みの色（3 段目）",
+                    "displayName": "囲みの色（レベル 3）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -831,7 +831,7 @@
                     }
                 },
                 "segmentColor4": {
-                    "displayName": "囲みの色（4 段目から）",
+                    "displayName": "囲みの色（レベル 4 から）",
                     "type": {
                         "fill": {
                             "solid": {
@@ -851,7 +851,7 @@
                     }
                 },
                 "orgSize": {
-                    "displayName": "セグメント名の文字",
+                    "displayName": "セグメント名の文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -918,13 +918,13 @@
                     }
                 },
                 "negativeValue1": {
-                    "displayName": "マイナスの値 1",
+                    "displayName": "マイナスの値の表示 1",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue1": {
-                    "displayName": "プラスの値 1",
+                    "displayName": "プラスの値の表示 1",
                     "type": {
                         "enumeration": []
                     }
@@ -1002,13 +1002,13 @@
                     }
                 },
                 "negativeValue2": {
-                    "displayName": "マイナスの値 2",
+                    "displayName": "マイナスの値の表示 2",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue2": {
-                    "displayName": "プラスの値 2",
+                    "displayName": "プラスの値の表示 2",
                     "type": {
                         "enumeration": []
                     }
@@ -1086,13 +1086,13 @@
                     }
                 },
                 "negativeValue3": {
-                    "displayName": "マイナスの値 3",
+                    "displayName": "マイナスの値の表示 3",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue3": {
-                    "displayName": "プラスの値 3",
+                    "displayName": "プラスの値の表示 3",
                     "type": {
                         "enumeration": []
                     }
@@ -1170,13 +1170,13 @@
                     }
                 },
                 "negativeValue4": {
-                    "displayName": "マイナスの値 4",
+                    "displayName": "マイナスの値の表示 4",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue4": {
-                    "displayName": "プラスの値 4",
+                    "displayName": "プラスの値の表示 4",
                     "type": {
                         "enumeration": []
                     }
@@ -1254,13 +1254,13 @@
                     }
                 },
                 "negativeValue5": {
-                    "displayName": "マイナスの値 5",
+                    "displayName": "マイナスの値の表示 5",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue5": {
-                    "displayName": "プラスの値 5",
+                    "displayName": "プラスの値の表示 5",
                     "type": {
                         "enumeration": []
                     }
@@ -1338,13 +1338,13 @@
                     }
                 },
                 "negativeValue6": {
-                    "displayName": "マイナスの値 6",
+                    "displayName": "マイナスの値の表示 6",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue6": {
-                    "displayName": "プラスの値 6",
+                    "displayName": "プラスの値の表示 6",
                     "type": {
                         "enumeration": []
                     }
@@ -1422,13 +1422,13 @@
                     }
                 },
                 "negativeValue7": {
-                    "displayName": "マイナスの値 7",
+                    "displayName": "マイナスの値の表示 7",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue7": {
-                    "displayName": "プラスの値 7",
+                    "displayName": "プラスの値の表示 7",
                     "type": {
                         "enumeration": []
                     }
@@ -1506,13 +1506,13 @@
                     }
                 },
                 "negativeValue8": {
-                    "displayName": "マイナスの値 8",
+                    "displayName": "マイナスの値の表示 8",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue8": {
-                    "displayName": "プラスの値 8",
+                    "displayName": "プラスの値の表示 8",
                     "type": {
                         "enumeration": []
                     }
@@ -1553,7 +1553,7 @@
             "displayName": "計算行",
             "properties": {
                 "scope": {
-                    "displayName": "適用先",
+                    "displayName": "対象",
                     "type": {
                         "enumeration": []
                     }
@@ -2577,7 +2577,7 @@
             "displayName": "数値",
             "properties": {
                 "scope": {
-                    "displayName": "適用先",
+                    "displayName": "対象",
                     "type": {
                         "enumeration": []
                     }
@@ -2637,13 +2637,13 @@
                     }
                 },
                 "negativeValue": {
-                    "displayName": "マイナスの値",
+                    "displayName": "マイナスの値の表示",
                     "type": {
                         "enumeration": []
                     }
                 },
                 "positiveValue": {
-                    "displayName": "プラスの値",
+                    "displayName": "プラスの値の表示",
                     "type": {
                         "enumeration": []
                     }
@@ -2765,21 +2765,21 @@
             }
         },
         "hierarchyOverrides": {
-            "displayName": "段・行ごとの配置",
+            "displayName": "レベル・行ごとの配置",
             "properties": {
                 "target1": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style1": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -2801,16 +2801,16 @@
                     }
                 },
                 "total1": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -2824,12 +2824,12 @@
                     }
                 },
                 "direction1": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -2843,18 +2843,18 @@
                     }
                 },
                 "target2": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style2": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -2876,16 +2876,16 @@
                     }
                 },
                 "total2": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -2899,12 +2899,12 @@
                     }
                 },
                 "direction2": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -2918,18 +2918,18 @@
                     }
                 },
                 "target3": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style3": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -2951,16 +2951,16 @@
                     }
                 },
                 "total3": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -2974,12 +2974,12 @@
                     }
                 },
                 "direction3": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -2993,18 +2993,18 @@
                     }
                 },
                 "target4": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style4": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3026,16 +3026,16 @@
                     }
                 },
                 "total4": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3049,12 +3049,12 @@
                     }
                 },
                 "direction4": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3068,18 +3068,18 @@
                     }
                 },
                 "target5": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style5": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3101,16 +3101,16 @@
                     }
                 },
                 "total5": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3124,12 +3124,12 @@
                     }
                 },
                 "direction5": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3143,18 +3143,18 @@
                     }
                 },
                 "target6": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style6": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3176,16 +3176,16 @@
                     }
                 },
                 "total6": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3199,12 +3199,12 @@
                     }
                 },
                 "direction6": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3218,18 +3218,18 @@
                     }
                 },
                 "target7": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style7": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3251,16 +3251,16 @@
                     }
                 },
                 "total7": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3274,12 +3274,12 @@
                     }
                 },
                 "direction7": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3293,18 +3293,18 @@
                     }
                 },
                 "target8": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style8": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3326,16 +3326,16 @@
                     }
                 },
                 "total8": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3349,12 +3349,12 @@
                     }
                 },
                 "direction8": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3368,18 +3368,18 @@
                     }
                 },
                 "target9": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style9": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3401,16 +3401,16 @@
                     }
                 },
                 "total9": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3424,12 +3424,12 @@
                     }
                 },
                 "direction9": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3443,18 +3443,18 @@
                     }
                 },
                 "target10": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style10": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3476,16 +3476,16 @@
                     }
                 },
                 "total10": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3499,12 +3499,12 @@
                     }
                 },
                 "direction10": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3518,18 +3518,18 @@
                     }
                 },
                 "target11": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style11": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3551,16 +3551,16 @@
                     }
                 },
                 "total11": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3574,12 +3574,12 @@
                     }
                 },
                 "direction11": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3593,18 +3593,18 @@
                     }
                 },
                 "target12": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style12": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3626,16 +3626,16 @@
                     }
                 },
                 "total12": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3649,12 +3649,12 @@
                     }
                 },
                 "direction12": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3668,18 +3668,18 @@
                     }
                 },
                 "target13": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style13": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3701,16 +3701,16 @@
                     }
                 },
                 "total13": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3724,12 +3724,12 @@
                     }
                 },
                 "direction13": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3743,18 +3743,18 @@
                     }
                 },
                 "target14": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style14": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3776,16 +3776,16 @@
                     }
                 },
                 "total14": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3799,12 +3799,12 @@
                     }
                 },
                 "direction14": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3818,18 +3818,18 @@
                     }
                 },
                 "target15": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style15": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3851,16 +3851,16 @@
                     }
                 },
                 "total15": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3874,12 +3874,12 @@
                     }
                 },
                 "direction15": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3893,18 +3893,18 @@
                     }
                 },
                 "target16": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style16": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -3926,16 +3926,16 @@
                     }
                 },
                 "total16": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -3949,12 +3949,12 @@
                     }
                 },
                 "direction16": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -3968,18 +3968,18 @@
                     }
                 },
                 "target17": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style17": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -4001,16 +4001,16 @@
                     }
                 },
                 "total17": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -4024,12 +4024,12 @@
                     }
                 },
                 "direction17": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -4043,18 +4043,18 @@
                     }
                 },
                 "target18": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style18": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -4076,16 +4076,16 @@
                     }
                 },
                 "total18": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -4099,12 +4099,12 @@
                     }
                 },
                 "direction18": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -4118,18 +4118,18 @@
                     }
                 },
                 "target19": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style19": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -4151,16 +4151,16 @@
                     }
                 },
                 "total19": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -4174,12 +4174,12 @@
                     }
                 },
                 "direction19": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -4193,18 +4193,18 @@
                     }
                 },
                 "target20": {
-                    "displayName": "階層または要素",
+                    "displayName": "対象",
                     "type": {
                         "text": true
                     }
                 },
                 "style20": {
-                    "displayName": "表示",
+                    "displayName": "レイアウト",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "plain",
@@ -4226,16 +4226,16 @@
                     }
                 },
                 "total20": {
-                    "displayName": "展開時の合計",
+                    "displayName": "小計の位置",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "none",
-                                "displayName": "なし（畳むと集計を表示）"
+                                "displayName": "なし（畳むと小計を表示）"
                             },
                             {
                                 "value": "top",
@@ -4249,12 +4249,12 @@
                     }
                 },
                 "direction20": {
-                    "displayName": "子の分割方向",
+                    "displayName": "分割の向き",
                     "type": {
                         "enumeration": [
                             {
                                 "value": "inherit",
-                                "displayName": "既定に合わせる"
+                                "displayName": "すべての行と同じ"
                             },
                             {
                                 "value": "vertical",
@@ -4284,6 +4284,21 @@
                         "text": true
                     }
                 },
+                "mode1": {
+                    "displayName": "隠し方 1",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org2": {
                     "displayName": "セグメント 2",
                     "type": {
@@ -4294,6 +4309,21 @@
                     "displayName": "隠す行 2",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode2": {
+                    "displayName": "隠し方 2",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org3": {
@@ -4308,6 +4338,21 @@
                         "text": true
                     }
                 },
+                "mode3": {
+                    "displayName": "隠し方 3",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org4": {
                     "displayName": "セグメント 4",
                     "type": {
@@ -4318,6 +4363,21 @@
                     "displayName": "隠す行 4",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode4": {
+                    "displayName": "隠し方 4",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org5": {
@@ -4332,6 +4392,21 @@
                         "text": true
                     }
                 },
+                "mode5": {
+                    "displayName": "隠し方 5",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org6": {
                     "displayName": "セグメント 6",
                     "type": {
@@ -4342,6 +4417,21 @@
                     "displayName": "隠す行 6",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode6": {
+                    "displayName": "隠し方 6",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org7": {
@@ -4356,6 +4446,21 @@
                         "text": true
                     }
                 },
+                "mode7": {
+                    "displayName": "隠し方 7",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org8": {
                     "displayName": "セグメント 8",
                     "type": {
@@ -4366,6 +4471,21 @@
                     "displayName": "隠す行 8",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode8": {
+                    "displayName": "隠し方 8",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org9": {
@@ -4380,6 +4500,21 @@
                         "text": true
                     }
                 },
+                "mode9": {
+                    "displayName": "隠し方 9",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org10": {
                     "displayName": "セグメント 10",
                     "type": {
@@ -4390,6 +4525,21 @@
                     "displayName": "隠す行 10",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode10": {
+                    "displayName": "隠し方 10",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org11": {
@@ -4404,6 +4554,21 @@
                         "text": true
                     }
                 },
+                "mode11": {
+                    "displayName": "隠し方 11",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org12": {
                     "displayName": "セグメント 12",
                     "type": {
@@ -4414,6 +4579,21 @@
                     "displayName": "隠す行 12",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode12": {
+                    "displayName": "隠し方 12",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org13": {
@@ -4428,6 +4608,21 @@
                         "text": true
                     }
                 },
+                "mode13": {
+                    "displayName": "隠し方 13",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org14": {
                     "displayName": "セグメント 14",
                     "type": {
@@ -4438,6 +4633,21 @@
                     "displayName": "隠す行 14",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode14": {
+                    "displayName": "隠し方 14",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org15": {
@@ -4452,6 +4662,21 @@
                         "text": true
                     }
                 },
+                "mode15": {
+                    "displayName": "隠し方 15",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org16": {
                     "displayName": "セグメント 16",
                     "type": {
@@ -4462,6 +4687,21 @@
                     "displayName": "隠す行 16",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode16": {
+                    "displayName": "隠し方 16",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org17": {
@@ -4476,6 +4716,21 @@
                         "text": true
                     }
                 },
+                "mode17": {
+                    "displayName": "隠し方 17",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org18": {
                     "displayName": "セグメント 18",
                     "type": {
@@ -4486,6 +4741,21 @@
                     "displayName": "隠す行 18",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode18": {
+                    "displayName": "隠し方 18",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 },
                 "org19": {
@@ -4500,6 +4770,21 @@
                         "text": true
                     }
                 },
+                "mode19": {
+                    "displayName": "隠し方 19",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
+                    }
+                },
                 "org20": {
                     "displayName": "セグメント 20",
                     "type": {
@@ -4510,6 +4795,21 @@
                     "displayName": "隠す行 20",
                     "type": {
                         "text": true
+                    }
+                },
+                "mode20": {
+                    "displayName": "隠し方 20",
+                    "type": {
+                        "enumeration": [
+                            {
+                                "value": "all",
+                                "displayName": "下の行も隠す（区分ごと）"
+                            },
+                            {
+                                "value": "row",
+                                "displayName": "この行だけ隠す"
+                            }
+                        ]
                     }
                 }
             }
@@ -4546,7 +4846,7 @@
                     }
                 },
                 "yearLabel": {
-                    "displayName": "年度の表記",
+                    "displayName": "年度の数え方",
                     "type": {
                         "enumeration": []
                     }
@@ -4564,7 +4864,7 @@
                     }
                 },
                 "fontSize": {
-                    "displayName": "表の上の文字サイズ",
+                    "displayName": "年度・単位の文字サイズ",
                     "type": {
                         "formatting": {
                             "fontSize": true
@@ -4572,7 +4872,7 @@
                     }
                 },
                 "rowHeight": {
-                    "displayName": "行の高さ",
+                    "displayName": "行の余白",
                     "type": {
                         "enumeration": []
                     }
@@ -4604,7 +4904,7 @@
                     }
                 },
                 "headLine": {
-                    "displayName": "見出しの下線",
+                    "displayName": "見出しの下線の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -4614,7 +4914,7 @@
                     }
                 },
                 "nameLine": {
-                    "displayName": "左列の区切り線",
+                    "displayName": "見出しの列の区切り線の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -4624,7 +4924,7 @@
                     }
                 },
                 "outerLine": {
-                    "displayName": "表の外枠",
+                    "displayName": "表の外枠の色",
                     "type": {
                         "fill": {
                             "solid": {
@@ -4717,13 +5017,13 @@
                     }
                 },
                 "year": {
-                    "displayName": "年度",
+                    "displayName": "年度の書き方",
                     "type": {
                         "text": true
                     }
                 },
                 "unit": {
-                    "displayName": "右上の単位の見出し",
+                    "displayName": "単位の見出し",
                     "type": {
                         "text": true
                     }

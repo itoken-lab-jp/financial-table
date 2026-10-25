@@ -9,6 +9,8 @@
  * - イベントの列と金額のメジャー 2 本以上を一緒に入れると、イベントは「実績・数量」のようにメジャーと組になる（系列）。
  *   既定・比較の落とし先・比較順が同じかどうかは、同じ系列（メジャー）の中だけで見る
  */
+import { minOf } from "./shared/minMax";
+import { compareJa } from "./collate";
 import { EventInfo, InputData } from "./data";
 
 /** 書式ペインのメジャーごとの比較順の「比較だけ（比較順なし）」 */
@@ -42,7 +44,7 @@ export interface EventModel {
 }
 
 /** 名前の並び（比較順が同じ・無いときの並べ方だけに使う）。数字は数として比べる（第2回 < 第10回） */
-const byName = (a: string, b: string) => a.localeCompare(b, "ja", { numeric: true });
+const byName = compareJa;
 
 /**
  * 選ぶときの並び：比較順の小さい順、比較順の無いイベントは後ろ。同じ比較順は、縦持ちは名前、横持ちは欄の並び（後ろほど強い）。
@@ -88,7 +90,7 @@ export function resolveEvents(input: InputData): EventModel {
     const ordered = sorted.filter((e) => e.order !== null);
     const latest = [...ordered].reverse().map((e) => e.name);
     // 最初の系列（系列が無ければすべて）で一番確かなイベント
-    const firstSeries = Math.min(...ordered.map((e) => e.series?.index ?? 0));
+    const firstSeries = minOf(ordered.map((e) => e.series?.index ?? 0));
     const strongest = [...ordered].reverse().find((e) => (e.series?.index ?? 0) === firstSeries)?.name ?? null;
 
     for (const name of input.orderConflicts.slice(0, 3)) warnings.push(`シナリオ「${name}」のシナリオの順序が行によって違う。最初に読めた値を使った`);

@@ -171,10 +171,8 @@ export function isSelectKey(key: string): boolean {
     return key === "Enter" || key === " " || key === "Spacebar";
 }
 
-/** 選択を解くキー（Ctrl+Shift+C） */
-export function isClearKey(key: string, ctrl: boolean, shift: boolean): boolean {
-    return ctrl && shift && key.toLowerCase() === "c";
-}
+/** 選択を解くキー（Ctrl+Shift+C）。共通の部品（shared/keyboard.ts）と同じもの */
+export { isClearKey } from "./shared/keyboard";
 
 /** 開き閉じのキー（Shift+→ で開く、Shift+← で閉じる）。どちらでもなければ null */
 export function foldOf(key: string, shift: boolean, ctrl: boolean, alt: boolean): "open" | "close" | null {

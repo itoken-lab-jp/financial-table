@@ -11,7 +11,7 @@
  * 拡大する前の値で来る。字と線は入れ物の倍率を掛けて描き、右・中央にそろえた字は四角の右端・中央を基準に描く（字の幅が画面と
  * canvas で少し違っても、そろえた端がずれない。canvas は tabular-nums を効かせない）
  */
-import { ChartImage, IMAGE_SCALE, Rect, SKIP_ATTRIBUTE, dataUrlWithResolution, drawSvg, intersect, rectOf, visibleRect } from "./copyImage";
+import { ChartImage, IMAGE_SCALE, Rect, SKIP_ATTRIBUTE, canvasPng, clipTracker, drawSvg, intersect, withoutScrollbars } from "./copyImage";
 
 /** 重なりの順の鍵：位置を持つ祖先（と自分）ごとに [z-index, 1]。自分が位置を持たなければ最後に [0, 0] */
 export type Layer = Array<[number, number]>;
@@ -121,6 +121,37 @@ export function parseBoxShadows(value: string): BoxShadow[] {
     });
 }
 
+/** 四角 a から b を除いた部分（4 つまでの四角） */
+export function subtractRect(a: Rect, b: Rect): Rect[] {
+    const hole = intersect(a, b);
+    if (!hole) return [a];
+    const rects: Rect[] = [
+        { left: a.left, right: a.right, top: a.top, bottom: hole.top },
+        { left: a.left, right: a.right, top: hole.bottom, bottom: a.bottom },
+        { left: a.left, right: hole.left, top: hole.top, bottom: hole.bottom },
+        { left: hole.right, right: a.right, top: hole.top, bottom: hole.bottom },
+    ];
+    return rects.filter((r) => r.right - r.left > 0 && r.bottom - r.top > 0);
+}
+
+/**
+ * ぼかしの無い外側の影が塗る四角（ずらして広げた箱から、要素の箱 border box を除いた部分）。表は外側の影で線を引いたり、地の色で
+ * 隙間を覆ったりしている（固定した見出しの上・左に残す列の左・残す合計行の下の線）。ぼかしのある影と内側の影は描かない（空）。
+ * 長さは scale を掛けてから使う
+ */
+export function outerShadowRects(shadow: BoxShadow, box: Rect, scale = 1): Rect[] {
+    if (shadow.inset || shadow.blur !== 0 || transparent(shadow.color)) return [];
+    const spread = shadow.spread * scale;
+    const outer: Rect = {
+        left: box.left + shadow.x * scale - spread,
+        top: box.top + shadow.y * scale - spread,
+        right: box.right + shadow.x * scale + spread,
+        bottom: box.bottom + shadow.y * scale + spread,
+    };
+    if (outer.right <= outer.left || outer.bottom <= outer.top) return [];
+    return subtractRect(outer, box);
+}
+
 /**
  * ぼかしの無い内側の影が塗る四角（内側の縁の箱 padding box から、ずらして縮めた箱を除いた部分）。ぼかしのある影と外側の影は描かない（空）。
  * 長さは scale を掛けてから使う
@@ -144,6 +175,44 @@ export function insetShadowRects(shadow: BoxShadow, box: Rect, scale = 1): Rect[
     return rects.filter((r) => r.right - r.left > 0 && r.bottom - r.top > 0);
 }
 
+/** 線とみなす太さ（CSS px）。これより細い四角は、画面の画素で何画素の線かを見て太さを決める */
+const LINE_WIDTH = 2;
+
+/**
+ * 線の太さを、画面の画素で何画素かにそろえて画像の画素に直す。画面は線を端末の画素にそろえて描くので、Desktop の 125% では
+ * 1px の枠線も 1 画素の線（表の上・見出しの下の線、--ft-px）も同じ 1 画素に見える。画像（画面の IMAGE_SCALE 倍）でそのまま描くと、
+ * 枠線は 2 画素・1 画素の線は 1 画素と太さが食い違ったので、画面の画素の数を画像の倍率に直す
+ */
+export function lineWidth(width: number, ratio: number, scale = IMAGE_SCALE): number {
+    const screen = Math.max(1, Math.round(width * ratio));
+    return Math.max(1, Math.round((screen * scale) / ratio)) / scale;
+}
+
+/**
+ * 四角の端を画像の画素の境にそろえる（地・枠線・影）。画面は枠線を端末の画素にそろえて描くが、canvas は端数の位置で 2 画素ににじませ、
+ * 線が薄く太く見えた。どの端も同じ丸め方なので、隣り合う四角は隙間なく並ぶ。細い四角（線）は、太さを lineWidth で決める
+ * （ratio は画面の devicePixelRatio）
+ */
+export function snapRect(r: Rect, ratio = 1, scale = IMAGE_SCALE): Rect {
+    const snap = (v: number) => Math.round(v * scale) / scale;
+    const width = r.right - r.left;
+    const height = r.bottom - r.top;
+    let left = snap(r.left);
+    let right = snap(r.right);
+    let top = snap(r.top);
+    let bottom = snap(r.bottom);
+    if (width > 0 && width < LINE_WIDTH) right = left + lineWidth(width, ratio, scale);
+    if (height > 0 && height < LINE_WIDTH) bottom = top + lineWidth(height, ratio, scale);
+    return { left, top, right, bottom };
+}
+
+/** 四角を塗る（画素の境にそろえて） */
+function fillRect(ctx: CanvasRenderingContext2D, rect: Rect, origin: Rect, color: string): void {
+    const r = snapRect(rect, window.devicePixelRatio || 1);
+    ctx.fillStyle = color;
+    ctx.fillRect(r.left - origin.left, r.top - origin.top, r.right - r.left, r.bottom - r.top);
+}
+
 interface Item {
     layer: Layer;
     /** 同じ重なりの中では、地と枠線（0）を字（1）より先に描く */
@@ -165,13 +234,13 @@ function layerOf(el: Element, root: HTMLElement, cache: Map<Element, Layer>): La
     return layer;
 }
 
-/** 祖先の opacity を掛けたもの */
-function opacityOf(el: Element, root: HTMLElement): number {
-    let value = 1;
-    for (let node: Element | null = el; node; node = node.parentElement) {
-        value *= Number.parseFloat(getComputedStyle(node).opacity) || 0;
-        if (node === root) break;
-    }
+/** 祖先の opacity を掛けたもの（root まで。祖先ごとに覚える） */
+function opacityOf(el: Element, root: HTMLElement, cache: Map<Element, number>): number {
+    const cached = cache.get(el);
+    if (cached !== undefined) return cached;
+    const own = Number.parseFloat(getComputedStyle(el).opacity) || 0;
+    const value = el === root || !el.parentElement ? own : own * opacityOf(el.parentElement, root, cache);
+    cache.set(el, value);
     return value;
 }
 
@@ -242,26 +311,43 @@ export async function htmlImage(root: HTMLElement, background = "#ffffff", skip 
     // Power BI の拡大の倍率（位置は拡大したあと、字の大きさと線の太さは拡大する前の値で来る）
     const rootBox = root.getBoundingClientRect();
     const scale = root.offsetWidth > 0 && rootBox.width > 0 ? rootBox.width / root.offsetWidth : 1;
-    const skipped = (el: Element) => el.closest(skipSelector) !== null;
+    // 写さない・SVG の中（SVG ごと描く）・見える範囲・opacity は、要素ごとに祖先をたどらず、祖先ごとに覚える（大きな表で秒かかった）
+    const clips = clipTracker(root);
+    const opacities = new Map<Element, number>();
+    const passed = new Map<Element, boolean>();
+    const skipped = (el: Element): boolean => {
+        const cached = passed.get(el);
+        if (cached !== undefined) return cached;
+        const parent = el === root ? null : el.parentElement;
+        const value = parent
+            ? skipped(parent) || parent instanceof SVGSVGElement || el.matches(skipSelector)
+            : el.closest(skipSelector) !== null || el.parentElement?.closest("svg") != null;
+        passed.set(el, value);
+        return value;
+    };
     let order = 0;
     const elements = [root, ...Array.from(root.querySelectorAll("*"))];
     for (const el of elements) {
         order++;
         // SVG の中の要素は SVG ごと描く
-        if (skipped(el) || el.parentElement?.closest("svg")) continue;
+        if (skipped(el)) continue;
         if (el instanceof SVGSVGElement) {
-            const visible = visibleRect(el, root);
+            const visible = clips.visible(el);
             if (!visible) continue;
             grow(visible);
             items.push({ layer: layerOf(el, root, layers), kind: 0, order, paint: (ctx, origin) => drawSvg(ctx, el, root, origin) });
             continue;
         }
         if (!(el instanceof HTMLElement)) continue;
+        // 見えていない要素は計算スタイルを読まずに飛ばす
+        const shown = clips.visible(el);
+        if (!shown) continue;
         const style = getComputedStyle(el);
         if (style.display === "none" || style.visibility === "hidden") continue;
-        const clip = visibleRect(el, root);
+        // スクロールの箱は、スクロールバーを除いた四角を箱とする（画像にバーは描かないので、枠線を中身に付けて閉じる）
+        const box = withoutScrollbars(el);
+        const clip = intersect(shown, box);
         if (!clip) continue;
-        const box = rectOf(el);
         const fill = transparent(style.backgroundColor) ? null : style.backgroundColor;
         const strokes = (["top", "right", "bottom", "left"] as Side[]).flatMap((side) => {
             const color = style.getPropertyValue(`border-${side}-color`);
@@ -272,33 +358,42 @@ export async function htmlImage(root: HTMLElement, background = "#ffffff", skip 
         // 内側の影は、枠線の内側（padding box）に塗る
         const border = (side: Side) => (Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) || 0) * scale;
         const padding: Rect = { left: box.left + border("left"), top: box.top + border("top"), right: box.right - border("right"), bottom: box.bottom - border("bottom") };
-        const shadows = parseBoxShadows(style.boxShadow).flatMap((shadow) => insetShadowRects(shadow, padding, scale).map((rect) => ({ rect, color: shadow.color })));
+        const parsedShadows = parseBoxShadows(style.boxShadow);
+        const shadows = parsedShadows.flatMap((shadow) => insetShadowRects(shadow, padding, scale).map((rect) => ({ rect, color: shadow.color })));
+        // 外側の影は箱の外に出るので、箱では切らず、祖先のはみ出しを切る箱と root で切る。写す範囲には数えない
+        const outerClip = el === root ? null : clips.overflow(el);
+        const outerShadows = outerClip
+            ? parsedShadows
+                  // CSS は先に書いた影を上に描くので、後ろの影から塗る
+                  .reverse()
+                  .flatMap((shadow) => outerShadowRects(shadow, box, scale).flatMap((rect) => {
+                      const visible = intersect(rect, outerClip);
+                      return visible ? [{ rect: visible, color: shadow.color }] : [];
+                  }))
+            : [];
         const layer = layerOf(el, root, layers);
-        if (fill || strokes.length > 0 || shadows.length > 0) {
+        if (fill || strokes.length > 0 || shadows.length > 0 || outerShadows.length > 0) {
             // 入れ物そのものの地は背景で塗るので、写す範囲には数えない（余白まで写さない）
-            if (el !== root) grow(clip);
-            const alpha = opacityOf(el, root);
+            if (el !== root && (fill || strokes.length > 0 || shadows.length > 0)) grow(clip);
+            const alpha = opacityOf(el, root, opacities);
             items.push({
                 layer,
                 kind: 0,
                 order,
                 paint: (ctx, origin) => {
                     ctx.save();
-                    clipTo(ctx, clip, origin);
                     ctx.globalAlpha = alpha;
-                    if (fill && el !== root) {
-                        ctx.fillStyle = fill;
-                        ctx.fillRect(box.left - origin.left, box.top - origin.top, box.right - box.left, box.bottom - box.top);
-                    }
-                    for (const { rect, color } of shadows) {
-                        ctx.fillStyle = color;
-                        ctx.fillRect(rect.left - origin.left, rect.top - origin.top, rect.right - rect.left, rect.bottom - rect.top);
-                    }
+                    // 外側の影は地の下
+                    for (const { rect, color } of outerShadows) fillRect(ctx, rect, origin, color);
+                    // 箱で切る所も、塗る四角と同じくそろえる（そろえて太らせた線を、元の端数の箱で削らない）
+                    clipTo(ctx, snapRect(clip, window.devicePixelRatio || 1), origin);
+                    // 地は background-clip の所まで（padding-box なら枠線の内側。透明な枠線で上下へ伸ばして地を枠線の内側だけに塗り、
+                    // すぐ上の行の罫線を残す帯がある。箱いっぱいに塗ると、画像では罫線が帯の色で消えた）
+                    if (fill && el !== root) fillRect(ctx, style.backgroundClip === "padding-box" ? padding : box, origin, fill);
+                    for (const { rect, color } of shadows) fillRect(ctx, rect, origin, color);
                     for (const { stroke, color } of strokes) {
-                        if (stroke.kind === "fill" && stroke.rect) {
-                            ctx.fillStyle = color;
-                            ctx.fillRect(stroke.rect.left - origin.left, stroke.rect.top - origin.top, stroke.rect.right - stroke.rect.left, stroke.rect.bottom - stroke.rect.top);
-                        } else if (stroke.from && stroke.to) {
+                        if (stroke.kind === "fill" && stroke.rect) fillRect(ctx, stroke.rect, origin, color);
+                        else if (stroke.from && stroke.to) {
                             ctx.strokeStyle = color;
                             ctx.lineWidth = stroke.width ?? 1;
                             ctx.setLineDash(stroke.dash ?? []);
@@ -324,7 +419,7 @@ export async function htmlImage(root: HTMLElement, background = "#ffffff", skip 
             const font = `${style.fontStyle} ${style.fontWeight} ${(Number.parseFloat(style.fontSize) || 0) * scale}px ${style.fontFamily}`;
             const align = alignOf(style.textAlign);
             const color = style.color;
-            const alpha = opacityOf(el, root);
+            const alpha = opacityOf(el, root, opacities);
             items.push({
                 layer,
                 kind: 1,
@@ -359,5 +454,5 @@ export async function htmlImage(root: HTMLElement, background = "#ffffff", skip 
     // 重なりの順（同じ重なりの中では地と枠線を字より先に、そのあとは文書の順）
     items.sort((a, b) => compareLayers(a.layer, b.layer) || a.kind - b.kind || a.order - b.order);
     for (const item of items) await item.paint(ctx, origin);
-    return { url: dataUrlWithResolution(canvas.toDataURL("image/png"), 96 * IMAGE_SCALE), width, height };
+    return { url: await canvasPng(canvas), width, height };
 }

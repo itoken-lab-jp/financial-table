@@ -144,7 +144,7 @@ BSの例は8月末の残高と前年同月末を比較しています。残高�
 
 ## ソースからビルドする
 
-この手順はソースを変更する人向けです。配布済みの `.pbiviz` を取り込んで使うだけなら不要です。Node.js 22系（動作確認済み）とnpmを用意し、このリポジトリで実行します。ビルドに必要なPower BIのツールも依存に含まれます。package.jsonの最低条件はNode.js 20以上ですが、配布時のビルド検証は22系で行っています。
+この手順はソースを変更する人向けです。配布済みの `.pbiviz` を取り込んで使うだけなら不要です。Node.js 20.19以上とnpmを用意し、このリポジトリで実行します。ビルドに必要なPower BIのツールも依存に含まれます。配布時のビルド検証はNode.js 22系で行っています。
 
 ```sh
 npm ci
@@ -158,4 +158,4 @@ npm run package
 
 pbivizは無料で配布し、ソースは[MITライセンス](LICENSE)で公開しています。商用利用・改変・再配布ができます（無保証）。依存ライブラリのライセンスは[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)を参照してください。
 
-不具合や質問は[Issues](https://github.com/itoken-lab-jp/financial-table/issues)へお願いします。個別の相談や開発の依頼はお受けしていません。
+不具合や質問は[Issues](https://github.com/itoken-lab-jp/financial-table/issues)へお願いします。ほしい機能は、Issues、[note](https://note.com/itoken_lab)のコメント、[X](https://x.com/itokenlab)のDMのどれからでも教えてください。

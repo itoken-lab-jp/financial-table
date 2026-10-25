@@ -3,12 +3,14 @@
  *
  * 科目の表の「書式」の列：
  * - 空（または「金額」）… 金額。表示単位（万・億など）で割る。桁は書式ペインの小数点以下の桁数
- * - % を含む（0.0%）… 比率。100 倍して % を付ける。差はポイント（pt）
+ * - % を含む（0.0%）… 比率。100 倍して % を付ける。差はポイント（pt）。
+ *   字で書いた %（0.0"%"・0.0\%）だけなら、値がすでに % の数の比率（100 倍しない。差はポイント）
  * - ほかの字を付けた数（#,0.0h・0.00倍・#,0人）… 単位で割らない数。桁は書式の小数の 0 の数
  *
  * 単位の違う行を表示単位で割らない（時間や率を千円で割ると別の数字になる）。
  */
-import { NEGATIVE_STYLES, SignStyle, ZERO_STYLES, formatSigned, shownSignOf } from "./shared/numberFormat";
+import { NEGATIVE_STYLES, SignStyle, ZERO_STYLES, formatSigned, shownSignOf, formatSectionsOf, formatTokensOf } from "./shared/numberFormat";
+import { localeNumber } from "./shared/localeNumber";
 
 export type ValueKind = "amount" | "percent" | "number";
 
@@ -19,6 +21,8 @@ export interface RowFormat {
     prefix: string;
     suffix: string;
     grouping: boolean;
+    /** 比率の行で値に掛ける倍率。省けば 100（0.0%）。% を字で書いた書式（0.0"%"。値がすでに % の数）は 1 */
+    scale?: number;
 }
 
 export const AMOUNT_FORMAT: RowFormat = { kind: "amount", decimals: null, prefix: "", suffix: "", grouping: true };
@@ -26,25 +30,37 @@ export const AMOUNT_FORMAT: RowFormat = { kind: "amount", decimals: null, prefix
 /**
  * 読めない書式は金額として扱う（落とさない）。読めたかどうかは ok で返す。
  * Excel の書式をそのまま貼れるように、; のあと（マイナスの書き方）は見ず、"人" の引用符と \ は外す。
+ * 引用（"…"・'…'）と \ のあとの字は、Power BI の書式と同じく記号ではなく字（0.0"%" は 100 倍しない比率）。
  * 字の付かない数の形（#,##0.0）は、桁だけを決めた金額（表示単位で割る）
  */
 export function parseRowFormat(text: string | null): { format: RowFormat; ok: boolean } {
-    const src = (text ?? "").split(";")[0].trim();
+    const src = formatSectionsOf(text ?? "")[0].trim();
     if (src === "" || src === "値" || src === "金額") return { format: AMOUNT_FORMAT, ok: true };
     const match = /[0#,.]*[0#][0#,.]*/.exec(src);
     if (!match) return { format: AMOUNT_FORMAT, ok: false };
     const pattern = match[0];
     const dot = pattern.indexOf(".");
     const decimals = dot < 0 ? 0 : pattern.slice(dot + 1).replace(/[^0#]/g, "").length;
-    const literal = (s: string) => s.replace(/["\\]/g, "");
-    const prefix = literal(src.slice(0, match.index));
-    const suffix = literal(src.slice(match.index + pattern.length));
+    const prefixTokens = formatTokensOf(src.slice(0, match.index));
+    const suffixTokens = formatTokensOf(src.slice(match.index + pattern.length));
+    // 字は引用符と \ を外して出す。引用の外の % は比率の記号なので、比率の行では外す（% は値のあとに付け直す）
+    const literal = (tokens: Array<{ text: string; literal: boolean }>, dropPercent = false) =>
+        tokens.map((token) => (token.literal || !dropPercent ? token.text : token.text.replace(/%/g, ""))).join("");
     const grouping = pattern.includes(",");
-    if (suffix.includes("%") || prefix.includes("%")) {
-        return { format: { kind: "percent", decimals, prefix: prefix.replace("%", ""), suffix: suffix.replace("%", ""), grouping }, ok: true };
+    if ([...prefixTokens, ...suffixTokens].some((token) => !token.literal && token.text.includes("%"))) {
+        return { format: { kind: "percent", decimals, prefix: literal(prefixTokens, true), suffix: literal(suffixTokens, true), grouping }, ok: true };
     }
+    const prefix = literal(prefixTokens);
+    const suffix = literal(suffixTokens);
+    // 字の % だけ（0.0"%"・0.0\%）は、値がすでに % の数の比率の行。100 倍せず、差はポイント、比・率は出さない
+    if (prefix.trim() === "" && suffix.trim() === "%") return { format: { kind: "percent", decimals, prefix: "", suffix: "", grouping, scale: 1 }, ok: true };
     if (prefix.trim() === "" && suffix.trim() === "") return { format: { ...AMOUNT_FORMAT, decimals }, ok: true };
     return { format: { kind: "number", decimals, prefix, suffix, grouping }, ok: true };
+}
+
+/** 比率の行で値に掛ける倍率（0.0% は 100、字で書いた % の 0.0"%" は 1） */
+function percentScaleOf(format: RowFormat): number {
+    return format.scale ?? 100;
 }
 
 /** 0 から遠い方へ丸める（toLocaleString と同じ。+0.5 と -0.5 で扱いを変えない） */
@@ -61,7 +77,7 @@ export interface AmountUnit {
 }
 
 function plain(value: number, decimals: number, grouping: boolean): string {
-    return value.toLocaleString("ja-JP", { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: grouping });
+    return localeNumber(value, decimals, decimals, grouping);
 }
 
 /**
@@ -73,7 +89,7 @@ export function shownValue(value: number, format: RowFormat, unit: AmountUnit): 
         format.kind === "amount"
             ? [value / unit.divisor, format.decimals ?? unit.decimals]
             : format.kind === "percent"
-              ? [value * 100, format.decimals ?? 1]
+              ? [value * percentScaleOf(format), format.decimals ?? 1]
               : [value, format.decimals ?? 0];
     return roundHalfAway(scaled, decimals);
 }
@@ -92,7 +108,7 @@ export interface SignOptions {
     positiveValue?: string;
 }
 
-/** 値の見せ方：そのまま・空欄・「-」（マイナスの値・プラスの値を出さないとき） */
+/** 値の見せ方：そのまま・空欄・「―」（マイナスの値・プラスの値を出さないとき。出せない比・率と同じ字 NOT_AVAILABLE） */
 export const VALUE_SHOWS = { show: "show", blank: "blank", dash: "dash" } as const;
 
 /** 記号を付けない書き方（-1,234、0、差も 0。丸めて 0 のマイナスは 0） */
@@ -105,7 +121,7 @@ function signed(value: number, format: RowFormat, unit: AmountUnit, style: Parti
             // 字は単位を数字のあとに置くとき（1,234百万円）だけ。ふつうの金額は字を持たない
             return formatSigned(value, unit.divisor, String(format.decimals ?? unit.decimals), style, format.suffix);
         case "percent":
-            return `${format.prefix}${formatSigned(value * 100, 1, String(format.decimals ?? 1), style, percentSuffix + format.suffix)}`;
+            return `${format.prefix}${formatSigned(value * percentScaleOf(format), 1, String(format.decimals ?? 1), style, percentSuffix + format.suffix)}`;
         case "number":
             return `${format.prefix}${formatSigned(value, 1, String(format.decimals ?? 0), style, format.suffix)}`;
     }
@@ -116,16 +132,21 @@ function signed(value: number, format: RowFormat, unit: AmountUnit, style: Parti
  * 金額・数の行と、上限を渡さないとき（ツールチップの実の値）は止めない
  */
 function capped(value: number, format: RowFormat, unit: AmountUnit, style: Partial<SignStyle>, suffix: string, cap: number | undefined): string {
-    if (cap === undefined || format.kind !== "percent" || Math.abs(value) <= cap) return signed(value, format, unit, style, suffix);
-    return `${value > 0 ? "≧" : "≦"}${signed(value > 0 ? cap : -cap, { ...format, decimals: 0 }, unit, style, suffix)}`;
+    if (cap === undefined || format.kind !== "percent") return signed(value, format, unit, style, suffix);
+    // 上限は倍（9.99 で 999%）。字で書いた % の行（値がすでに % の数）は、値を倍に直して比べる
+    const limit = cap * (100 / percentScaleOf(format));
+    if (Math.abs(value) <= limit) return signed(value, format, unit, style, suffix);
+    return `${value > 0 ? "≧" : "≦"}${signed(value > 0 ? limit : -limit, { ...format, decimals: 0 }, unit, style, suffix)}`;
 }
 
 /** 行の値の文字。空欄は空文字。cap を渡すと、比率の行の値をその上限（倍）で止める */
 export function formatRowValue(value: number | null, format: RowFormat, unit: AmountUnit, sign: SignOptions = PLAIN_SIGN, cap?: number): string {
     if (value === null) return "";
-    // マイナス・プラスの値を出さない（見た目だけ。足し算・差・比は値のまま）。丸めて 0 になる値は 0 の書き方のまま
+    // マイナス・プラスの値を出さない（見た目だけ。足し算・差・比は値のまま）。丸めて 0 になる値は 0 の書き方のまま。
+    // ただし丸めて 0 のマイナスに符号を残す設定（▲0）では、見た目がマイナスなので隠す
     const show = value < 0 ? sign.negativeValue : value > 0 ? sign.positiveValue : undefined;
-    if (show && show !== VALUE_SHOWS.show && shownValue(value, format, unit) !== 0) return show === VALUE_SHOWS.dash ? "-" : "";
+    const looksSigned = shownValue(value, format, unit) !== 0 || (value < 0 && sign.negativeZero);
+    if (show && show !== VALUE_SHOWS.show && looksSigned) return show === VALUE_SHOWS.dash ? NOT_AVAILABLE : "";
     return capped(value, format, unit, { negative: sign.negative, zero: sign.zero, negativeZero: sign.negativeZero, plus: false }, "%", cap);
 }
 
@@ -148,7 +169,7 @@ export function diffSign(diff: number | null, format: RowFormat, unit: AmountUni
         case "amount":
             return shownSignOf(diff, unit.divisor, String(format.decimals ?? unit.decimals), style);
         case "percent":
-            return shownSignOf(diff * 100, 1, String(format.decimals ?? 1), style);
+            return shownSignOf(diff * percentScaleOf(format), 1, String(format.decimals ?? 1), style);
         case "number":
             return shownSignOf(diff, 1, String(format.decimals ?? 0), style);
     }
@@ -205,7 +226,7 @@ export function formatExact(value: number | null, format: RowFormat, currency: s
         case "amount":
             return formatSigned(value, 1, decimals(0), style, currency);
         case "percent":
-            return `${format.prefix}${formatSigned(value * 100, 1, String((format.decimals ?? 1) + EXACT_EXTRA_DECIMALS), style, (diff ? "pt" : "%") + format.suffix)}`;
+            return `${format.prefix}${formatSigned(value * percentScaleOf(format), 1, String((format.decimals ?? 1) + EXACT_EXTRA_DECIMALS), style, (diff ? "pt" : "%") + format.suffix)}`;
         case "number":
             return `${format.prefix}${formatSigned(value, 1, decimals(format.decimals ?? 0), style, format.suffix)}`;
     }

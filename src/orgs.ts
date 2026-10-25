@@ -72,6 +72,13 @@ export interface OrgCell {
     /** 囲む親の段のうち、すぐ上のブロックがその親の小計（小計が上）の段。帯の上の辺を引く */
     afterHead?: number[];
     heads?: OrgHeadLine[];
+    /**
+     * 囲みの入れ子：このブロックを囲む親（帯を引く段）の名前と印（外から順。hierarchy.ts）。親の名前は親の計のブロックにしか無く、子のブロックでは
+     * 細い帯だけが見えて何の囲みか分からなくなる（2026-10-24 ユーザー）ので、親の名前が画面に見えていないあいだ、名前の上に小さく出す（App.tsx の placeOrgLabels）
+     */
+    parents?: OrgParent[];
+    /** 自分の名前の行が名指すブロックの印（計のセルは親のブロック）。親の名前が画面に見えているかを、parents の key と突き合わせて見る */
+    labelKey?: string;
 }
 
 /** 表の行のかたまり：1 つの組織の表（どれも同じ行の数）。子のある組織を開いていれば計の表、閉じていれば子を隠した計の表 */
@@ -384,6 +391,14 @@ export interface OrgHeadLine {
     toggle: { path: string; open: boolean } | null;
     /** 字下げの段（束ねる根が 0） */
     depth: number;
+    /** 名指すブロックの印（OrgCell の labelKey と同じ） */
+    key?: string;
+}
+
+/** 囲む親の名前と、そのブロックの印（OrgCell の labelKey と突き合わせる） */
+export interface OrgParent {
+    key: string;
+    label: string;
 }
 
 /**

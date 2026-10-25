@@ -16,10 +16,10 @@ import { ValueParts, valueParts } from "./valueParts";
 import { resolveUnit } from "./shared/units";
 import { SCROLL_STARTS } from "./shared/scrollStart";
 import { contrastingText, readableText } from "./shared/color";
-import { NEGATIVE_STYLES, TONE_MODES, ZERO_STYLES, toneOf, isPercentFormat } from "./shared/numberFormat";
+import { NEGATIVE_STYLES, TONE_MODES, ZERO_STYLES, toneOf, isPercentFormat, rateFormatOf } from "./shared/numberFormat";
 import { Calculator, EventRef } from "./compute";
 import { ALL_PERIODS_MONTH, COLUMN_LIMIT, TOTAL_ACCOUNT, Fact, INDICATOR_KEY, InputData, ORDER_OF_SECTIONS, ORG_SEPARATOR, SelectionNodes, readInput, savedString } from "./data";
-import { EventModel, SIGN_VALUES, fallbackOf, resolveEvents } from "./events";
+import { EventModel, fallbackOf, resolveEvents } from "./events";
 import {
     AMOUNT_FORMAT,
     AmountUnit,
@@ -80,7 +80,6 @@ import {
     DataDrivenFormat,
     DEFAULT_BAD_COLOR,
     DEFAULT_CURRENCY,
-    DEFAULT_FONT_SIZE,
     DEFAULT_HEADING_SIZE,
     DEFAULT_GOOD_COLOR,
     DEFAULT_HEAD_BACKGROUND,
@@ -215,10 +214,12 @@ export interface PeriodHeader {
     own: boolean;
 }
 
-/** 行を押したときに絞るもの：科目（区分・中分類の行はその科目すべて）と組織の道筋（組織のブロックの中なら） */
+/** 行を押したときに絞るもの：科目（区分・中分類の行はその科目すべて）と組織の道筋（組織のブロックの中なら）。指標の行は科目が空（組織・月だけで絞る） */
 export interface RowSelect {
     codes: string[];
     org: string | null;
+    /** 「うち」の行（見る人が小計をうちにした行）：選ぶと、絞る科目がこの行の科目に入る行（中の科目）も明るく残す */
+    covers?: boolean;
 }
 
 export interface TableRow {
@@ -251,7 +252,7 @@ export interface TableRow {
     toggleAbove?: boolean;
     /** この行から始まる、左の組織の列のセル（組織の欄を入れたときだけ） */
     orgCells?: OrgCell[];
-    /** 押したときに絞るもの。計算行・指標・見出しの無い行など、科目に結びつかない行は undefined（選べない） */
+    /** 押したときに絞るもの。見出しだけの行・空行は undefined（選べない）。指標・指標だけを引く計算行は codes が空 */
     select?: RowSelect;
     /** 組織のブロックの道筋（組織を選んだときに薄くするかを決める。組織の欄が無い・全社は null） */
     orgPath?: string | null;
@@ -359,6 +360,7 @@ export function indicatorSettings(input: InputData, eventModel: EventModel): Ind
             placement: saved.placement === INDICATOR_MODES.under || saved.placement === INDICATOR_MODES.hidden ? saved.placement : INDICATOR_MODES.after,
             aggregation: saved.aggregation === "stock" ? "stock" : "flow",
             format: saved.format ?? "",
+            measureFormat: indicator.formatString,
             good: saved.good === "up" || saved.good === "down" ? saved.good : "neutral",
             bold: saved.bold === "on" ? "on" : "off",
             event: horizontal ? event : null,
@@ -376,7 +378,7 @@ export function indicatorSpecs(settings: IndicatorSetting[], warn: (message: str
         atStart: s.after === CALC_TABLE_START,
         mode: s.placement === INDICATOR_MODES.under ? "under" : s.placement === INDICATOR_MODES.hidden ? "hidden" : "after",
         aggregation: s.aggregation === "stock" ? "stock" : "flow",
-        format: indicatorFormat(s.format, s.name, warn),
+        format: indicatorFormat(s.format, s.name, warn, s.measureFormat),
         good: s.good === "up" ? 1 : s.good === "down" ? -1 : 0,
     }));
 }
@@ -396,14 +398,32 @@ export function indicatorFacts(input: InputData, settings: IndicatorSetting[], e
     return input.indicatorFacts.flatMap((f) => (f.event !== "" ? [f] : (assigned.get(f.code) ?? []).map((event) => ({ ...f, event }))));
 }
 
-/** 指標の書式：空か「金額」は金額（表示単位で割る）。字の無い形（#,0）も数として出す（表示単位で割らない）。0.0% は比率 */
-function indicatorFormat(text: string, name: string, warn: (message: string) => void): RowFormat {
+/**
+ * 指標の書式：「金額」は金額（表示単位で割る）。字の無い形（#,0）も数として出す（表示単位で割らない）。0.0% は比率。
+ * 空は、メジャーの書式が % の率なら、その率（行の書式の欄に同じ書式を書いたときと同じ見え方。表示単位で割らず、差は pt）。
+ * ほかは金額（2026-10-24）
+ */
+function indicatorFormat(text: string, name: string, warn: (message: string) => void, measureFormat?: string): RowFormat {
     const trimmed = text.trim();
-    if (trimmed === "" || trimmed === "値" || trimmed === "金額") return AMOUNT_FORMAT;
+    if (trimmed === "") return measureRateFormat(measureFormat) ?? AMOUNT_FORMAT;
+    if (trimmed === "値" || trimmed === "金額") return AMOUNT_FORMAT;
     const parsed = parseRowFormat(text);
     if (parsed.ok) return parsed.format.kind === "amount" ? { ...parsed.format, kind: "number" } : parsed.format;
     warn(`指標「${name}」の書式「${text}」が読めない。値の欄と同じ書式で出した`);
     return AMOUNT_FORMAT;
+}
+
+/**
+ * メジャーの書式が % の率（0.0%・0.0"%"・P2 など。Power BI の書式と同じ読み方の rateFormatOf）なら、その比率の行の書式。そうでなければ null。
+ * ‰ の書式は、比率の行が % しか書けないので扱わない（今までどおり金額）
+ */
+function measureRateFormat(measureFormat: string | undefined): RowFormat | null {
+    const rate = rateFormatOf(measureFormat);
+    if (!rate || rate.mark.trim() !== "%") return null;
+    const parsed = parseRowFormat(measureFormat!);
+    if (parsed.ok && parsed.format.kind === "percent") return parsed.format;
+    // 標準の書式（P2）など、行の書式の読み方で読めない率は、桁と倍率だけ
+    return { kind: "percent", decimals: rate.digits, prefix: "", suffix: "", grouping: false, ...(rate.scale === 1 ? { scale: 1 } : {}) };
 }
 
 /** 書式ペインの計算行の保存値から、行を組む指定を作る（種類が「使わない」の行は入れない） */
@@ -523,6 +543,12 @@ export function transform(
         const places = input.orderGuessed.map((label) => (label === ORDER_OF_SECTIONS ? "区分どうし" : `区分「${label === "" ? "（区分なし）" : label}」`));
         warnings.push(
             `セグメント・シナリオごとに行の顔ぶれが違い、届いた順だけでは並びが決めきれない（${places.slice(0, 3).join("・")}${places.length > 3 ? " ほか" : ""}）。行の並びの数値を「行の順序」の欄に入れる`
+        );
+    }
+    if (input.orderOverridden.length > 0) {
+        const places = input.orderOverridden.map((label) => `区分「${label === "" ? "（区分なし）" : label}」`);
+        warnings.push(
+            `${places.slice(0, 3).join("・")}${places.length > 3 ? " ほか" : ""}の行の並びが、「行の順序」の欄と届いた順（モデルの並べ替え）で違う。「行の順序」の欄の順で並べた`
         );
     }
     if (input.dropped.noEvent > 0) warnings.push(`シナリオの空の行が ${input.dropped.noEvent} 行あり、表に入れていない`);
@@ -719,22 +745,6 @@ export function transform(
 
     const periodColumns = table.columns;
 
-    // 率のメジャー（利益率など、% の書式）を指標として表に出すと、四半期・通期などの値は月の値の合計か期末の月の値になり、
-    // 期間の率にならない（ビジュアルには月の値しか届かず、期間で計算し直せない）。月より長い列があるときだけ知らせる
-    if (periodColumns.some((period) => period.months.length > 1)) {
-        const rates = indicatorSaved.filter(
-            (s, i) =>
-                s.placement !== INDICATOR_MODES.hidden &&
-                (isPercentFormat(input.indicators[i]?.formatString) || parseRowFormat(s.format).format.kind === "percent")
-        );
-        if (rates.length > 0) {
-            warnings.push(
-                `指標「${rates.map((s) => s.name).join("」「")}」は率のメジャー（% の書式）なので、四半期・通期などの列は月の値の合計か期末の月の値になり、期間の率にならない。` +
-                    "分子と分母のメジャーを指標に入れて配置を「表に出さない（計算行で使う）」にし、計算行の「比率」で作ると、どの期間も分子の合計 ÷ 分母の合計になる"
-            );
-        }
-    }
-
     // 期間ごとの比較の列：見る人が「この期間だけ」の列を持っていればそれ、無ければ全期間と同じ。列 1〜3 の順
     const partners = new Map(candidates.map((value): [string, Partner] => [value, partnerOf(value)]));
     const periodSlots = new Map(periodColumns.map((period) => [period.key, slotsAt(periodNameOf(period))]));
@@ -786,6 +796,23 @@ export function transform(
         }
         return formatCache.get(cacheKey) ?? null;
     };
+    // 率のメジャー（利益率など、% の書式）を指標として表に出すと、四半期・通期などの値は月の値の合計か期末の月の値になり、
+    // 期間の率にならない（ビジュアルには月の値しか届かず、期間で計算し直せない）。月より長い列があるときだけ知らせる。
+    // 行の書式は「数値」カードでその行に決めた書式、無ければ古い「指標」カードの書式（2.1.7.15 から書式は「数値」カードで決める）
+    if (periodColumns.some((period) => period.months.length > 1)) {
+        const rates = indicatorSaved.filter(
+            (s, i) =>
+                s.placement !== INDICATOR_MODES.hidden &&
+                (isPercentFormat(input.indicators[i]?.formatString) || (ownFormatOf(s.code) ?? indicatorFormat(s.format, s.name, () => {}, s.measureFormat)).kind === "percent")
+        );
+        if (rates.length > 0) {
+            warnings.push(
+                `指標「${rates.map((s) => s.name).join("」「")}」は率のメジャー（% の書式）なので、四半期・通期などの列は月の値の合計か期末の月の値になり、期間の率にならない。` +
+                    "分子と分母のメジャーを指標に入れて配置を「表に出さない（計算行で使う）」にし、計算行の「割り算」で作ると、どの期間も分子の合計 ÷ 分母の合計になる"
+            );
+        }
+    }
+
     // 表の単位は、固定の単位か書式で上書きした行を除いて決める（除かないと、千円で見せる区分の大きさで表全体の単位が決まる）。
     // 上書きごとの最大は、単位だけ変えて桁を表全体（自動）に合わせるときの桁に使う
     const overrideMax = new Map<string, number>();
@@ -957,12 +984,18 @@ export function transform(
         accountTargets(hierarchy.roots, []);
         warnings.push(...hierarchy.warnings);
     }
+    // セグメントの段の名前は、一番上の欄（事業部）をレベル 1 にする。一番上の段が 2 つ以上のときに足す合計の段は「合計」と呼び、番号を付けない
+    // （以前は合計をレベル 1 と数え、事業部を横積みにしたつもりで合計を選んでいた。2026-10-21 ユーザー）。保存する値（org:level:N）は変えない
+    const rootLevel = tree !== null && tree.root.column < 0;
+    const levelName = (kind: "account" | "org", level: number) => kind === "org" && rootLevel
+        ? (level === 0 ? `${tree!.root.label}（すべてのセグメントの合計）` : `レベル ${level} のセグメントすべて`)
+        : `レベル ${level + 1} の${kind === "account" ? "行" : "セグメント"}すべて`;
     if (tree) for (const node of allNodes(tree.root)) {
         hierarchyLevels.org.add(node.column + (tree.root.column < 0 ? 1 : 0));
         hierarchyTargets.push({ value: `org:node:${node.path ?? ROOT_FOLD}`, displayName: `セグメント：${node.path?.split(ORG_SEPARATOR).join(" / ") ?? node.label}` });
     }
     hierarchyTargets.unshift(...(["account", "org"] as const).flatMap(kind => Array.from(hierarchyLevels[kind]).sort((a, b) => a - b)
-        .map(level => ({ value: `${kind}:level:${level}`, displayName: `${level + 1} 段目の${kind === "account" ? "行" : "セグメント"}すべて` }))));
+        .map(level => ({ value: `${kind}:level:${level}`, displayName: levelName(kind, level) }))));
     format.hierarchy = { targets: hierarchyTargets, saved: hierarchySaved, scopes: { account: savedText(dataView, "rows", "scope") ?? "", org: savedText(dataView, "segments", "scope") ?? "" } };
     // セグメントごとに隠す行（書式ペイン）。選択肢はセグメント（全社を含む）と、表の行（科目・指標・計算行。名前は上の行からの道筋）
     const segmentRowsSaved = readSegmentRows(dataView.metadata.objects);
@@ -977,6 +1010,7 @@ export function transform(
             orgs: allNodes(tree.root).map((node) => ({ value: node.path ?? ROOT_FOLD, displayName: node.path?.split(ORG_SEPARATOR).join(" / ") ?? node.label })),
             rows: model.display.filter((d) => d.def.type !== "heading" && d.def.type !== "blank").map((d) => ({ value: d.def.code, displayName: rowPath(d.def.code).join(" / ") })),
             saved: segmentRowsSaved,
+            parents: Array.from(rowChildren.keys()),
         };
     }
     // 折りたたみ：閉じた行の下の行を隠す（どの組織のブロックでも同じ）。囲みの帯は見えている行で引き直す。
@@ -1010,7 +1044,8 @@ export function transform(
      */
     /**
      * 行を押したときに絞る科目：科目の行はその科目、区分・中分類の小計・見出しはその下の科目すべて、段階の行（営業利益・合計行など）は足す区分の科目、
-     * 計算行は式が引く行の科目。科目の無い行（指標だけを引く計算行・指標）は選べない。
+     * 計算行は式が引く行の科目。科目の無い行（指標・指標だけを引く計算行）は科目では絞らず、組織のブロックの組織（セルはその月も）で絞る
+     * （codes が空。指標の値は科目に依らないので。2026-10-20 ユーザー「指標行を押してもフィルタされない」）。
      * 段階の行・計算行も選べないと、押すと空いた所を押したことになって選択が解け、ほかの組織のブロックまで明るくなった（2026-10-08 ユーザー）
      */
     const selectCodes = new Map<string, string[] | null>();
@@ -1188,7 +1223,9 @@ export function transform(
                 cells: cells.map(cell => ({ ...cell, parts: valueParts(cell.text, [def.format.suffix, `%${def.format.suffix}`, `pt${def.format.suffix}`, "%", "pt"]),
                     ...(cell.sub !== undefined ? { subParts: valueParts(cell.sub, ["%", "pt"]) } : {}) })),
                 ...(foldable(row) ? { open: !closedSet.has(def.code), fold: foldKey(prefix, def.code), ...(subtotalsBelow ? { toggleAbove: true } : {}) } : {}),
-                ...(codesOf(def.code) ? { select: { codes: codesOf(def.code)!, org: orgPath } } : {}),
+                ...(codesOf(def.code)
+                    ? { select: { codes: codesOf(def.code)!, org: orgPath, ...(def.type === "breakdown" && def.code.startsWith(UNDER_KEY) ? { covers: true } : {}) } }
+                    : blankRow ? {} : { select: { codes: [], org: orgPath } }),
                 orgPath,
                 // 太字：行別の書式で選んでいればそれ、無ければ指標カードの古い設定（2.1.7.14 まで）
                 ...((bold) => (bold === "on" ? { bold: true } : bold === "off" ? { bold: false } : boldRows.has(def.code) ? { bold: true } : {}))(ownRow(def) ? rowOverride.get(def.code)?.bold : undefined),
@@ -1224,9 +1261,11 @@ export function transform(
                 for (const code of emptyAccountRows(model.display, model.attached, code => inShown.has(code) && valued(code), model.rows, true)) empty.add(code);
             }
             // 書式ペインの「セグメントごとに隠す行」：このブロックで隠す行と、その下の行（見た目だけ。値の計算は変えない）
-            if (node) for (const code of hiddenRowsIn(segmentRowsSaved, node.path ?? ROOT_FOLD, (c) => rowChildren.get(c) ?? [])) empty.add(code);
+            const hidden = node ? hiddenRowsIn(segmentRowsSaved, node.path ?? ROOT_FOLD, (c) => rowChildren.get(c) ?? [], (c) => model.rows.get(c)?.type === "breakdown") : new Set<string>();
+            for (const code of hidden) empty.add(code);
             const shown = model.display.filter(r => !empty.has(r.def.code));
-            const full = shown.length ? shown : model.display;
+            // 値が無くて行がすべて消えたブロックは全部の行を出すが、隠す行を選んだブロックは出し直さない（選んだ行が全部出てしまった。2026-10-21 ユーザー）
+            const full = shown.length || hidden.size ? shown : model.display;
             const values = tableRows(ownCalc, prefix, node?.label ?? null, !node || node === tree?.root, full,
                 full.map((): Band[] => []), node?.path ?? null, present ? code => present.has(code) : undefined, new Set());
             return accountPlan(hierarchy.roots, new Map(values.map(r => [r.code, r])), closedIn(prefix),

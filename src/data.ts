@@ -13,8 +13,9 @@
  * 続きの読み込みは 1 回分ずつ届く（fetchMoreData(false)）。1 回分ずつ readInput で読み、mergeInput で足し合わせる。続きの回は前の回と
  * 少し重なって届く（Microsoft の fetchMoreData の説明。table・categorical の lastMergeIndex にあたるものが matrix には無い）ので、
  * 行の葉と小計の節点を道筋（すべての段の値）で見分け、前の回までに読んだものは読まない（2026-09-27 の Desktop で、重なった葉を 2 度足していた）。
- * 科目の並びは、並びの欄があればその値、無ければ届いた順（モデルの「列で並べ替え」の順）。届いた順はセグメント・シナリオの組ごとにしか
- * 分からないので、組ごとの順を区分・中分類・科目の段ごとにつなぎ合わせる（assignOrder）。期間は月の値で並べる。
+ * 科目の並びは、区分・中分類は届いた順（モデルの「列で並べ替え」の順。決まらない所は並びの欄の値）、中分類の中の科目は並びの欄の値を
+ * 優先する。届いた順はセグメント・シナリオの組ごとにしか分からないので、組ごとの順を区分・中分類・科目の段ごとにつなぎ合わせる（assignOrder）。
+ * 期間は月の値で並べる。
  */
 import powerbi from "powerbi-visuals-api";
 
@@ -162,6 +163,8 @@ export interface InputData {
     explicitOrders: Map<string, number>;
     /** 届いた順だけでは並びを決めきれなかった所（区分の名前。区分どうしの並びなら ORDER_OF_SECTIONS） */
     orderGuessed: string[];
+    /** 区分の中の科目の並びで、並びの欄の値が届いた順と食い違った所（区分の名前）。並びの欄の順で並べた */
+    orderOverridden: string[];
     /** 同じコードで定義が食い違った科目 */
     conflicts: string[];
     /** 同じ名前で比較順が食い違ったイベント（最初の値を使う） */
@@ -210,13 +213,14 @@ export interface InputData {
 }
 
 /**
- * 選択 ID の元になる matrix の節点。科目は科目コードの段（無ければ科目名の段）の節点、組織は道筋の頭（上の段から）ごとに、その段までの
+ * 選択 ID の元になる matrix の節点。科目は科目コードの段の節点（コードが無ければ、区分・中分類と科目名の段の節点を上から。科目名だけだと、
+ * 同じ科目名が別の区分にあると、ほかのビジュアルが両方の区分で絞られた）、組織は道筋の頭（上の段から）ごとに、その段までの
  * 組織の段の節点、月は列の月の段の節点（日付の列なら 1 か月に何日も）。続きの読み込みの回のものも足し合わせる
  */
 export interface SelectionNodes {
     rowLevels: DataViewHierarchyLevel[];
     columnLevels: DataViewHierarchyLevel[];
-    accounts: Map<string, DataViewMatrixNode>;
+    accounts: Map<string, DataViewMatrixNode[]>;
     orgs: Map<string, DataViewMatrixNode[]>;
     months: Map<MonthIndex, DataViewMatrixNode[]>;
 }
@@ -270,6 +274,7 @@ const EMPTY: InputData = {
     orderGroups: new Map(),
     explicitOrders: new Map(),
     orderGuessed: [],
+    orderOverridden: [],
     conflicts: [],
     orderConflicts: [],
     unreadableOrders: [],
@@ -515,9 +520,13 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
     const pathNodes: Array<DataViewMatrixNode | null> = rowLevels.map((): DataViewMatrixNode | null => null);
     /** 値を入れた科目・組織の節点を覚える（選択 ID）。code が null なら組織だけ（指標の小計の節点） */
     const noteSelection = (code: string | null) => {
-        // キーに使った段の節点（科目コードが空で科目名に落ちた科目は科目名の段。空のコードの節点だと「コードが空」で絞った）
-        const accountNode = pathNodes[codeLevel >= 0 && at(codeLevel) !== null ? codeLevel : nameLevel];
-        if (code !== null && accountNode && !selection.accounts.has(code)) selection.accounts.set(code, accountNode);
+        // キーに使った段の節点（科目コードが空で科目名に落ちた科目は、区分・中分類・科目名の段。空のコードの節点だと「コードが空」で絞った。
+        // 科目名の段だけだと、同じ科目名の別の区分の科目でも絞った）
+        if (code !== null && !selection.accounts.has(code)) {
+            const levels = codeLevel >= 0 && at(codeLevel) !== null ? [codeLevel] : accountLevels;
+            const nodes = levels.map((level) => pathNodes[level]);
+            if (nodes.length > 0 && nodes.every((n): n is DataViewMatrixNode => n !== null)) selection.accounts.set(code, nodes);
+        }
         for (let i = 0; i < orgLevels.length; i++) {
             const key = orgLevels.slice(0, i + 1).map((level) => text(path[level]) ?? "").join(ORG_SEPARATOR);
             if (selection.orgs.has(key)) continue;
@@ -757,7 +766,7 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
     else if (root?.values) readLeaf(root);
 
     // 小計を入れる設定：全体の行の小計・段ごとの小計と、科目の最初の段の小計（段の欄の selector で保存したもの）
-    const orderGuessed = assignOrder(accounts, orderGroups, explicitOrders);
+    const { guessed: orderGuessed, overridden: orderOverridden } = assignOrder(accounts, orderGroups, explicitOrders);
     const accountSource = accountLevel >= 0 ? rowLevels[accountLevel]?.sources?.[0] : undefined;
     const subTotals = dataView?.metadata?.objects?.subTotals;
     const levelEnabled = accountSource?.objects?.subTotals?.levelSubtotalEnabled === true;
@@ -786,6 +795,7 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
         orderGroups,
         explicitOrders,
         orderGuessed,
+        orderOverridden,
         conflicts: Array.from(conflicts),
         orderConflicts: Array.from(orderConflicts),
         unreadableOrders: Array.from(unreadableOrders),
@@ -901,7 +911,7 @@ export function mergeInput(base: InputData, next: InputData): InputData {
         if (known === undefined) explicitOrders.set(code, order);
         else if (known !== order) conflicts.add(code);
     }
-    const orderGuessed = assignOrder(accounts, orderGroups, explicitOrders);
+    const { guessed: orderGuessed, overridden: orderOverridden } = assignOrder(accounts, orderGroups, explicitOrders);
     const index = factIndexes.get(base) ?? { facts: indexOf(base.facts), indicators: indexOf(base.indicatorFacts) };
     mergeFacts(base.facts, index.facts, next.facts);
     mergeFacts(base.indicatorFacts, index.indicators, next.indicatorFacts);
@@ -937,6 +947,7 @@ export function mergeInput(base: InputData, next: InputData): InputData {
         orderGroups,
         explicitOrders,
         orderGuessed,
+        orderOverridden,
         conflicts: Array.from(conflicts),
         orderConflicts: Array.from(orderConflicts),
         unreadableOrders: Array.from(new Set([...base.unreadableOrders, ...next.unreadableOrders])),
@@ -1065,13 +1076,40 @@ export function orderFromSequences(sequences: string[][], key: (value: string) =
 }
 
 /**
- * 科目の並び（record.order）を振る。区分 → 区分の中の中分類 → 中分類の中の科目の段ごとに、組ごとの届いた順から決める（orderFromSequences）。
- * どの段も届いた順で決まる所はそれ（区分に付けた「列で並べ替え」も効く）、決まらない所は並びの欄の値で決める（区分・中分類は、その中の
- * 科目の並びの一番小さい値）。並びの欄でも決めきれなかった所を返す（区分の名前か ORDER_OF_SECTIONS）
+ * 区分の中の科目の並び：並びの欄の値を届いた順より優先する。同じ科目名が別の区分に違う並びで入っていると、モデルで科目名に
+ * 「列で並べ替え」を設定できず、名前の順で届くため（届いた順を優先すると、黙って名前の順になった）。
+ * まず届いた順で並べ（orderFromSequences。並びの欄の値は届いた順で決まらない所に使う）、並びの欄の値のある科目だけを、その位置のまま
+ * 値の小さい順に入れ替える（値の無い科目は届いた順の位置に残る。同じ値は届いた順）。overridden は、どれかの組の届いた順が並びの欄の値の
+ * 順と食い違ったか（表の上で知らせる）。guessed は、値の無い科目か同じ値の科目があり、届いた順でも決めきれなかったか
  */
-export function assignOrder(accounts: Map<string, AccountRecord>, groups: Map<string, OrderGroup>, explicit: Map<string, number>): string[] {
+export function orderByKey(sequences: string[][], key: (value: string) => number): { order: string[]; guessed: boolean; overridden: boolean } {
+    const base = orderFromSequences(sequences, key);
+    const keyed = (value: string) => Number.isFinite(key(value));
+    const slots = base.order.flatMap((value, i) => (keyed(value) ? [i] : []));
+    const sorted = slots.map((i) => base.order[i]).sort((a, b) => key(a) - key(b));
+    const order = [...base.order];
+    slots.forEach((slot, i) => {
+        order[slot] = sorted[i];
+    });
+    const overridden = sequences.some((sequence) => {
+        const values = sequence.filter(keyed);
+        return values.some((value, i) => i > 0 && key(values[i - 1]) > key(value));
+    });
+    const keys = order.map(key);
+    const decided = keys.every((k) => Number.isFinite(k)) && new Set(keys).size === keys.length;
+    return { order, guessed: base.guessed && !decided, overridden };
+}
+
+/**
+ * 科目の並び（record.order）を振る。区分 → 区分の中の中分類 → 中分類の中の科目の段ごとに、組ごとの届いた順から決める（orderFromSequences）。
+ * 区分・中分類は、届いた順で決まる所はそれ（区分に付けた「列で並べ替え」も効く）、決まらない所は並びの欄の値で決める（その中の
+ * 科目の並びの一番小さい値）。中分類の中の科目は並びの欄の値を優先する（orderByKey）。並びの欄でも決めきれなかった所（guessed。区分の名前か
+ * ORDER_OF_SECTIONS）と、並びの欄の値が届いた順と食い違った所（overridden。区分の名前）を返す
+ */
+export function assignOrder(accounts: Map<string, AccountRecord>, groups: Map<string, OrderGroup>, explicit: Map<string, number>): { guessed: string[]; overridden: string[] } {
     const INF = Number.POSITIVE_INFINITY;
     const guessed = new Set<string>();
+    const overridden = new Set<string>();
     const list = Array.from(groups.values());
     const records = Array.from(accounts.values());
     // 区分・中分類の並びの欄の値：その中の科目の一番小さい値
@@ -1109,13 +1147,15 @@ export function assignOrder(accounts: Map<string, AccountRecord>, groups: Map<st
                 category
             )
         );
-        const codes = cached(accountRanks, bucket, () =>
-            rank(
+        const codes = cached(accountRanks, bucket, () => {
+            const result = orderByKey(
                 list.map((g) => g.accounts.get(bucket) ?? []),
-                (code) => explicit.get(code) ?? INF,
-                category
-            )
-        );
+                (code) => explicit.get(code) ?? INF
+            );
+            if (result.guessed) guessed.add(category);
+            if (result.overridden) overridden.add(category);
+            return new Map(result.order.map((v, i): [string, number] => [v, i]));
+        });
         return [categories.get(category) ?? INF, subs.get(a.subCategory ?? "") ?? INF, codes.get(a.code) ?? INF];
     };
     const keys = new Map(records.map((a): [AccountRecord, number[]] => [a, keyOf(a)]));
@@ -1126,5 +1166,5 @@ export function assignOrder(accounts: Map<string, AccountRecord>, groups: Map<st
     sorted.forEach(([record], i) => {
         record.order = i;
     });
-    return Array.from(guessed);
+    return { guessed: Array.from(guessed), overridden: Array.from(overridden) };
 }

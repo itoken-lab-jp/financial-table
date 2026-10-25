@@ -13,6 +13,9 @@ import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel
 
 import "./../style/visual.less";
 import { toRootCoordinates } from "./shared/tooltip";
+import { GuardedRenderer } from "./shared/renderGuard";
+import { selectionLookup } from "./shared/selectionLookup";
+import { contextMenuIdOf } from "./shared/contextMenu";
 import { App, CellTooltip } from "./App";
 import { SelectionNodes } from "./data";
 import { InputLoader, SUBTOTAL_WAIT_MS, subtotalAction } from "./loading";
@@ -53,6 +56,8 @@ const PENDING_TIMEOUT_MS = 5000;
 
 export class Visual implements IVisual {
     private root: Root;
+    /** 描画の守り。update では描き終えてからレンダリング イベントを送り、失敗したら前の絵を消して知らせを出す */
+    private renderer: GuardedRenderer;
     private element: HTMLElement;
     private host: IVisualHost;
     /** セルのツールチップ。表は単位で丸めるので、正確な値を Power BI のツールチップで出す */
@@ -104,6 +109,7 @@ export class Visual implements IVisual {
         };
         this.formattingSettingsService = new FormattingSettingsService();
         this.root = createRoot(options.element);
+        this.renderer = new GuardedRenderer(this.root);
         this.loader = new InputLoader(() => this.host.fetchMoreData(false));
         this.selectionManager = options.host.createSelectionManager();
         // ブックマークやほかのビジュアルで選択が変わったら、表の見た目を合わせる：空なら解き、表の選択と違う選択 ID が来たら（ブックマークが
@@ -113,7 +119,10 @@ export class Visual implements IVisual {
             const nodes = this.lastRender?.viewModel.selectionNodes;
             const mine = nodes ? this.selection.flatMap((t) => this.selectionIds(t, nodes)) : [];
             // 件数や字の並びではなく、equals で両方向に含まれるかで比べる（区分と科目を重ねて選ぶと同じ選択 ID が 2 度入る）
-            const same = mine.every((m) => ids.some((id) => id.equals(m))) && ids.every((id) => mine.some((m) => m.equals(id)));
+            // 1 つずつ比べると「選んだ数 × 届いた数」になるので、getKey で引いてから equals で比べる（selectionLookup）
+            const inIds = selectionLookup(ids);
+            const inMine = selectionLookup(mine);
+            const same = mine.every((m) => inIds(m)) && ids.every((id) => inMine(id));
             if (ids.length === 0 || !same) {
                 this.selection = [];
                 this.renderApp();
@@ -122,17 +131,14 @@ export class Visual implements IVisual {
     }
 
     public update(options: VisualUpdateOptions): void {
-        // レンダリングイベントは認定要件。必ず started / finished(failed) を対で呼ぶ。
-        this.events.renderingStarted(options);
-        try {
+        // レンダリングイベントは認定要件。started と、描き終えてから finished（失敗なら failed）を対で 1 回ずつ送る
+        const rendered = this.renderer.update(this.events, options, () => {
             this.lastOptions = options;
             this.restoreVisualState(options.dataViews?.[0]);
             this.build(options, true);
-            this.events.renderingFinished(options);
-        } catch (error) {
-            console.error("update failed", error);
-            this.events.renderingFailed(options, String(error));
-        }
+        });
+        // 描けなかったら、選択を変えたときに前の表で描き直さない（消した前の絵が戻る）。小計を待つ時計も、鳴ったときに組み直さない
+        if (!rendered) this.lastRender = null;
     }
 
     /** showWarnings：警告のアイコンを出し直すか（既定は update のとき。見る人のメニューの操作では出し直さない） */
@@ -235,7 +241,7 @@ export class Visual implements IVisual {
         const allowInteractions = this.host.hostCapabilities?.allowInteractions !== false;
         const menu = viewModel.menu;
         const nodes = viewModel.selectionNodes;
-        this.root.render(
+        this.renderer.paint(
             React.createElement(App, {
                 viewModel,
                 viewport,
@@ -247,7 +253,7 @@ export class Visual implements IVisual {
                         ? (target: SelectTarget | null, x: number, y: number) => {
                               // 押した所に結びついたメニュー（含める・含めない・ドリルスルー）。1 つの選択 ID にならない所（区分・四半期）は既定のメニュー
                               const ids = target ? this.selectionIds(target, nodes) : [];
-                              this.selectionManager.showContextMenu(ids.length === 1 ? ids[0] : ({} as ISelectionId), { x, y });
+                              this.selectionManager.showContextMenu(contextMenuIdOf(ids), { x, y });
                           }
                         : undefined,
                 onClearSelection: allowInteractions ? () => this.clearSelection() : undefined,
@@ -308,7 +314,9 @@ export class Visual implements IVisual {
 
     /**
      * 選んだものの選択 ID（matrix の節点から）。科目は科目コードの段の節点だけで作る（組織・イベントの段を入れると、その値でも絞る）。
-     * 組織のブロックの中なら組織の段の節点も重ねる。セルは科目 × 月（四半期・通期はその月すべて）、列の見出しは月、組織の名前は組織
+     * コードが無ければ区分・中分類・科目名の段の節点を重ねる（科目名だけだと、同じ科目名の別の区分でも絞る）。
+     * 組織のブロックの中なら組織の段の節点も重ねる。セルは科目 × 月（四半期・通期はその月すべて）、列の見出しは月、組織の名前は組織。
+     * 指標の行（科目が空）は組織だけ、セルは組織 × 月（組織の欄が無ければ月だけ）
      */
     private selectionIds(target: SelectTarget, nodes: SelectionNodes): ISelectionId[] {
         const builder = () => this.host.createSelectionIdBuilder();
@@ -316,18 +324,29 @@ export class Visual implements IVisual {
         const monthNodes = (months: number[]) => months.flatMap((m) => nodes.months.get(m) ?? []);
         const withRow = (code: string, org: string | null) => {
             const account = nodes.accounts.get(code);
-            if (!account) return null;
-            let b = builder().withMatrixNode(account, nodes.rowLevels);
+            if (!account || account.length === 0) return null;
+            let b = builder();
+            for (const node of account) b = b.withMatrixNode(node, nodes.rowLevels);
+            for (const node of orgNodes(org)) b = b.withMatrixNode(node, nodes.rowLevels);
+            return b;
+        };
+        const withOrg = (org: string | null) => {
+            let b = builder();
             for (const node of orgNodes(org)) b = b.withMatrixNode(node, nodes.rowLevels);
             return b;
         };
         switch (target.kind) {
             case "row":
+                if (target.codes.length === 0) return orgNodes(target.org).length > 0 ? [withOrg(target.org).createSelectionId()] : [];
                 return target.codes.flatMap((code) => {
                     const b = withRow(code, target.org);
                     return b ? [b.createSelectionId()] : [];
                 });
             case "cell":
+                if (target.codes.length === 0) {
+                    if (target.org !== null && orgNodes(target.org).length === 0) return [];
+                    return monthNodes(target.months).map((month) => withOrg(target.org).withMatrixNode(month, nodes.columnLevels).createSelectionId());
+                }
                 return target.codes.flatMap((code) =>
                     monthNodes(target.months).flatMap((month) => {
                         const b = withRow(code, target.org);
@@ -388,13 +407,15 @@ export class Visual implements IVisual {
 
     /**
      * 小計の設定を保存してから待つ時間がたったら、表を組み直して見直す（読み直しは呼ばない）。保存が効かず update も来ないと、
-     * 「指標の値を読み込んでいます…」が出たままになるので、届いていなければ知らせる
+     * 「指標の値を読み込んでいます…」が出たままになるので、届いていなければ知らせる。
+     * 直前の update が失敗していたら組み直さない（失敗した update の内容で、知らせの上に表を描かない）。時計は止めないので、
+     * 待つ間にあとの update が成功していれば、その内容で見直す
      */
     private scheduleSubtotalCheck(): void {
         if (this.subtotalTimer !== null) window.clearTimeout(this.subtotalTimer);
         this.subtotalTimer = window.setTimeout(() => {
             this.subtotalTimer = null;
-            if (this.lastOptions) this.build(this.lastOptions, false, true);
+            if (this.lastOptions && this.lastRender) this.build(this.lastOptions, false, true);
         }, SUBTOTAL_WAIT_MS + 500);
     }
 

@@ -4,6 +4,7 @@
  * 期首の月と年度の呼び方は決め打ちしない（書式で選ぶ）。月の名前だけで引くと、別の年度の同じ月が混ざるので、
  * 前年同期も「月番号 − 12」で引く（年度つきのキー）。
  */
+import { maxOf, minOf } from "./shared/minMax";
 import { DEFAULT_WORDS, Words, fillWord, fillYear } from "./words";
 
 /** 月番号。2025 年 4 月 = 2025 × 12 + 3 */
@@ -243,8 +244,8 @@ export function tablePeriods(
     const total = pick.total ? sumColumn(columns.filter((c) => c.kind === "month").flatMap((c) => c.months), words) : null;
     if (total) columns.push(total);
     const months = columns.flatMap((c) => c.months);
-    const first = Math.min(...months);
-    const last = Math.max(...months);
+    const first = minOf(months);
+    const last = maxOf(months);
     const title = multi
         ? `${fiscalYearName(fiscalYearStart(first, calendar), calendar)} ${monthOf(first)}月〜${fiscalYearName(fiscalYearStart(last, calendar), calendar)} ${monthOf(last)}月`
         : fiscalYearName(used[0].start, calendar);

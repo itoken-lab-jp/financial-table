@@ -8,19 +8,24 @@
  * - 組織の欄を入れたら、左に組織の段ごとの列を足し、組織の名前をその組織の行にまとめて縦にかける（行の見出しと一緒に左に残す）。
  *   組織の名前と、区分・中分類の小計の行の前のしるしで開き閉じする（見る人の選択として保存。visual.ts）
  */
+import { applyFrozenLines } from "./frozenLines";
+import { rowHeightsOf } from "./rowHeights";
 import * as React from "react";
-import { LayoutPlan, LayoutHeader, planRows } from "./hierarchy";
+import { HierarchyCell, LayoutPlan, LayoutHeader, planRows } from "./hierarchy";
 import { ValueParts } from "./valueParts";
 import powerbi from "powerbi-visuals-api";
 
 import { CopyImageButton } from "./shared/CopyImageButton";
 import { controlColorsOf, controlVars } from "./shared/controls";
+import { ChartImage } from "./shared/copyImage";
 import { htmlImage } from "./shared/htmlImage";
+import { fitsWholeImage } from "./shared/wholeImage";
 import { SCROLL_STARTS, useScrollStart } from "./shared/scrollStart";
+import { maxOf, minOf } from "./shared/minMax";
 import { OrgCell } from "./orgs";
 import { GridPosition, SpannedCell, VisibleRows, buildGrid, foldOf, isClearKey, isMenuKey, isSelectKey, moveInGrid, moveOf, positionOf } from "./keyboard";
-import { SelectTarget, cellActive, orgSelected, periodActive, plainCellActive, plainRowActive, rowActive, targetKey } from "./selection";
-import { Band, Cell, EventMenu, SlotView, TableRow, TooltipItem, ViewModel, periodNameOf, tableUnitOf, textOn } from "./viewModel";
+import { SelectTarget, cellActive, orgSelected, periodActive, plainCellActive, plainRowActive, rowActive, rowTarget as selectRow, targetKey, unselectableRowActive } from "./selection";
+import { Cell, EventMenu, SlotView, TableRow, TooltipItem, ViewModel, periodNameOf, tableUnitOf, textOn } from "./viewModel";
 import { ComparePatch, PeriodPatch, PickPatch, VisualState } from "./visualState";
 import { CompareDialog } from "./CompareDialog";
 import { PeriodDialog } from "./PeriodDialog";
@@ -59,8 +64,51 @@ export interface AppProps {
  *
  */
 const COPY_SKIP = ".ft-events, .ft-folds, .ft-period-open, .ft-pick-open, .ft-pick-pop, .ft-colmenu-open, .ft-colmenu-spacer, .ft-notice";
-// 画像は年度から下（上端のボタンの行は描かない）
-const captureTable = (root: HTMLElement, background: string) => htmlImage(root.querySelector<HTMLElement>(".ft-sheet") ?? root, background, COPY_SKIP);
+// 画像は年度から下（上端のボタンの行は描かない）。表がスクロールするときは、隠れた所も含めた表全体（大きすぎれば見えている範囲）
+export const captureTable = async (root: HTMLElement, background: string): Promise<ChartImage | null> => {
+    const sheet = root.querySelector<HTMLElement>(".ft-sheet");
+    if (!sheet) return htmlImage(root, background, COPY_SKIP);
+    return (await fullSheetImage(root, sheet, background)) ?? htmlImage(sheet, background, COPY_SKIP);
+};
+
+/** 表全体の写しを置く箱（visual.less）。見えない所に、スクロールせずに全部を並べる */
+const FULL_CAPTURE_CLASS = "ft-full-capture";
+
+/**
+ * スクロールで隠れた所も含めた表全体の画像。年度から下（ft-sheet）を写して、スクロールの箱を広げた写しを見えないように重ねて並べ、それを描く
+ * （画面の表は動かさない）。上・左に残す見出しと列、残す合計行は、写しの中では動かずに自分の場所に来る（写しのスクロールの箱は大きさの上限を外して中身の大きさにするので、
+ * どこも箱の端に掛からない）。表が 1 つのときの外枠の上と左の線は、写しの位置で引き直す（placeFrame）。
+ * スクロールしない（全部見えている）とき、大きすぎるときは undefined（見えている範囲を描く）
+ */
+async function fullSheetImage(root: HTMLElement, sheet: HTMLElement, background: string): Promise<ChartImage | null | undefined> {
+    const scroller = sheet.querySelector<HTMLElement>(":scope > .ft-scroll");
+    if (!scroller) return undefined;
+    const hiddenX = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    const hiddenY = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    if (hiddenX <= 1 && hiddenY <= 1) return undefined;
+    // 写しを作る前に、だいたいの大きさで上限を見る（大きな表を並べ直してから捨てない）
+    const scale = layoutScale(root);
+    const rect = sheet.getBoundingClientRect();
+    if (!fitsWholeImage(rect.width + hiddenX * scale, rect.height + hiddenY * scale)) return undefined;
+    const host = document.createElement("div");
+    host.className = FULL_CAPTURE_CLASS;
+    host.setAttribute("aria-hidden", "true");
+    const copy = sheet.cloneNode(true) as HTMLElement;
+    host.appendChild(copy);
+    root.appendChild(host);
+    try {
+        // スクロールした印（左・上の縁の線）は、スクロールしていない写しには付けない
+        copy.querySelector(":scope > .ft-scroll")?.classList.remove("ft-scrolled-x", "ft-scrolled-y");
+        placeFrame(host, copy.querySelector<HTMLElement>(":scope > .ft-frame-lines"));
+        // 写しは表全体なので、親の名前はどれも親のブロックに写る。名前の上に重ねた親の名前は出さない
+        for (const line of Array.from(copy.querySelectorAll(".ft-org-parents[data-shown]"))) line.removeAttribute("data-shown");
+        const box = copy.getBoundingClientRect();
+        if (!fitsWholeImage(box.width, box.height)) return undefined;
+        return await htmlImage(copy, background, COPY_SKIP);
+    } finally {
+        host.remove();
+    }
+}
 
 /** 押したときの扱い（行・セル・見出し・組織の名前に配る） */
 interface Picking {
@@ -186,6 +234,8 @@ const cellKey = {
     // セグメントは 1 列で、道筋ごとにセルは 1 つ。開き閉じで閉じた表と計の表が入れ替わっても同じ名前にし、フォーカスを保つ
     org: (cell: OrgCell, rowKey: string) => `o\u0001${cell.identity ?? cell.path ?? `\u0002${rowKey}`}`,
     name: (rowKey: string) => `n\u0001${rowKey}`,
+    // 横積みの親の名前
+    hierarchy: (cell: HierarchyCell) => `n\u0001hierarchy:${cell.row.key}`,
     value: (rowKey: string, i: number) => `v\u0001${rowKey}\u0001${i}`,
 };
 
@@ -196,7 +246,7 @@ export function cellKeysOf(viewModel: ViewModel): { keys: Set<string>; first: st
     for (const p of viewModel.periods) keys.add(cellKey.period(p.key));
     viewModel.columns.forEach((_, i) => keys.add(cellKey.column(i)));
     for (const row of viewModel.rows) {
-        for (const cell of row.hierarchyCells ?? []) keys.add(cellKey.name(`hierarchy:${cell.row.key}`));
+        for (const cell of row.hierarchyCells ?? []) keys.add(cellKey.hierarchy(cell));
         for (const cell of row.orgCells ?? []) keys.add(cellKey.org(cell, row.key));
         keys.add(cellKey.name(row.key));
         row.cells.forEach((_, i) => keys.add(cellKey.value(row.key, i)));
@@ -268,7 +318,8 @@ function useKeyboard(
         const cell = (e.target as HTMLElement).closest<HTMLTableCellElement>("[data-cell]");
         if (!cell || !e.currentTarget.contains(cell)) return;
         const ctrl = e.ctrlKey || e.metaKey;
-        if (isClearKey(e.key, ctrl, e.shiftKey)) {
+        // 字の配列によらず C の位置のキーでも解き、Alt を押していれば解かない（Ctrl+Alt は AltGr にもなる）
+        if (isClearKey(e.key, ctrl, e.shiftKey, e.altKey, e.code)) {
             e.preventDefault();
             if (!e.repeat) onClearSelection?.();
             return;
@@ -488,6 +539,7 @@ export function App({
     // 比較の列を選ぶダイアログ（全期間。同じ形）
     const [compareAt, setCompareAt] = React.useState<{ left: number; top: number } | null>(null);
     const compareButton = React.useRef<HTMLButtonElement>(null);
+    const frameLines = React.useRef<HTMLDivElement>(null);
     const closeCompare = React.useCallback((returnFocus: boolean) => {
         setCompareAt(null);
         if (returnFocus) compareButton.current?.focus();
@@ -593,7 +645,7 @@ export function App({
         const cells = Array.from(rootRef.current?.querySelectorAll<HTMLElement>(".ft-value[data-value-column]") ?? []);
         const widths = new Map<string, number>();
         for (const cell of cells) {
-            const width = Math.max(0, ...Array.from(cell.querySelectorAll<HTMLElement>(".ft-number-tail-content"), tail => tail.offsetWidth));
+            const width = Math.max(0, maxOf(Array.from(cell.querySelectorAll<HTMLElement>(".ft-number-tail-content"), tail => tail.offsetWidth)));
             const key = cell.dataset.valueColumn!;
             widths.set(key, Math.max(widths.get(key) ?? 0, width));
         }
@@ -611,18 +663,19 @@ export function App({
         }
         const columnWidths = new Map<string, number>();
         const scale = rootRef.current ? layoutScale(rootRef.current) : 1;
-        // 表が 1 つ（左のかたまりと数字の 1 組）のときは、外枠の上と左を、残るものに引く（visual.less の data-single・data-touch-top）。
-        // 左は左のかたまりの表の枠線（表ごと左に残る）、上は見出しの 1 段目のセル（見出しごと上に残る）。表の枠線のままだと、
-        // スクロールすると線が流れて箱の縁の線に替わり、線が 1px 跳ねて、見出しも 2px 動いた（2026-10-15）。
-        // 分割で表が並ぶときは表ごとの枠線のまま（スクロールした向きだけ箱の縁に線を引く）
+        // 表が 1 つ（左のかたまりと数字の 1 組）のときは、箱の上・左の縁に着いている表の上・左の枠線を外し、その線はスクロールの箱の外に
+        // 重ねる部品が引く（下の frameLines と visual.less の .ft-frame-lines）。分割で表が並ぶときは表ごとの枠線のまま（スクロールした向きだけ箱の縁に線を引く）
         const box = rootRef.current?.querySelector<HTMLElement>(".ft-scroll.ft-layout-scroll");
         const single = (rootRef.current?.querySelectorAll(".ft-freeze").length ?? 0) === 1;
         if (box) {
             box.toggleAttribute("data-single", single);
             const boxRect = box.getBoundingClientRect();
             for (const table of tables) {
-                const y = (table.getBoundingClientRect().top - boxRect.top) / scale - box.clientTop + box.scrollTop;
+                const rect = table.getBoundingClientRect();
+                const x = (rect.left - boxRect.left) / scale - box.clientLeft + box.scrollLeft;
+                const y = (rect.top - boxRect.top) / scale - box.clientTop + box.scrollTop;
                 table.toggleAttribute("data-touch-top", single && y < 0.5);
+                table.toggleAttribute("data-touch-left", single && x < 0.5);
             }
         }
         for (const table of tables) for (const cell of Array.from(table.querySelectorAll<HTMLTableCellElement>("[data-width-key]"))) {
@@ -636,8 +689,11 @@ export function App({
                 rects.push(range.getBoundingClientRect());
             }
             for (const slot of Array.from(cell.querySelectorAll(".ft-toggle-slot, .ft-number-tail"))) rects.push(slot.getBoundingClientRect());
+            // 出していない字（display: none の親の名前の行）は、四角が画面の左上（0, 0）の大きさ 0 で来るので数えない。数えると列の幅が
+            // 表の左からの距離の分だけ広がり、親の名前を出したり消したりした前の描き方によって幅が変わった
+            const shown = rects.filter((r) => r.width > 0 || r.height > 0);
             const style = window.getComputedStyle(cell);
-            const contentWidth = rects.length ? Math.max(...rects.map(r => r.right)) - Math.min(...rects.map(r => r.left)) : 0;
+            const contentWidth = shown.length ? maxOf(shown.map(r => r.right)) - minOf(shown.map(r => r.left)) : 0;
             const width = contentWidth / scale + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 2;
             const key = `${table.dataset.columnShape}:${cell.dataset.widthKey}`;
             columnWidths.set(key, Math.max(columnWidths.get(key) ?? 0, width));
@@ -747,31 +803,15 @@ export function App({
             return left && right ? Array.from(left.rows, (tr, i) => [tr, right.rows[i]] as const).filter(([, other]) => other) : [];
         });
         for (const [a, b] of pairs) a.style.height = b.style.height = "";
-        // 行の境は画面の画素に合わせる。端数の倍率では行の高さ（字の高さで決まる 39.39px など）の端数が積もり、境が画素の途中に来た行の横線は
-        // 2 画素ににじんで太く薄く見え、箱の縦線と下の線の角も 1 画素離れた（2026-10-15）。表の上の端からの境の位置を画素の倍数に切り上げ、
-        // その差を行の高さにする（行ごとに切り上げると表全体が背高くなる。差なら 1 行あたり 1 画素未満）。高さは 1/64px（ブラウザーの単位）で書く
+        // 左の表の横線は、div でなく th の罫線で引く（frozenLines.ts、2026-10-24）。罫線で行の高さが変わるので、高さを測る前に置く
+        applyFrozenLines(pairs);
+        // 行の高さは CSS の整数 px（rowHeights.ts、2026-10-24）。--ft-px は 1 画素の線（見出しの下の線など）の太さに使う
         const pixel = 1 / ((window.devicePixelRatio || 1) * scale);
         const lu = (value: number) => Math.round(value * 64) / 64;
         root.style.setProperty("--ft-px", `${pixel}px`);
         // 行をまたぐセル（セグメントの名前・横積みの親）は、そろえたあとの高さで余りを配り直すので、そろうまで数回くり返す
         for (let round = 0; round < 4; round++) {
-            // 境の位置は箱の中身の上の端から数える（分割で縦に並ぶ 2 つ目からの表は、上の端が画素の途中にある）
-            const scroller = root.querySelector<HTMLElement>(".ft-scroll");
-            const origin = scroller ? scroller.getBoundingClientRect().top + scroller.clientTop * scale - scroller.scrollTop * scale : 0;
-            let edge = 0;
-            let start = 0;
-            const heights = pairs.map(([a, b], i) => {
-                if (i === 0 || a.closest("table") !== pairs[i - 1][0].closest("table")) {
-                    edge = 0;
-                    start = (a.getBoundingClientRect().top - origin) / scale;
-                    start -= Math.floor(start / pixel + 0.01) * pixel;
-                }
-                const own = Math.max(a.getBoundingClientRect().height, b.getBoundingClientRect().height) / scale;
-                const next = lu(Math.ceil((start + edge + own) / pixel - 0.01) * pixel - start);
-                const height = Math.max(0, next - edge);
-                edge = next;
-                return height;
-            });
+            const heights = rowHeightsOf(pairs.map(([a, b]) => Math.max(a.getBoundingClientRect().height, b.getBoundingClientRect().height) / scale));
             let changed = false;
             pairs.forEach(([a, b], i) => {
                 const next = `${heights[i]}px`;
@@ -780,6 +820,19 @@ export function App({
             });
             if (!changed) break;
         }
+        // セグメントの名前は列の見出しのすぐ下に残す。見出しの高さは上でそろえたので、左右の表で同じ値になる。左右に分けた表では、行に渡す top が 0 のままで、名前が見出しの裏に
+        // 止まって見えなかった（2026-10-24。左に残す列を別の表にした 2026-10-15 から）
+        for (const table of Array.from(root.querySelectorAll<HTMLTableElement>(".ft-freeze > table"))) {
+            const head = table.tHead;
+            if (!head) continue;
+            const top = (parseFloat(getComputedStyle(head).top) || 0) + head.getBoundingClientRect().height / scale;
+            table.style.setProperty("--ft-org-top", `${lu(top)}px`);
+        }
+    });
+    // 表が 1 つのときの外枠の上と左の線、見出しの下の線（placeFrame）。行の高さをそろえたあとに置く
+    React.useLayoutEffect(() => {
+        placeOrgLabels(rootRef.current);
+        placeFrame(rootRef.current, frameLines.current);
     });
     const picking: Picking = {
         selection,
@@ -962,6 +1015,9 @@ export function App({
                         const x = e.currentTarget.scrollLeft > 0;
                         const y = e.currentTarget.scrollTop > 0;
                         if (x !== scrolled.x || y !== scrolled.y) setScrolled({ x, y });
+                        // 親の名前を先に置く（出し入れはまれで、ふだんはどちらも測るだけで、スクロールでレイアウトを計算し直さない）
+                        placeOrgLabels(rootRef.current);
+                        placeFrame(rootRef.current, frameLines.current);
                         // 表を動かしたら、見出しから離れた ▾ のメニューを閉じる
                         if (columnMenu) closeColumnMenu(false);
                     }}
@@ -1062,6 +1118,14 @@ export function App({
                         </tbody>
                     </table>}
                 </div>
+                {viewModel.layout && (
+                    <div className="ft-frame-lines" ref={frameLines} hidden>
+                        <span className="ft-frame-top" />
+                        <span className="ft-frame-left" />
+                        <span className="ft-frame-head" />
+                        <span className="ft-frame-split" />
+                    </div>
+                )}
             </div>
             {pickAt !== null && viewModel.picks && onPick && (
                 <PickDialog
@@ -1346,7 +1410,7 @@ interface RowProps {
     tooltip?: CellTooltip;
     /** 左に残す列の左端（組織の列の番号。組織の列の数なら行の見出し） */
     left: (column: number) => number | undefined;
-    /** 列の見出しの高さ（組織の名前をその下に残す） */
+    /** 列の見出しの高さ（組織の名前をその下に残す）。0 なら表の --ft-org-top（左右に分けた表は、そろえたあとに測って表に置く） */
     top: number;
     onToggleOrg?: (path: string) => void;
     onToggleRow?: (code: string) => void;
@@ -1359,10 +1423,10 @@ interface RowProps {
     part?: "left" | "right";
 }
 
-/** 行の見出しを明るく残すか。選べない行（計算行・指標）は薄くしない（組織を選んだときのほかの組織は薄くする） */
+/** 行の見出しを明るく残すか。選べない行（見出しだけの行）は、行・セルを選べば薄くし、列だけを選べば明るいまま（組織を選んだときのほかの組織は薄くする） */
 function nameActive(row: TableRow, selection: SelectTarget[]): boolean {
     const org = row.orgPath ?? null;
-    return row.select ? rowActive(selection, row.key, org) : plainRowActive(selection, org);
+    return row.select ? rowActive(selection, row.key, org, row.select.codes) : unselectableRowActive(selection, org);
 }
 
 /** 列の見出しを押したときの選択（期間の月） */
@@ -1379,7 +1443,7 @@ function periodTarget(viewModel: ViewModel, periodKey: string): SelectTarget | n
  */
 /** 下に置いた合計の締めの線を引き始める段：この行で終わる箱のうち一番外の段（自分の段より外で終わる箱が無ければ自分の段） */
 function closingLevel(row: TableRow): number {
-    return Math.min(row.depth, ...row.bands.filter((band) => band.last).map((band) => band.level));
+    return Math.min(row.depth, minOf(row.bands.filter((band) => band.last).map((band) => band.level)));
 }
 
 function isBoxEdge(above: TableRow, row: TableRow): boolean {
@@ -1414,7 +1478,7 @@ function FrameLabel({ header, unit, viewModel, selection = [], onSelect, onConte
     const stamp = React.useRef(0);
     const toggle = header.fold === undefined ? undefined : () => (header.kind === "org" ? onToggleOrg : onToggleRow)?.(header.fold!);
     const target: SelectTarget | null = header.kind === "org" && header.org != null ? { kind: "org", path: header.org }
-        : header.row?.select ? { kind: "row", rowKey: header.row.key, codes: header.row.select.codes, org: header.row.select.org } : null;
+        : header.row?.select ? selectRow(header.row.key, header.row.select) : null;
     const picking: Picking = { selection, onSelect, onContextMenu, focused: header.key, onFocusCell: () => undefined,
         periods: new Map(viewModel.periods.map(p => [p.key, p])), keyMenu: { mark: () => { stamp.current = Date.now(); }, recent: () => Date.now() - stamp.current < KEY_MENU_GUARD_MS } };
     const active = header.row ? nameActive(header.row, selection) : plainRowActive(selection, header.org ?? null);
@@ -1456,6 +1520,134 @@ const NAME_LINE = <span className="ft-line-name" />;
  * 線を持つセルと一緒に動く）。左のセルの右の枠線で引いていたときは、スクロールすると右のセルが端数の分だけ重なって止まり、線を覆って消した（2026-10-15）
  */
 const EDGE_LINE = <span className="ft-edge-line" />;
+
+/**
+ * 表が 1 つのときの外枠の上と左の線、見出しの下の線を、スクロールの箱の外に重ねた部品（.ft-frame-lines）に置く。上に残す見出しと左に残す表は、
+ * スクロールの位置が画面の画素の途中に来ると、スクロールした中身と違って画素にそろわずに止まり、そこに引いた線がスクロールのたびに
+ * 1 画素上下・左右し、にじみ方も変わった（Desktop の 125%）。箱の外の部品はスクロールで動かない。位置は画面の画素に丸め、太さは 1 画素。
+ * 長さは表の右の端・下の端か、箱の見えている所（スクロールバーの手前）の短いほうまで（箱の縁に引くと、右と下の 1px の余白とスクロールバーの分だけ
+ * 角がはみ出した）。表の端が見えるかはスクロールの位置で変わるので、スクロールのたびにも置き直す
+ */
+function placeFrame(root: HTMLElement | null, lines: HTMLElement | null): void {
+    if (!root || !lines) return;
+    const box = root.querySelector<HTMLElement>(".ft-scroll.ft-layout-scroll[data-single]");
+    const tables = box ? Array.from(box.querySelectorAll<HTMLTableElement>(".ft-freeze > table")) : [];
+    const top = tables.some((t) => t.hasAttribute("data-touch-top"));
+    const left = tables.some((t) => t.hasAttribute("data-touch-left"));
+    // スクロールのたびに呼ぶので、測るのを先に全部済ませてから書く（書いてから測ると、そのたびにレイアウトを計算し直す）。同じ値は書かない
+    const hidden = !box || !tables.length || (!top && !left);
+    if (box && box.hasAttribute("data-frame-top") !== top) box.toggleAttribute("data-frame-top", top);
+    if (lines.hidden !== hidden) lines.hidden = hidden;
+    if (!box || hidden) return;
+    const scale = layoutScale(root);
+    const dpr = window.devicePixelRatio || 1;
+    const rootRect = root.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
+    // 画面の座標を画素に丸め、根の中の位置（拡大する前の px）に直す。線の始まり（箱の左・上の縁）は内側の画素へ切り上げる
+    // （四捨五入で外へ出ると、根の切り取り（overflow: hidden）に線の一部が切られて薄くなった）
+    const snap = (v: number, up = false) => (up ? Math.ceil(v * dpr - 0.01) : Math.round(v * dpr)) / dpr;
+    const cssX = (v: number, up = false) => (snap(v, up) - rootRect.left) / scale - root.clientLeft;
+    const cssY = (v: number, up = false) => (snap(v, up) - rootRect.top) / scale - root.clientTop;
+    const pixel = 1 / (dpr * scale);
+    // 表の右の端・下の端を、今のスクロールの位置での箱の中の座標で（箱の縁の内側から）。スクロールの終わりで表の端が見えると、そこで止める
+    let right = 0;
+    let bottom = 0;
+    let rightBorder = 0;
+    for (const t of tables) {
+        const r = t.getBoundingClientRect();
+        const end = (r.right - boxRect.left) / scale - box.clientLeft;
+        if (end >= right) {
+            right = end;
+            rightBorder = parseFloat(getComputedStyle(t).borderRightWidth) || 0;
+        }
+        bottom = Math.max(bottom, (r.bottom - boxRect.top) / scale - box.clientTop);
+    }
+    const rightVisible = right <= box.clientWidth + 0.5;
+    const x0 = boxRect.left;
+    const y0 = boxRect.top;
+    const x1 = boxRect.left + (box.clientLeft + Math.min(right, box.clientWidth)) * scale;
+    const y1 = boxRect.top + (box.clientTop + Math.min(bottom, box.clientHeight)) * scale;
+    const writes: Array<() => void> = [];
+    const place = (el: Element | null, show: boolean, x: number, y: number, w: number, h: number) => {
+        if (!(el instanceof HTMLElement)) return;
+        writes.push(() => {
+            if (el.hidden !== !show) el.hidden = !show;
+            const next = { left: `${x}px`, top: `${y}px`, width: `${Math.max(0, w)}px`, height: `${Math.max(0, h)}px` };
+            for (const [k, v] of Object.entries(next) as Array<["left" | "top" | "width" | "height", string]>) if (el.style[k] !== v) el.style[k] = v;
+        });
+    };
+    place(lines.querySelector(".ft-frame-top"), top, cssX(x0, true), cssY(y0, true), cssX(x1) - cssX(x0, true), pixel);
+    place(lines.querySelector(".ft-frame-left"), left, cssX(x0, true), cssY(y0, true), pixel, cssY(y1) - cssY(y0, true));
+    // 見出しの下の線：見出しの下の端から 1 画素。左の線の内側から、表の右の外枠の内側（右がスクロールで切れていれば箱の見えている端）まで
+    const head = tables[0].tHead;
+    if (top && head) {
+        const headBottom = y0 + (box.clientTop + head.getBoundingClientRect().height / scale) * scale;
+        const from = cssX(x0, true) + (left ? pixel : box.clientLeft);
+        const to = cssX(rightVisible ? x1 - rightBorder * scale : x1);
+        place(lines.querySelector(".ft-frame-head"), true, from, cssY(headBottom), to - from, pixel);
+    } else {
+        place(lines.querySelector(".ft-frame-head"), false, 0, 0, 0, 0);
+    }
+    // 左に残す表の右の境の縦線（行の名前の列と数字の列のあいだ、左上の角の NAME_LINE）も、表ごと左に残すときは同じ理由で重ねて引く。
+    // 色は角の線の色（期間の区切りの色・ハイコントラストの色）を写す。表を残さない（名前の列が広すぎる）ときは角の線のまま
+    const frozen = tables.find((t) => t.classList.contains("ft-freeze-left") && t.hasAttribute("data-frozen"));
+    const nameLine = frozen?.querySelector<HTMLElement>(".ft-line-name");
+    const split = lines.querySelector<HTMLElement>(".ft-frame-split");
+    const splitOn = !!(frozen && nameLine && split);
+    if (box.hasAttribute("data-frame-split") !== splitOn) writes.push(() => box.toggleAttribute("data-frame-split", splitOn));
+    if (frozen && nameLine && split) {
+        const x = boxRect.left + (box.clientLeft + frozen.getBoundingClientRect().width / scale) * scale;
+        const yTop = top ? y0 : nameLine.getBoundingClientRect().top;
+        const color = getComputedStyle(nameLine).borderLeftColor;
+        if (split.style.background !== color) writes.push(() => { split.style.background = color; });
+        place(split, true, cssX(x), cssY(yTop, true), pixel, cssY(y1) - cssY(yTop, true));
+    } else {
+        place(split, false, 0, 0, 0, 0);
+    }
+    for (const write of writes) write();
+}
+
+/**
+ * 囲む親の名前（.ft-org-parents、親ごとに 1 行）を、その親の名前（親の計のセルや、上に重ねた名前の行。data-org-key）が画面に見えていないあいだ、
+ * 子のブロックの名前の上に出す（行に data-shown。visual.less）。スクロールの一番上でも、2 つ目より後ろのブロックでも同じ（2026-10-24 ユーザー
+ * 「合計のラベルが１画面に出てるんだったら合計ラベルいらない」）。出した行の数だけ名前が高くなるので、セルの残りに入るときだけ出す
+ * （入らないのに出すと、セルの中身が行より高くなって行の高さが変わる）。
+ * スクロールのたびに呼ぶので、先に全部を測ってから書く（測ると書くを交互にすると、名前ごとにレイアウトを計算し直して重かった）
+ */
+function placeOrgLabels(root: HTMLElement | null): void {
+    if (!root) return;
+    const tables = Array.from(root.querySelectorAll<HTMLTableElement>(".ft-scroll table")).filter((t) => t.querySelector(":scope > tbody .ft-org-parents"));
+    if (!tables.length) return;
+    const scale = layoutScale(root);
+    const writes: Array<[HTMLElement, boolean]> = [];
+    for (const table of tables) {
+        const scroller = table.closest<HTMLElement>(".ft-scroll");
+        if (!scroller) continue;
+        const box = scroller.getBoundingClientRect();
+        const top = table.tHead ? table.tHead.getBoundingClientRect().bottom : box.top;
+        const bottom = box.top + scroller.clientHeight * scale;
+        // 画面に見えている名前（行の真ん中が見出しの下から箱の下の端までにある）
+        const seen = new Set<string>();
+        for (const line of Array.from(table.querySelectorAll<HTMLElement>(":scope > tbody .ft-org-line[data-org-key]"))) {
+            const rect = line.getBoundingClientRect();
+            const middle = (rect.top + rect.bottom) / 2;
+            if (rect.height > 0 && middle >= top && middle <= bottom) seen.add(line.dataset.orgKey!);
+        }
+        for (const label of Array.from(table.querySelectorAll<HTMLElement>(":scope > tbody th.ft-org > .ft-org-label"))) {
+            const lines = Array.from(label.querySelectorAll<HTMLElement>(":scope > .ft-org-parents"));
+            if (!lines.length) continue;
+            const want = lines.map((line) => !seen.has(line.dataset.parentKey!));
+            // 出している行の高さは今の名前に入っているので、増える行の分だけを「入るか」で見る（出し入れを行ったり来たりさせない）
+            const height = (parseFloat(getComputedStyle(label).fontSize) || 12) * 1.4;
+            const added = lines.reduce((sum, line, i) => sum + (want[i] ? 1 : 0) - (line.hasAttribute("data-shown") ? 1 : 0), 0);
+            const cell = label.parentElement!.getBoundingClientRect();
+            const room = (cell.bottom - label.getBoundingClientRect().bottom) / scale - added * height;
+            const fits = room >= 0;
+            lines.forEach((line, i) => writes.push([line, want[i] && fits]));
+        }
+    }
+    for (const [line, on] of writes) if (line.hasAttribute("data-shown") !== on) line.toggleAttribute("data-shown", on);
+}
 
 /**
  * Power BI がビジュアルを拡大して描く倍率（getBoundingClientRect の幅 ÷ レイアウトの幅）。レイアウトの幅は端数のまま計算スタイルから取る。
@@ -1542,6 +1734,9 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
     // 重なって線が消えたりした（2026-10-15）。かたまりの中は 1 枚の絵なので、境は「左のかたまりと数字」の 1 本だけになる。
     // 2 つの表の行の高さは App.tsx がそろえる（.ft-freeze の行ごとに、高いほうに合わせる）
     const leftCount = model.orgColumns.length + (viewModel.hideNames ? 0 : plan.nameColumns);
+    const bodyOf = (part: "left" | "right") => <tbody>{rows.map((row, i) => <Row key={row.key} row={row} viewModel={model} picking={picking} periodStarts={starts} part={part}
+        boxEdge={i > 0 && isBoxEdge(rows[i - 1], row)} left={() => undefined} top={0} tooltip={tooltip}
+        onToggleRow={onToggleRow} onToggleOrg={onToggleOrg} />)}</tbody>;
     const tableClass = `ft-table ft-layout-table${viewModel.twoLines ? " ft-two-lines" : ""}${singleLines ? " ft-single-lines" : ""}${viewModel.hideNames ? "" : " ft-edge-lines"}`;
     const shape = `${plan.nameColumns}:${plan.orgColumns ?? 0}`;
     const left = leftCount > 0 && <table className={`${tableClass} ft-freeze-left`} data-layout={plan.key} data-column-shape={shape} role="presentation" ref={leftTable}>
@@ -1565,9 +1760,7 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
                 {HEAD_LINE}
                 {NAME_LINE}
             </th>}</tr></thead>
-        <tbody>{rows.map((row, i) => <Row key={row.key} row={row} viewModel={model} picking={picking} periodStarts={starts} part="left"
-            boxEdge={i > 0 && isBoxEdge(rows[i - 1], row)} left={() => undefined} top={0} tooltip={tooltip}
-            onToggleRow={onToggleRow} onToggleOrg={onToggleOrg} />)}</tbody>
+        {bodyOf("left")}
     </table>;
     const right = <table className={`${tableClass} ft-freeze-right`} data-layout={plan.key} data-column-shape={shape} role="presentation" ref={rightTable}>
         <colgroup>{viewModel.columns.map((_, i) => <col data-width-key={`v${i}`} key={`v${i}`} />)}</colgroup>
@@ -1590,9 +1783,7 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
             {starts.has(i) && <span className="ft-period-line" />}
             {i === 0 && singleLines && HEAD_LINE}
         </th>)}</tr></thead>
-        <tbody>{rows.map((row, i) => <Row key={row.key} row={row} viewModel={model} picking={picking} periodStarts={starts} part="right"
-            boxEdge={i > 0 && isBoxEdge(rows[i - 1], row)} left={() => undefined} top={0} tooltip={tooltip}
-            onToggleRow={onToggleRow} onToggleOrg={onToggleOrg} />)}</tbody>
+        {bodyOf("right")}
     </table>;
     return <div className="ft-freeze" data-layout={plan.key}
         role="grid" aria-label={viewModel.title || "財務諸表"} aria-multiselectable={onSelect ? true : undefined}
@@ -1615,14 +1806,8 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
     if (boxEdge) classes.push("ft-row-boxedge");
     const { selection } = picking;
     const org = row.orgPath ?? null;
-    const rowTarget: SelectTarget | null = row.select
-        ? {
-              kind: "row",
-              rowKey: row.key,
-              codes: row.select.codes,
-              org: row.select.org,
-          }
-        : null;
+    // 組織の欄の無い指標の行は、名前で絞るものが無い（セルは月で絞る）
+    const rowTarget: SelectTarget | null = row.select && (row.select.codes.length > 0 || row.select.org !== null) ? selectRow(row.key, row.select) : null;
     const headActive = nameActive(row, selection);
     if (rowTarget && picking.onSelect) classes.push("ft-pickable-row");
     // 組織のブロックの最初の行は、上に組織の境の線を引く
@@ -1666,9 +1851,9 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
             {part !== "right" && row.hierarchyCells?.map(cell => {
                 const parent = cell.row;
                 const toggle = parent.open !== undefined && onToggleRow ? () => onToggleRow(parent.fold ?? parent.code) : undefined;
-                const target: SelectTarget | null = parent.select ? { kind: "row", rowKey: parent.key, codes: parent.select.codes, org: parent.select.org } : null;
+                const target: SelectTarget | null = parent.select ? selectRow(parent.key, parent.select) : null;
                 return <th key={parent.key} role="rowheader" className={`ft-hierarchy-name${nameActive(parent, selection) ? "" : " ft-dim"}`} rowSpan={cell.rowSpan} data-width-key={`n${cell.column}`}
-                    {...focusProps(picking, cellKey.name(`hierarchy:${parent.key}`))}
+                    {...focusProps(picking, cellKey.hierarchy(cell))}
                     {...pickProps(picking, target, toggle ? { open: parent.open!, toggle } : undefined)}>
                     {(cell.column > 0 || viewModel.orgColumns.length > 0) && EDGE_LINE}
                     <span className="ft-toggle-slot">{toggle && <Toggle open={parent.open!} label={parent.name} onClick={toggle} />}</span>
@@ -1722,9 +1907,10 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
                               codes: row.select.codes,
                               org: row.select.org,
                               months: period.months,
+                              ...(row.select.covers ? { covers: true } : {}),
                           }
                         : null;
-                const active = row.select ? cellActive(selection, row.key, column?.periodKey ?? "", org) : plainCellActive(selection, column?.periodKey ?? "", org);
+                const active = row.select ? cellActive(selection, row.key, column?.periodKey ?? "", org, row.select.codes) : plainCellActive(selection, column?.periodKey ?? "", org);
                 return (
                     <ValueCell
                         key={i}
@@ -1785,6 +1971,8 @@ function OrgHead({
             {...focusProps(picking, cellKey.org(cell, rowKey))}
             {...pickProps(picking, target, toggle ? { open: toggle.open, toggle: () => onToggle!(toggle.path) } : undefined)}
         >
+            {/* 左の列との境の縦線は右のセルが引く（行の見出しの列と同じ）。横積みの右の列の囲みの計（塗らない段）で、境の線が消えた */}
+            {cell.column > 0 && EDGE_LINE}
             {/*
               入れ子の箱：囲む親の段ごとに 1 段の幅の帯（親の箱の左の部分）、自分の段から右は名前の所。
               帯は親の箱がこのブロックで始まれば上の辺、終われば下の辺を引く。名前の所は左と上の辺（次のブロックが深ければ下の辺も）
@@ -1802,14 +1990,25 @@ function OrgHead({
                 // 囲みなしは段が 0 なので、左の縦線も引かない（NestedBox は 0 段の左の辺を引かない）
                 className="ft-seg-box"
             />
-            <div className="ft-org-label" style={{ top }}>
+            <div className="ft-org-label" style={top ? { top } : undefined}>
+                {/* 囲む親の名前。その親の名前が画面に見えていないあいだだけ出す（placeOrgLabels が行に data-shown を付ける） */}
+                {/* 上に重ねて出す親（heads）は、もう名前の上にあるので除く */}
+                {/*
+                  親ごとに 1 行。1 行に「合計 › 第一事業部」と並べると、列の幅で近い親が切れた。字の左は自分の名前の字にそろえる（同じ字下げと、
+                  開き閉じのしるしの幅）。親の段ごとに字下げすると、内側の親の帯の縦線が外の親の名前の字を横切った（2026-10-24 Desktop）
+                */}
+                {cell.parents?.map((parent) => !cell.heads?.some((head) => head.key === parent.key) && (
+                    <div key={parent.key} className="ft-org-parents" data-parent-key={parent.key} style={{ paddingLeft: `${depth * SEGMENT_INDENT_EM}em` }}>
+                        <span className="ft-toggle-slot" /><span className="ft-org-parents-text">{parent.label}</span>
+                    </div>
+                ))}
                 {cell.heads?.map((head) => (
-                    <div key={head.path ?? ""} className="ft-org-line" style={{ paddingLeft: `${head.depth * SEGMENT_INDENT_EM}em` }}>
+                    <div key={head.path ?? ""} className="ft-org-line" data-org-key={head.key} style={{ paddingLeft: `${head.depth * SEGMENT_INDENT_EM}em` }}>
                         <span className="ft-toggle-slot">{head.toggle && onToggle && <Toggle open={head.toggle.open} label={head.label} onClick={() => onToggle(head.toggle!.path)} />}</span>
                         {head.label}
                     </div>
                 ))}
-                <div className="ft-org-line" style={{ paddingLeft: `${depth * SEGMENT_INDENT_EM}em` }}>
+                <div className="ft-org-line" data-org-key={cell.labelKey} style={{ paddingLeft: `${depth * SEGMENT_INDENT_EM}em` }}>
                     {/* 計を中身の下に置いたとき（子のブロックが上）は、開いたしるしを上向きにする（行の小計を下に置いたときと同じ） */}
                     <span className="ft-toggle-slot">{toggle && <Toggle open={toggle.open} above={!!cell.ownAbove} label={cell.label} onClick={() => onToggle!(toggle.path)} />}</span>
                     {cell.label}

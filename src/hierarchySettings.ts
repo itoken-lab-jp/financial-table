@@ -13,10 +13,12 @@ export const STYLE_ITEMS: powerbi.IEnumMember[] = [
     { value: "split", displayName: "分割" }, { value: "columns", displayName: "横積み" },
 ];
 export const TOTAL_ITEMS: powerbi.IEnumMember[] = [
-    { value: "none", displayName: "なし（畳むと集計を表示）" }, { value: "top", displayName: "上" }, { value: "bottom", displayName: "下" },
+    { value: "none", displayName: "なし（畳むと小計を表示）" }, { value: "top", displayName: "上" }, { value: "bottom", displayName: "下" },
 ];
 export const DIRECTION_ITEMS: powerbi.IEnumMember[] = [{ value: "vertical", displayName: "縦" }, { value: "horizontal", displayName: "左右" }];
-const inherit = { value: "inherit", displayName: "既定に合わせる" };
+/** 枠の「すべての行と同じ」（セグメントの枠は「すべてのセグメントと同じ」）。表示名は枠の種類で変える（apply） */
+const INHERIT = "inherit";
+const inheritItem = (kind: HierarchyKind): powerbi.IEnumMember => ({ value: INHERIT, displayName: kind === "org" ? "すべてのセグメントと同じ" : "すべての行と同じ" });
 const none = { value: "", displayName: "指定なし" };
 export const dropdown = (name: string, displayName: string, items: powerbi.IEnumMember[], value = String(items[0].value), description?: string) =>
     new f.ItemDropdown({ name, displayName, description, items, value: items.find(i => i.value === value) ?? items[0] });
@@ -57,16 +59,17 @@ class HierarchyItem extends f.SimpleCard {
         this.name = `hierarchyItem${slot}`;
         this.displayName = `設定 ${slot}`;
         this.target = dropdown(`target${slot}`, "対象", [none]);
-        this.style = dropdown(`style${slot}`, "表示", [inherit, ...STYLE_ITEMS]);
-        this.total = dropdown(`total${slot}`, "展開時の合計", [inherit, ...TOTAL_ITEMS]);
-        this.direction = dropdown(`direction${slot}`, "分割の向き", [inherit, ...DIRECTION_ITEMS]);
+        const inherit = inheritItem(this.kind);
+        this.style = dropdown(`style${slot}`, "レイアウト", [inherit, ...STYLE_ITEMS], undefined, "選んだレベル・行の子の見せ方。すべての行と同じなら、上の「並べ方」の設定のまま");
+        this.total = dropdown(`total${slot}`, "小計の位置", [inherit, ...TOTAL_ITEMS], undefined, "選んだレベル・行の小計を、子の下・上に置くか置かないか");
+        this.direction = dropdown(`direction${slot}`, "分割の向き", [inherit, ...DIRECTION_ITEMS], undefined, "レイアウトが「分割」のとき、子の表を縦に並べるか左右に並べるか");
         this.slices = [this.target, this.style, this.total, this.direction];
     }
 }
 export class HierarchyOverrides extends f.CompositeCard {
     name = "hierarchyOverrides";
-    displayName = "段・行ごとの配置";
-    description = "「行」「セグメント」の表示・合計・分割の向きを、段か行ごとに上書きする。同じ対象を複数指定した場合は後の設定を優先。分割の向きは対象の子の並び方。書式ペインでは行・セグメントのカードの「配置」に入れて見せる（arrangeCards）";
+    displayName = "レベル・行ごとの配置";
+    description = "「行」「セグメント」のレイアウト・小計の位置・分割の向きを、レベルか行ごとに上書きする。同じ対象を複数指定した場合は後の設定を優先。分割の向きは対象の子の並び方。書式ペインでは行・セグメントのカードの「配置」に入れて見せる（arrangeCards）";
     items = Array.from({ length: HIERARCHY_SLOTS }, (_, i) => new HierarchyItem(i + 1));
     groups = [new f.Group({ name: "entries", displayName: "個別設定", slices: [],
         container: new f.Container({ displayName: "編集対象", containerItems: this.items }) })];
@@ -78,6 +81,11 @@ export class HierarchyOverrides extends f.CompositeCard {
             item.kind = hierarchyKindOf(target, i + 1);
             const own = (data?.targets ?? []).filter((t) => String(t.value).startsWith(`${item.kind}:`));
             item.target.items = [none, ...own.map((t) => ({ ...t, displayName: String(t.displayName).replace(/^(行|セグメント)：/, "") }))];
+            // 「すべての行と同じ」「すべてのセグメントと同じ」は枠の種類で名前を変える。説明もセグメントの枠はセグメントの言い方にする
+            const inherit = inheritItem(item.kind);
+            for (const select of [item.style, item.total, item.direction]) select.items = [inherit, ...select.items.filter((i) => i.value !== INHERIT)];
+            item.style.description = item.kind === "org" ? "選んだレベル・セグメントの子の見せ方。すべてのセグメントと同じなら、上の「並べ方」の設定のまま" : "選んだレベル・行の子の見せ方。すべての行と同じなら、上の「並べ方」の設定のまま";
+            item.total.description = item.kind === "org" ? "選んだレベル・セグメントの小計を、子の下・上に置くか置かないか" : "選んだレベル・行の小計を、子の下・上に置くか置かないか";
             if (target && !item.target.items.some(v => v.value === target)) item.target.items.push({ value: target, displayName: `${target}（表に無い）` });
             for (const prop of ["target", "style", "total", "direction"] as const) {
                 const select = item[prop];

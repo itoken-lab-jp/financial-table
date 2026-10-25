@@ -8,6 +8,7 @@
  * - 保存するのは選んだ科目。あとから出てきた科目は選ばなかった側に入る（見たい科目だけの形を崩さない）
  * - 行の組み立て（rows.ts）のあとに、表示の並びだけを組み直す。書式ペインの選択肢（計算行・指標の置く場所）は選択で変えない
  */
+import { minOf } from "./shared/minMax";
 import { INDICATOR_KEY } from "./data";
 import { DisplayRow, OTHERS_KEY, RowDef, RowModel, TOTAL_KEY } from "./rows";
 
@@ -66,7 +67,7 @@ const PICK_MIN = 2;
 export function pickParents(model: RowModel): PickParent[] {
     const position = new Map(model.display.map((d, i): [string, number] => [d.def.code, i]));
     /** 行の中で一番上の位置（子・孫を含む） */
-    const top = (code: string): number => Math.min(position.get(code) ?? Number.POSITIVE_INFINITY, ...(model.rows.get(code)?.children ?? []).map(top));
+    const top = (code: string): number => Math.min(position.get(code) ?? Number.POSITIVE_INFINITY, minOf((model.rows.get(code)?.children ?? []).map(top)));
     const parentOf = (code: string) => model.display.find((d) => d.def.type === "subtotal" && d.def.children.includes(code))?.def;
     return model.display
         .flatMap(({ def, depth }): Array<PickParent & { at: number }> => {

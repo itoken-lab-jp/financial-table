@@ -37,10 +37,16 @@ export function ownRow(def: RowDef): boolean {
     return def.type === "calc" || def.type === "step" || def.type === "measure";
 }
 
-/** 行 → 親の行（子とうちから引く） */
+/**
+ * 行 → 親の行（子とうちから引く）。表に出す行を先に見る。見る人が小計をうちにすると、元の小計の行（表に出さない）と うちの行が
+ * 同じ子を持つ。元の小計を先に見ると、子の親が表に無い行になり、うちの行は子を持たない行になった（セグメントごとに隠す行で「隠し方」が
+ * 出ず、隠すと小計の行だけ消えて中の科目が残った。2026-10-21 ユーザー、合計行のうちにした区分）
+ */
 export function parentsOf(model: RowModel): Map<string, string> {
     const parentOf = new Map<string, string>();
-    for (const [code, def] of model.rows) for (const kid of [...def.children, ...(model.attached.get(code) ?? [])]) if (!parentOf.has(kid)) parentOf.set(kid, code);
+    const shown = new Set(model.display.map((d) => d.def.code));
+    const order = [...Array.from(model.rows).filter(([code]) => shown.has(code)), ...Array.from(model.rows).filter(([code]) => !shown.has(code))];
+    for (const [code, def] of order) for (const kid of [...def.children, ...(model.attached.get(code) ?? [])]) if (!parentOf.has(kid)) parentOf.set(kid, code);
     return parentOf;
 }
 
@@ -64,7 +70,7 @@ export function rowNumberTargets(model: RowModel): RowNumberTarget[] {
         .filter((d) => ownRow(d.def) && d.def.code !== TOTAL_KEY)
         .map((d) => ({ value: d.def.code, displayName: `${d.def.type === "measure" ? "指標" : "計算行"}：${d.def.name || d.def.code}`, own: true }));
     return [
-        ...depths.map((depth) => ({ value: LEVEL_KEY + depth, displayName: `${depth + 1} 段目の行すべて` })),
+        ...depths.map((depth) => ({ value: LEVEL_KEY + depth, displayName: `レベル ${depth + 1} の行すべて` })),
         ...named.map((t) => (count.get(t.displayName)! > 1 ? { ...t, displayName: `${t.displayName}（${t.value}）` } : t)),
         ...own,
     ];

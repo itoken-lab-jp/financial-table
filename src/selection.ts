@@ -7,13 +7,15 @@
  * - Ctrl（Mac は ⌘）で足し引き。同じものだけを選んでいるときにもう一度押すと解く。表の空いた所を押しても解く
  * - 形の違うもの（行と組織の名前、組織の段の深さが違うものなど）は Ctrl でも足さず、押したものに置き換える。選択 ID の列の組み合わせが
  *   混ざると、ほかのビジュアルが「サポートされていないクロス強調表示」になった（2026-09-27 Desktop）
- * - 選んだもののほかを薄くする（計算行・指標の行は選べない。薄くもしない＝Profitbase の合計行と同じ）
+ * - 指標の行（指標だけを引く計算行も）は科目で絞らず、組織のブロックの組織で絞る。セルはその月も。組織の欄が無ければ、行の名前は選べず、セルは月で絞る
+ * - 選んだもののほかを薄くする。選べない行（見出しだけの行）も、行・セルを選べば薄くする（列の見出しを選べばその列だけ明るい）
+ * - 「うち」の行（小計をうちにした行）を選ぶと、中の科目の行も明るく残す（ほかのビジュアルが絞られる範囲と見た目をそろえる）
  *
  * 選択 ID（Power BI）は visual.ts が SelectionNodes（data.ts）から作る。ここは何を選んだかと、どこを明るく残すかだけ
  */
 import { ORG_SEPARATOR } from "./data";
 import { MonthIndex } from "./periods";
-import type { ViewModel, TableRow } from "./viewModel";
+import type { ViewModel, TableRow, RowSelect } from "./viewModel";
 import { planHeaders } from "./hierarchy";
 
 /** 表の行だけでなく、分割帯と横積みの結合セルも選択可能な表示として扱う。 */
@@ -36,10 +38,15 @@ export function selectableView(model: ViewModel): SelectableView {
 }
 
 export type SelectTarget =
-    | { kind: "row"; rowKey: string; codes: string[]; org: string | null }
-    | { kind: "cell"; rowKey: string; periodKey: string; codes: string[]; org: string | null; months: MonthIndex[] }
+    | { kind: "row"; rowKey: string; codes: string[]; org: string | null; covers?: boolean }
+    | { kind: "cell"; rowKey: string; periodKey: string; codes: string[]; org: string | null; months: MonthIndex[]; covers?: boolean }
     | { kind: "period"; periodKey: string; months: MonthIndex[] }
     | { kind: "org"; path: string };
+
+/** 行・セルを押したときの選択（行の RowSelect から。うちの行は中の科目の行も明るく残す印を付ける） */
+export function rowTarget(rowKey: string, select: RowSelect): Extract<SelectTarget, { kind: "row" }> {
+    return { kind: "row", rowKey, codes: select.codes, org: select.org, ...(select.covers ? { covers: true } : {}) };
+}
 
 /** 同じものかを見分けるキー */
 export function targetKey(target: SelectTarget): string {
@@ -55,13 +62,13 @@ export function targetKey(target: SelectTarget): string {
     }
 }
 
-/** 選択 ID の形（どの段の節点で作るか）。種類と、組織の段の深さ（組織の無い行は 0） */
+/** 選択 ID の形（どの段の節点で作るか）。種類と、組織の段の深さ（組織の無い行は 0）と、科目の節点を持つか（指標の行は持たない） */
 export function targetShape(target: SelectTarget): string {
     const depth = (org: string | null) => (org === null ? 0 : org.split(ORG_SEPARATOR).length);
     switch (target.kind) {
         case "row":
         case "cell":
-            return `${target.kind}:${depth(target.org)}`;
+            return `${target.kind}:${depth(target.org)}${target.codes.length === 0 ? ":plain" : ""}`;
         case "period":
             return "period";
         case "org":
@@ -80,24 +87,31 @@ export function nextSelection(current: SelectTarget[], target: SelectTarget, mul
 
 const inOrg = (org: string | null, path: string) => org !== null && (org === path || org.startsWith(path + ORG_SEPARATOR));
 
-/** セルを明るく残すか（選択が無ければ全部明るい）。org はそのセルの行の組織のブロックの道筋 */
-export function cellActive(selection: SelectTarget[], rowKey: string, periodKey: string, org: string | null): boolean {
+/**
+ * 行・セルの選択がその行を含むか：選んだ行そのものか、「うち」の行（covers）を選んだときの中の科目の行（同じ組織のブロックで、
+ * 絞る科目がうちの行の科目に入る行）。codes はその行が絞る科目（RowSelect.codes）
+ */
+const coversRow = (t: Extract<SelectTarget, { kind: "row" | "cell" }>, rowKey: string, org: string | null, codes: readonly string[] | undefined) =>
+    t.rowKey === rowKey || (!!t.covers && t.org === org && !!codes && codes.length > 0 && codes.every((code) => t.codes.includes(code)));
+
+/** セルを明るく残すか（選択が無ければ全部明るい）。org はそのセルの行の組織のブロックの道筋、codes はその行が絞る科目 */
+export function cellActive(selection: SelectTarget[], rowKey: string, periodKey: string, org: string | null, codes?: readonly string[]): boolean {
     if (selection.length === 0) return true;
     return selection.some((t) =>
         t.kind === "row"
-            ? t.rowKey === rowKey
+            ? coversRow(t, rowKey, org, codes)
             : t.kind === "cell"
-              ? t.rowKey === rowKey && t.periodKey === periodKey
+              ? coversRow(t, rowKey, org, codes) && t.periodKey === periodKey
               : t.kind === "period"
                 ? t.periodKey === periodKey
                 : inOrg(org, t.path)
     );
 }
 
-/** 行の見出しを明るく残すか（列だけを選んでいれば、どの行も明るい） */
-export function rowActive(selection: SelectTarget[], rowKey: string, org: string | null): boolean {
+/** 行の見出しを明るく残すか（列だけを選んでいれば、どの行も明るい）。codes はその行が絞る科目 */
+export function rowActive(selection: SelectTarget[], rowKey: string, org: string | null, codes?: readonly string[]): boolean {
     if (selection.length === 0) return true;
-    return selection.some((t) => (t.kind === "row" || t.kind === "cell" ? t.rowKey === rowKey : t.kind === "period" ? true : inOrg(org, t.path)));
+    return selection.some((t) => (t.kind === "row" || t.kind === "cell" ? coversRow(t, rowKey, org, codes) : t.kind === "period" ? true : inOrg(org, t.path)));
 }
 
 /** 列の見出しを明るく残すか（行・組織だけを選んでいれば、どの列も明るい） */
@@ -106,22 +120,33 @@ export function periodActive(selection: SelectTarget[], periodKey: string): bool
     return selection.some((t) => (t.kind === "period" || t.kind === "cell" ? t.periodKey === periodKey : true));
 }
 
-/** 選べない行（科目を引かない計算行・指標）の見出しは薄くしない。ただし組織を選んでいれば、ほかの組織のブロックの行は薄くする */
+/** 組織の選択だけで決まる明るさ：組織を選んでいれば、ほかの組織のブロックは薄くする（組織の見出しの帯など、行を持たない所） */
 export function plainRowActive(selection: SelectTarget[], org: string | null): boolean {
     const orgs = selection.filter((t): t is Extract<SelectTarget, { kind: "org" }> => t.kind === "org");
     return orgs.length === 0 || orgs.some((t) => inOrg(org, t.path));
 }
 
-/** 選べない行のセル：組織のほかに、列を選んでいれば選んだ列だけを明るく残す（行によって列の明るさが縞にならないように） */
+/** 行かセルを選んでいるか（選べない行は、選んだもののほかとして薄くする） */
+const picksRows = (selection: SelectTarget[]) => selection.some((t) => t.kind === "row" || t.kind === "cell");
+
+/**
+ * 選べない行（科目を引かない計算行・指標）の見出し：行・セルを選んでいれば薄くする（選んだ行のほかが明るいままだと、選ばれた行に見えた）。
+ * 列だけを選んでいれば明るいまま。組織を選んでいれば、ほかの組織のブロックの行は薄くする
+ */
+export function unselectableRowActive(selection: SelectTarget[], org: string | null): boolean {
+    return !picksRows(selection) && plainRowActive(selection, org);
+}
+
+/** 選べない行のセル：行・セルを選んでいれば薄くし、列を選んでいれば選んだ列だけを明るく残す（行によって列の明るさが縞にならないように） */
 export function plainCellActive(selection: SelectTarget[], periodKey: string, org: string | null): boolean {
-    if (!plainRowActive(selection, org)) return false;
+    if (!unselectableRowActive(selection, org)) return false;
     const periods = selection.filter((t) => t.kind === "period");
     return periods.length === 0 || periods.some((t) => t.kind === "period" && t.periodKey === periodKey);
 }
 
 /** 今の表の、選べるもの（行のキーと絞るもの・期間のキーと月・組織の道筋） */
 export interface SelectableView {
-    rows: Map<string, { codes: string[]; org: string | null }>;
+    rows: Map<string, { codes: string[]; org: string | null; covers?: boolean }>;
     periods: Map<string, MonthIndex[]>;
     orgs: Set<string>;
 }
@@ -132,15 +157,19 @@ export interface SelectableView {
  */
 export function reconcileSelection(selection: SelectTarget[], view: SelectableView): SelectTarget[] {
     const sameMonths = (a: MonthIndex[], b: MonthIndex[] | undefined) => b !== undefined && a.length === b.length && a.every((m, i) => m === b[i]);
+    const withRow = <T extends Extract<SelectTarget, { kind: "row" | "cell" }>>(t: T, row: { codes: string[]; org: string | null; covers?: boolean }): T => {
+        const { covers: _covers, ...rest } = t;
+        return { ...rest, codes: row.codes, org: row.org, ...(row.covers ? { covers: true } : {}) } as T;
+    };
     return selection.flatMap((t): SelectTarget[] => {
         switch (t.kind) {
             case "row": {
                 const row = view.rows.get(t.rowKey);
-                return row ? [{ ...t, codes: row.codes, org: row.org }] : [];
+                return row ? [withRow(t, row)] : [];
             }
             case "cell": {
                 const row = view.rows.get(t.rowKey);
-                return row && sameMonths(t.months, view.periods.get(t.periodKey)) ? [{ ...t, codes: row.codes, org: row.org }] : [];
+                return row && sameMonths(t.months, view.periods.get(t.periodKey)) ? [withRow(t, row)] : [];
             }
             case "period":
                 return sameMonths(t.months, view.periods.get(t.periodKey)) ? [t] : [];
