@@ -10,6 +10,7 @@
  */
 import { applyFrozenLines } from "./frozenLines";
 import { rowHeightsOf } from "./rowHeights";
+import { measurePins, pinSpans, placePins } from "./subtotalPin";
 import * as React from "react";
 import { HierarchyCell, LayoutPlan, LayoutHeader, planRows } from "./hierarchy";
 import { ValueParts } from "./valueParts";
@@ -99,6 +100,11 @@ async function fullSheetImage(root: HTMLElement, sheet: HTMLElement, background:
     try {
         // スクロールした印（左・上の縁の線）は、スクロールしていない写しには付けない
         copy.querySelector(":scope > .ft-scroll")?.classList.remove("ft-scrolled-x", "ft-scrolled-y");
+        // 内訳の下に残した小計は、写しでは自分の位置に置く（写しは表全体）
+        for (const tr of Array.from(copy.querySelectorAll("tr[data-pin-on]"))) {
+            tr.removeAttribute("data-pin-on");
+            tr.removeAttribute("data-pin-stuck");
+        }
         placeFrame(host, copy.querySelector<HTMLElement>(":scope > .ft-frame-lines"));
         // 写しは表全体なので、親の名前はどれも親のブロックに写る。名前の上に重ねた親の名前は出さない
         for (const line of Array.from(copy.querySelectorAll(".ft-org-parents[data-shown]"))) line.removeAttribute("data-shown");
@@ -429,12 +435,17 @@ function visibleRows(scroller: HTMLElement | null, table: HTMLTableElement, curr
     const scale = layoutScale(scroller);
     const top = table.tHead?.getBoundingClientRect().bottom ?? box.top;
     const bottom = box.top + scroller.clientHeight * scale;
+    const pin = table.querySelector<HTMLTableRowElement>(':scope > tbody > tr[data-pin-on="bottom"]');
+    const pinTop = pin ? pin.getBoundingClientRect().top : Infinity;
+    const pinAbove = table.querySelector<HTMLTableRowElement>(':scope > tbody > tr[data-pin-on="top"]');
+    const pinBottom = pinAbove ? pinAbove.getBoundingClientRect().bottom : -Infinity;
     let first = -1;
     let last = -1;
     Array.from(table.rows).forEach((tr, i) => {
         if (tr.parentElement === table.tHead) return;
         const rect = tr.getBoundingClientRect();
-        if (rect.top >= top - 1 && rect.bottom <= bottom + 1) {
+        // 内訳の端に残した小計（subtotalPin.ts）は、隣の行の上に重なるので、下に残した行の上の端・上に残した行の下の端までを見える範囲にする
+        if (rect.top >= (tr === pinAbove ? top : Math.max(top, pinBottom)) - 1 && rect.bottom <= (tr === pin ? bottom : Math.min(bottom, pinTop)) + 1) {
             if (first < 0) first = i;
             last = i;
         }
@@ -460,8 +471,13 @@ function reveal(scroller: HTMLElement, cell: HTMLTableCellElement): void {
 
     if (!inHead) {
         const head = cell.closest("table")?.querySelector("thead")?.getBoundingClientRect();
-        const top = head ? head.bottom : box.top;
-        const bottom = box.top + scroller.clientHeight * scale;
+        // 内訳の端に残した小計（subtotalPin.ts）の後ろに隠れた行は、下に残した行の上の端・上に残した行の下の端まで出す
+        const pin = cell.closest("table")?.querySelector<HTMLTableRowElement>(':scope > tbody > tr[data-pin-on="bottom"]');
+        const pinAbove = cell.closest("table")?.querySelector<HTMLTableRowElement>(':scope > tbody > tr[data-pin-on="top"]');
+        const start = head ? head.bottom : box.top;
+        const top = pinAbove && pinAbove !== tr ? Math.max(start, pinAbove.getBoundingClientRect().bottom) : start;
+        const end = box.top + scroller.clientHeight * scale;
+        const bottom = pin && pin !== tr ? Math.min(end, pin.getBoundingClientRect().top) : end;
         const delta = overflowOf(rect.top, rect.bottom, top, bottom);
         if (delta !== 0) scroller.scrollTop += delta / scale;
     }
@@ -829,10 +845,13 @@ export function App({
             table.style.setProperty("--ft-org-top", `${lu(top)}px`);
         }
     });
-    // 表が 1 つのときの外枠の上と左の線、見出しの下の線（placeFrame）。行の高さをそろえたあとに置く
+    // 表が 1 つのときの外枠の上と左の線、見出しの下の線（placeFrame）。行の高さをそろえたあとに置く。内訳の下に残す小計も、ここで位置を測り直す
     React.useLayoutEffect(() => {
-        placeOrgLabels(rootRef.current);
-        placeFrame(rootRef.current, frameLines.current);
+        const root = rootRef.current;
+        placeOrgLabels(root);
+        placeFrame(root, frameLines.current);
+        // 外枠の線を置くと表が動くことがある（data-frame-top）ので、そのあとで測る
+        if (root) measurePins(root.querySelector<HTMLElement>(":scope .ft-scroll"), layoutScale(root));
     });
     const picking: Picking = {
         selection,
@@ -844,6 +863,7 @@ export function App({
         keyMenu: keyboard.keyMenu,
     };
     const lefts = useStickyLefts(viewModel.orgColumns.length, viewport.width);
+    const singlePins = React.useMemo(() => (viewModel.style.pinSubtotal && !viewModel.layout ? pinSpans(viewModel.rows) : null), [viewModel.rows, viewModel.layout, viewModel.style.pinSubtotal]);
     // 列がはみ出すときの最初の位置（左端か右端）。行は開いたときの上から。右端なら、年度・列の並びが変わったら当て直す
     const scrollStart = useScrollStart<HTMLDivElement>({
         axis: "x",
@@ -1011,6 +1031,8 @@ export function App({
                     className={`ft-scroll${viewModel.layout ? " ft-layout-scroll" : ""}${scrolled.x ? " ft-scrolled-x" : ""}${scrolled.y ? " ft-scrolled-y" : ""}`}
                     ref={scrollStart.ref}
                     onScroll={(e) => {
+                        // 内訳の端に残す小計の印を先に付ける（スクロールの位置を読むだけで、印が変わるときしか書かない）
+                        placePins(e.currentTarget);
                         scrollStart.onScroll();
                         const x = e.currentTarget.scrollLeft > 0;
                         const y = e.currentTarget.scrollTop > 0;
@@ -1106,6 +1128,7 @@ export function App({
                                     row={row}
                                     periodStarts={periodStarts}
                                     boxEdge={index > 0 && isBoxEdge(viewModel.rows[index - 1], row)}
+                                    pinFrom={singlePins?.[index]}
                                     viewModel={viewModel}
                                     tooltip={tooltip}
                                     left={lefts.at}
@@ -1372,7 +1395,7 @@ export function dimmed(color: string): string {
 /** 表の上のバーを表の幅で折り返すときの、いちばん狭い幅（px。題名と主・比較のメニューが 1 行に入る幅） */
 const CAPTION_MIN_WIDTH = 280;
 const ROW_BORDER_PX = 1;
-const TOTAL_BORDER_PX = 3;
+const TOTAL_BORDER_PX = 4;
 
 /**
  * 左に残す列（組織の列と行の見出し）の左端と、列の見出しの高さ。組織の列の幅は中身で決まるので、描いたあとに見出しの幅を測って
@@ -1421,6 +1444,8 @@ interface RowProps {
     boxEdge: boolean;
     /** 左のかたまり（組織の列と行の見出し）だけ・数字の列だけを描く（PresentedTable が 2 つの表に分ける）。無ければ両方 */
     part?: "left" | "right";
+    /** 内訳の端に残せる小計なら、その内訳の行の数（subtotalPin.ts。下に残す小計は正、上に残す小計は負）。残さない行は 0 か無し */
+    pinFrom?: number;
 }
 
 /** 行の見出しを明るく残すか。選べない行（見出しだけの行）は、行・セルを選べば薄くし、列だけを選べば明るいまま（組織を選んだときのほかの組織は薄くする） */
@@ -1734,8 +1759,9 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
     // 重なって線が消えたりした（2026-10-15）。かたまりの中は 1 枚の絵なので、境は「左のかたまりと数字」の 1 本だけになる。
     // 2 つの表の行の高さは App.tsx がそろえる（.ft-freeze の行ごとに、高いほうに合わせる）
     const leftCount = model.orgColumns.length + (viewModel.hideNames ? 0 : plan.nameColumns);
+    const pins = React.useMemo(() => (viewModel.style.pinSubtotal ? pinSpans(rows) : null), [rows, viewModel.style.pinSubtotal]);
     const bodyOf = (part: "left" | "right") => <tbody>{rows.map((row, i) => <Row key={row.key} row={row} viewModel={model} picking={picking} periodStarts={starts} part={part}
-        boxEdge={i > 0 && isBoxEdge(rows[i - 1], row)} left={() => undefined} top={0} tooltip={tooltip}
+        boxEdge={i > 0 && isBoxEdge(rows[i - 1], row)} left={() => undefined} top={0} tooltip={tooltip} pinFrom={pins?.[i]}
         onToggleRow={onToggleRow} onToggleOrg={onToggleOrg} />)}</tbody>;
     const tableClass = `ft-table ft-layout-table${viewModel.twoLines ? " ft-two-lines" : ""}${singleLines ? " ft-single-lines" : ""}${viewModel.hideNames ? "" : " ft-edge-lines"}`;
     const shape = `${plan.nameColumns}:${plan.orgColumns ?? 0}`;
@@ -1794,7 +1820,7 @@ function PresentedTable(props: LayoutViewProps & { plan: Extract<LayoutPlan, { k
     </div>;
 }
 
-function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, picking, periodStarts, boxEdge, part }: RowProps): React.JSX.Element {
+function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, picking, periodStarts, boxEdge, part, pinFrom }: RowProps): React.JSX.Element {
     const classes = ["ft-row", `ft-row-${row.type}`];
     if (row.aggregatePosition === "bottom") classes.push("ft-row-end");
     if (row.aggregatePosition === "top") classes.push("ft-row-start");
@@ -1834,7 +1860,7 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
     // 開き閉じはブロックごとに覚える（fold はブロックの道筋とコード）
     const toggleRow = row.open !== undefined && onToggleRow ? () => onToggleRow(row.fold ?? row.code) : undefined;
     return (
-        <tr className={classes.join(" ")} role="row">
+        <tr className={classes.join(" ")} role="row" {...(pinFrom ? { [pinFrom > 0 ? "data-pin-from" : "data-pin-to"]: Math.abs(pinFrom) } : {})}>
             {/* key はセルの名前にする。列の番号にすると、組織を開き閉じして行が使い回されたとき、フォーカスが別の組織の名前に移った */}
             {part !== "right" && row.orgCells?.map((cell) => (
                 <OrgHead
@@ -1888,6 +1914,11 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
                     // 線の種類は行で決まる（isBoxEdge）。上の行が箱の中なら箱の底の辺なので囲みの線になる
                     <span className="ft-name-line" style={{ left: 0, top: 0 }} />
                 )}
+                {/*
+                  上に残して止まっている行の下の線。名前のセルは、内訳の 1 行目の線と同じく自分の箱の中（内訳の段）から引く。セルの下の端に影で引くと、
+                  外の箱の帯まで横切った（2026-10-25 ユーザー「ここの線が出ちゃってる」）
+                */}
+                {pinFrom !== undefined && pinFrom < 0 && <span className="ft-pin-line" style={{ left: inBox ? `${(row.depth + 1) * INDENT_EM}em` : 0 }} />}
                 <span className="ft-name-text">
                     <span className="ft-toggle-slot">{toggleRow && <Toggle open={row.open!} above={row.aggregatePosition === "bottom" || (row.aggregatePosition === undefined && row.toggleAbove)} label={row.name} onClick={toggleRow} />}</span>
                     {row.type === "breakdown" && viewModel.style.breakdown.tag && <span className="ft-tag">うち</span>}
@@ -1920,6 +1951,7 @@ function Row({ row, viewModel, tooltip, left, top, onToggleOrg, onToggleRow, pic
                         viewModel={viewModel}
                         breakdown={row.type === "breakdown"}
                         periodStart={periodStarts.has(i)}
+                        total={total}
                         tooltip={tooltip}
                         dim={!active}
                         pick={{
@@ -2152,6 +2184,7 @@ function ValueCell({
     dim,
     pick,
     columnIndex,
+    total,
 }: {
     cell: Cell;
     kind: string | undefined;
@@ -2162,6 +2195,7 @@ function ValueCell({
     dim: boolean;
     pick: React.HTMLAttributes<HTMLElement>;
     columnIndex: number;
+    total: boolean;
 }): React.JSX.Element {
     const color = cell.tone === "good" ? viewModel.style.good : cell.tone === "bad" ? viewModel.style.bad : undefined;
     // 内訳（うち）の値は角括弧で囲み、合計に足さない行だと分かるようにする（「行」カードの「うちの行」で切れる）
@@ -2179,6 +2213,8 @@ function ValueCell({
         >
             <div>{cell.parts ? <NumberParts parts={cell.parts} bracket={bracket && cell.text !== ""} /> : withSuffix(wrap(cell.text))}</div>
             {periodStart && <span className="ft-period-line" />}
+            {/* 締めの行の二重線（visual.less の .ft-total-line） */}
+            {total && <span className="ft-total-line" />}
             {cell.sub !== undefined && <div className="ft-sub">{cell.subParts ? <NumberParts parts={cell.subParts} bracket={false} /> : withSuffix(cell.sub)}</div>}
         </td>
     );

@@ -524,6 +524,12 @@
                         "bool": true
                     }
                 },
+                "pinSubtotal": {
+                    "displayName": "小計を端に残す",
+                    "type": {
+                        "bool": true
+                    }
+                },
                 "hideBlankRows": {
                     "displayName": "値の無い行を隠す",
                     "type": {

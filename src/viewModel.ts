@@ -1388,6 +1388,8 @@ export interface TableStyle {
     titleInCorner: boolean;
     /** 囲み（区分・中分類の箱）を塗るか、セグメントの箱を塗るか、セグメントの段ごとの色（外側から） */
     bandFill: boolean;
+    /** 小計を内訳の下に残すか（subtotalPin.ts） */
+    pinSubtotal: boolean;
     /** 区分・中分類の行の数字も太字にするか（既定は計算行の数字だけ太字） */
     boldAggregates: boolean;
     /** 行の高さ（「表全体」カード） */
@@ -1470,6 +1472,7 @@ function styleOf(settings: VisualFormattingSettingsModel, themeColors: Theme): T
         unitPlace: unitPlaceOf(dropdownValue(settings.table.unitPlace, UNIT_PLACES.right)),
         titleInCorner: dropdownValue(settings.table.titlePlace, TITLE_PLACES.top) === TITLE_PLACES.corner,
         bandFill: settings.rows.bandFill.value,
+        pinSubtotal: settings.rows.pinSubtotal.value,
         boldAggregates: settings.rows.boldAggregates.value,
         rowHeight: rowHeightOf(dropdownValue(settings.table.rowHeight, "normal")),
         alignTails: settings.numbers.alignTails.value,

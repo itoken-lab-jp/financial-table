@@ -28,8 +28,8 @@ function resetCell(th: HTMLElement): void {
     th.style.removeProperty("--ft-fl-bw");
     th.style.removeProperty("--ft-fl-bwb");
     for (const e of Array.from(th.querySelectorAll<HTMLElement>(":scope > .ft-fl-cover-bottom"))) e.remove();
-    for (const e of Array.from(th.querySelectorAll<HTMLElement>(":scope > .ft-fl-hide, :scope > .ft-fl-cover, :scope > .ft-fl-edge, :scope > .ft-fl-inset, :scope > .ft-fl-rise, :scope > .ft-fl-sink"))) {
-        e.classList.remove("ft-fl-hide", "ft-fl-cover", "ft-fl-edge", "ft-fl-inset", "ft-fl-rise", "ft-fl-sink");
+    for (const e of Array.from(th.querySelectorAll<HTMLElement>(":scope > .ft-fl-hide, :scope > .ft-fl-second, :scope > .ft-fl-cover, :scope > .ft-fl-edge, :scope > .ft-fl-inset, :scope > .ft-fl-rise, :scope > .ft-fl-sink"))) {
+        e.classList.remove("ft-fl-hide", "ft-fl-second", "ft-fl-cover", "ft-fl-edge", "ft-fl-inset", "ft-fl-rise", "ft-fl-sink");
     }
 }
 
@@ -45,20 +45,15 @@ function topLine(th: HTMLElement, td: HTMLElement, box: string): void {
     // 線の種類は行で決まる（どの span も同じ）。右の端まで引く span（自分の段から右）を見本にする
     const sample = lines.find((e) => e.style.right === "0px") ?? lines[lines.length - 1];
     const ls = getComputedStyle(sample);
+    // 締めの行の二重線は、div の上と下の枠線の 2 本（visual.less の .ft-row-total .ft-name-line）。右の td は上の線を枠線、下の線を余白に重ねた
+    // 部品で引くので、上の線だけ th の罫線にして、div は下の線だけ残す（ft-fl-second）。どちらも罫線の下の余白から 2px の所で、丸め方が同じ
+    const double = (parseFloat(ls.borderBottomWidth) || 0) > 0;
     const was = parseFloat(ls.borderTopWidth) || 0;
     th.style.borderTop = `${width}px ${ls.borderTopStyle} ${ls.borderTopColor}`;
     th.style.setProperty("--ft-fl-bw", `${width}px`);
     // 今までの th は、罫線の代わりに上の余白を線の太さだけ足していた
     th.style.paddingTop = `${Math.max(0, parseFloat(getComputedStyle(th).paddingTop) - was)}px`;
-    for (const e of lines) e.classList.add("ft-fl-hide");
-    // 二重線のすき間は th の地が見える。今まで（div の線）は箱の塗りが見えていたので、上の罫線の所を自分の段の塗りにする。右の枠線（透明）の所は
-    // 地のまま（塗ると、数字の列との境に塗りの縦の筋が出る）
-    const own = Array.from(th.querySelectorAll<HTMLElement>(`:scope > .${box}`)).filter((e) => e.style.right === "0px" && e.style.top === "0px").pop();
-    if (ls.borderTopStyle === "double" && own && own.style.background) {
-        const fill = getComputedStyle(own).backgroundColor;
-        const right = getComputedStyle(th).borderRightWidth;
-        th.style.background = `linear-gradient(${fill}, ${fill}) left top / calc(100% - ${right}) ${width}px no-repeat border-box border-box, ${getComputedStyle(th).backgroundColor}`;
-    }
+    for (const e of lines) e.classList.add(double ? "ft-fl-second" : "ft-fl-hide");
     // 線を引かない所：帯を上へ重ねて塗る span（top が -1px で幅を持つもの）
     for (const e of Array.from(th.querySelectorAll<HTMLElement>(`:scope > .${box}`))) {
         if (e.style.top === "-1px" && e.style.width) e.classList.add("ft-fl-cover");

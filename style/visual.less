@@ -489,12 +489,54 @@ tbody:where(:first-of-type) .ft-row:first-child {
  * 最後の段階の行（当期純利益・資産合計など）の上は二重線。途中の段階（ft-row-midstep）は小計の線。
  * 太さは 4px（線 1px・すき間 2px）。3px ではすき間が 1px で、Desktop の 125% では 1.25 画素になってにじみで埋まり、1 本の太い線に見えた
  * （ユーザー「合計の二重線が重なってない？」、2026-10-17）
+ * 値のセルは、上の線を 1px の枠線（ほかの行の線と同じ）、下の線を上の余白に重ねた部品（ft-total-line）の下の 1px の枠線で引く。double の枠線は、
+ * 拡大（zoom）すると 4px 全体を広げてから 3 等分するので、1 本ずつが行の 1px の線の倍の太さになった（高解像度の画面×125% で行の線 2 画素・
+ * 二重線 4 画素。ユーザー「いま明らかに 2px ぐらいあるように見える」、2026-10-25）。1px の枠線は行の線と同じく画素にそろう。
+ * 2 本とも部品で引くと、Desktop の左に残す名前の列で上の線だけ 1〜2 画素下に出た（div の線と罫線のずれ。frozenLines.ts）。上の線は枠線にして、
+ * 左に残す表でも th の罫線にそろえる。部品を枠線の所に重ねる（top: -4px）形は、枠線の太さは画素に切り捨て・部品の位置は端数のままで 2 画素ずれた
  */
 .ft-row-total {
-    th,
-    td {
+    th {
         border-top: 4px double var(--ft-line-total);
     }
+    > td {
+        position: relative;
+        border-top: 1px solid var(--ft-line-total);
+        padding-top: calc(var(--ft-row-pad, 0.15em) + 3px);
+    }
+}
+
+.ft-total-line {
+    display: none;
+}
+
+.ft-row-total > td > .ft-total-line {
+    display: block;
+    position: absolute;
+    // 上の余白の上の端から 2px 空けた所に下の線。期間の区切りのセルは左の透明な枠線の所まで伸ばす
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    border-bottom: 1px solid var(--ft-line-total);
+    pointer-events: none;
+}
+
+.ft-row-total > td.ft-period-start > .ft-total-line {
+    left: -1px;
+}
+
+.ft-aggregate-double .ft-row-total > td.ft-period-start.ft-period-agg > .ft-total-line {
+    left: -3px;
+}
+
+tbody:where(:first-of-type) .ft-row:first-child > td > .ft-total-line {
+    display: none;
+}
+
+// 選んでいないセルの白い覆い（.ft-dim::after）は余白に重なるので、線を覆いより上に出す（名前の列の線と同じ）
+.ft-dim > .ft-total-line {
+    z-index: 3;
 }
 
 .ft-breakdown-muted .ft-row-breakdown {
@@ -595,9 +637,12 @@ tbody:where(:first-of-type) .ft-row:first-child {
     border-top: 1px solid var(--ft-line-subtotal);
 }
 
+// 二重線は 1px の線 2 本（上と下の枠線。間の 2px は地）。左に残す表では、上の線を th の罫線にして下の線だけ残す（frozenLines.ts）
 .ft-row-total .ft-name-line,
 .ft-row-total .ft-box-line {
-    border-top: 4px double var(--ft-line-total);
+    height: 2px;
+    border-top: 1px solid var(--ft-line-total);
+    border-bottom: 1px solid var(--ft-line-total);
 }
 
 .ft-row-block .ft-name-line,
@@ -1195,10 +1240,10 @@ thead th.ft-dim {
     > th.ft-name, > td { border-bottom: 0; }
 }
 .ft-table .ft-row-end.ft-row-total {
-    > td { border-top: 4px double var(--ft-line-total); }
+    > td { border-top: 1px solid var(--ft-line-total); padding-top: calc(var(--ft-row-pad, 0.15em) + 3px); }
     > th.ft-name, > td { border-bottom: 0; }
     > th.ft-name { padding-top: calc(var(--ft-row-pad, 0.15em) + 4px); }
-    .ft-name-line, .ft-box-line { display: block; border-top: 4px double var(--ft-line-total); }
+    .ft-name-line, .ft-box-line { display: block; height: 2px; border-top: 1px solid var(--ft-line-total); border-bottom: 1px solid var(--ft-line-total); }
 }
 // 表の最後の行が締めの行なら、締めの線は引かず、表の外枠で締める（外枠を消して締めの線に任せると、締めの線の無い左の列
 // （セグメント・行の名前）の下だけ線が切れ、色も外枠でなく小計の線になった）
@@ -1394,6 +1439,7 @@ thead th.ft-dim {
  * React が style に置いた top・height などに勝たせるので !important。--ft-fl-bw・--ft-fl-bwb は th に置いた上と下の罫線の太さ、
  * --ft-fl-br は外した右の透明な枠線の太さ
  *   ft-fl-hide          今まで線を引いていた div。罫線にしたので描かない
+ *   ft-fl-second        締めの行の二重線の div。上の線は罫線にしたので、下の線（div の下の枠線）だけ残す
  *   ft-fl-cover         箱の帯が上の行から続く所（線を引かない所）。罫線の上に帯の色を重ねて消す。上の行へ 1px、罫線の下へ 1px はみ出す
  *                       （帯を 1px 上へ重ねて塗る NestedBox の span と同じ形）。帯の色が無ければ地の色で消す。左の縦線は ft-box の枠線のまま
  *   ft-fl-cover-bottom  締めの線を段の内側から引くとき、外の段の帯（下の行へ続く）の所の下の罫線を消す
@@ -1407,6 +1453,7 @@ thead th.ft-dim {
  * 切るとセグメントの列どうしの境の縦線（右のセルの ft-edge-line。セルの外の左に引く）も切れるので、左のセルの右の枠線で引く（frozenLines.ts の orgEdges）
  */
 .ft-fl-hide { display: none !important; }
+.ft-fl-second { border-top-width: 0 !important; }
 .ft-fl-cover { top: calc(-1px - var(--ft-fl-bw, 0px)) !important; height: calc(var(--ft-fl-bw, 0px) + 2px) !important; bottom: auto !important; background-color: var(--ft-bg); }
 .ft-fl-cover-bottom { position: absolute; top: auto !important; bottom: calc(-1px - var(--ft-fl-bwb, 0px)) !important; height: calc(var(--ft-fl-bwb, 0px) + 3px) !important; background-color: var(--ft-bg); }
 .ft-fl-rise { top: calc(-1 * var(--ft-fl-bw, 0px)) !important; border-top: var(--ft-fl-bw, 0px) solid transparent !important; background-clip: padding-box !important; }
@@ -1414,3 +1461,53 @@ thead th.ft-dim {
 .ft-fl-inset { right: var(--ft-fl-br, 0px) !important; }
 .ft-fl-edge { top: calc(-1 * var(--ft-fl-bw, 0px)) !important; bottom: calc(-1 * var(--ft-fl-bwb, 0px)) !important; }
 .ft-table tbody th.ft-org { overflow: clip; overflow-clip-margin: border-box; }
+
+/*
+ * 小計を内訳の端に残す（「行」カードの「小計を下に残す」、src/subtotalPin.ts）。残すのは表ごとに下に 1 行・上に 1 行までで、App.tsx がスクロールに合わせて
+ * その行（左右の表の同じ行）に data-pin-on（bottom・top）を付ける。止まる位置はブラウザが決める（スクロールで描き直さない）。地の色で後ろを流れる行を隠し、
+ * 重なりは列の見出しと同じ 2（後ろの行のセルの 1 より上。上に残す行は見出しのすぐ下に止まり、重ならない）。行をまたぐセグメントの名前のセルは動かず、
+ * 残した行の左にそのまま見える
+ */
+.ft-table tbody > tr[data-pin-on] {
+    position: sticky;
+    z-index: 2;
+    background: var(--ft-bg);
+}
+
+.ft-table tbody > tr[data-pin-on="bottom"] {
+    bottom: 0;
+}
+
+// 上囲みの小計は列の見出しのすぐ下（--ft-org-top は App.tsx が見出しの高さを測って表に置く）
+.ft-table tbody > tr[data-pin-on="top"] {
+    top: var(--ft-org-top, 0px);
+}
+
+// 表が 1 つのときは箱の下に 1px の余白がある（data-single）。0 で止めると余白に後ろの行が透けるので、箱の切り取りの外まで下げて覆う
+// （消した「合計行をスクロールしても残す」で Desktop の 125% に見た形。出した分は箱に切られて見えない）
+.ft-scroll.ft-layout-scroll[data-single] .ft-table tbody > tr[data-pin-on="bottom"] {
+    bottom: -2px;
+}
+
+// 止まっている下の行は、下を地で伸ばして覆う。ページに合わせて拡大すると、止まっている行は画素の途中に描かれ、下に流れる行が 1〜3 画素のぞいた。
+// 止まっていない（自分の位置にある）行には付けない。付けると、すぐ下の行の縦の線（期間の区切り・右の端）の頭 3 画素が途切れた（2026-10-25 ユーザー）
+.ft-table tbody > tr[data-pin-on="bottom"][data-pin-stuck] > :is(th, td) {
+    box-shadow: 0 3px 0 var(--ft-bg);
+}
+
+// 止まっている上の行は、下の線を自分で引く。止まると、すぐ下を流れる行の上の線が残した行に隠れ、境が無くなる。
+// 名前のセルは影でなく ft-pin-line で、自分の箱の中から引く（影だと外の箱の帯まで横切った。2026-10-25 ユーザー）
+.ft-table tbody > tr[data-pin-on="top"][data-pin-stuck] > td {
+    box-shadow: 0 var(--ft-px, 1px) 0 var(--ft-line-row);
+}
+.ft-pin-line {
+    display: none;
+    position: absolute;
+    right: 0;
+    bottom: calc(-1 * var(--ft-px, 1px));
+    height: 0;
+    z-index: 1;
+    border-top: var(--ft-px, 1px) solid var(--ft-line-row);
+    pointer-events: none;
+}
+.ft-table tbody > tr[data-pin-on="top"][data-pin-stuck] .ft-pin-line { display: block; }

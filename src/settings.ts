@@ -583,6 +583,14 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         description: "表に出している列（基準・比較のすべての期間）の月の値がどれも 0 か空の行を出さない（科目と指標の行）。空の行も隠すので、入れると「値の無い行を隠す」は要らない",
         value: false,
     });
+    /** 小計を内訳の端に残す（subtotalPin.ts。2026-10-25 ユーザー「販売費小計行を下にスティッキー出来たらいいんだけどね」「小計を上囲みの時は上に sticky しないと」） */
+    pinSubtotal = new formattingSettings.ToggleSwitch({
+        name: "pinSubtotal",
+        displayName: "小計を端に残す",
+        description:
+            "区分・中分類の内訳が見えているあいだ、小計の行を表の端に残す。小計を下に置く区分は下の端、上に置く区分は列の見出しのすぐ下。内訳を送り切ると自分の位置に戻り、区分を抜けると残さない。入れ子は内側の小計だけを残す",
+        value: true,
+    });
     breakdownBrackets = new formattingSettings.ToggleSwitch({
         name: "breakdownBrackets",
         displayName: "数字を [ ] で囲む",
@@ -629,7 +637,7 @@ export class RowsCardSettings extends formattingSettings.CompositeCard {
         name: "rowsLayout",
         displayName: "並べ方",
         description: "「計算行を親にする」は「計算行」カード",
-        slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot, this.hideBlankRows, this.hideZeroRows],
+        slices: [this.accountStyle, this.accountTotal, this.accountDirection, this.stepParents, this.accountRoot, this.hideBlankRows, this.hideZeroRows, this.pinSubtotal],
     });
     /** 合計・計算行・小計を太字にするか（行の名前と数字。2026-10-08、太字は合計行にするかしないかだけで足りるとユーザーと決めた。要素ごとの太字の選択をやめてここにまとめた） */
     totalBold = new formattingSettings.ToggleSwitch({
@@ -1522,7 +1530,7 @@ export class TableCardSettings extends formattingSettings.CompositeCard {
     copyButton = new formattingSettings.ToggleSwitch({
         name: "copyButton",
         displayName: "画像のコピー",
-        description: "マウスを乗せたとき、右下に「画像としてコピー」のボタンを出す。押すと、見えている表を画像としてクリップボードに入れ、PowerPoint などに貼れる",
+        description: "マウスを乗せたとき、右下に「画像としてコピー」のボタンを出す。押すと、スクロールで隠れた所も含めた表全体を画像としてクリップボードに入れ（とても大きい表は見えている範囲）、PowerPoint などに貼れる",
         value: true,
     });
 
