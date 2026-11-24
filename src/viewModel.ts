@@ -18,7 +18,24 @@ import { SCROLL_STARTS } from "./shared/scrollStart";
 import { contrastingText, readableText } from "./shared/color";
 import { NEGATIVE_STYLES, TONE_MODES, ZERO_STYLES, toneOf, isPercentFormat, rateFormatOf } from "./shared/numberFormat";
 import { Calculator, EventRef } from "./compute";
-import { ALL_PERIODS_MONTH, COLUMN_LIMIT, TOTAL_ACCOUNT, Fact, INDICATOR_KEY, InputData, ORDER_OF_SECTIONS, ORG_SEPARATOR, SelectionNodes, readInput, savedString } from "./data";
+import {
+    ALL_PERIODS_MONTH,
+    COLUMN_LIMIT,
+    TOTAL_ACCOUNT,
+    Fact,
+    INDICATOR_KEY,
+    INDICATOR_LEVELS,
+    InputData,
+    ORDER_OF_SECTIONS,
+    ORG_SEPARATOR,
+    SelectionNodes,
+    indicatorLevelCode,
+    indicatorOfLevel,
+    isIndicatorLevel,
+    readInput,
+    resolveQuarterInput,
+    savedString,
+} from "./data";
 import { EventModel, fallbackOf, resolveEvents } from "./events";
 import {
     AMOUNT_FORMAT,
@@ -48,6 +65,7 @@ import {
     periodChoices,
     periodIdOf,
     tablePeriods,
+    withQuarterKeys,
     yearOf,
 } from "./periods";
 import {
@@ -64,7 +82,7 @@ import {
 } from "./orgs";
 import { OTHERS_KEY, PickParent, RowPick, UNDER_KEY, applyPicks, isAccountRow, pickParents } from "./picks";
 import { RowNumberOverride, overrideKey, ownRow, parentsOf, resolveRowNumbers, rowNumberOverrides, rowNumberTargets } from "./rowNumbers";
-import { CalcChoices, CalcRowSpec, DisplayRow, GoodDirection, IndicatorSpec, RowDef, RowModel, RowType, TOTAL_KEY, buildRows } from "./rows";
+import { CalcChoices, CalcRowSpec, DisplayRow, GoodDirection, IndicatorLevel, IndicatorSpec, RowDef, RowModel, RowType, SECTION_KEY, TOTAL_KEY, buildRows, parseSectionChoice } from "./rows";
 import { AmountSign, resolveSigns, toDebitPlus } from "./signs";
 import { EMPTY_VISUAL_STATE, VisualState, shownSlots, slotsOf } from "./visualState";
 import { DEFAULT_THEME, Theme } from "./theme";
@@ -74,6 +92,7 @@ import {
     ROW_NUMBER_PROPS,
     ROW_NUMBER_SLOTS,
     RowNumberSaved,
+    CALC_AFTER_RANGE,
     CALC_TABLE_END,
     CALC_TABLE_START,
     CalcSaved,
@@ -315,9 +334,12 @@ export interface ViewModel {
     hideNames?: boolean;
     /**
      * 指標の欄にメジャーがあるのに、組織 × イベント × 月の小計（科目の最初の段の小計）が届いていないときの、その段の欄（queryName）と、
-     * 小計を入れる設定がもう保存されているか。届いていれば null。visual.ts が設定を保存して読み直す（保存してもまだ届かなければ知らせる）
+     * 小計を入れる設定がもう保存されているか。届いていれば null。visual.ts が設定を保存して読み直す（保存してもまだ届かなければ知らせる）。
+     * levels は、行の階層を出す指標があるのに小計が届いていない、科目の 2 段目から下の段の欄（無ければ省く）
      */
-    indicatorSubtotals: { queryName: string; enabled: boolean } | null;
+    indicatorSubtotals: { queryName: string; enabled: boolean; levels?: string[] } | null;
+    /** 行の階層を出す指標が無くなったのに、小計を入れる設定が残っている科目の 2 段目から下の段の欄（visual.ts が切る。無ければ省く） */
+    indicatorSubtotalsOff?: string[];
 }
 
 /** 書式の保存値を生で読む（データ次第の選択肢は、populate の時点では items に無いので value に入らない） */
@@ -363,15 +385,44 @@ export function indicatorSettings(input: InputData, eventModel: EventModel): Ind
             measureFormat: indicator.formatString,
             good: saved.good === "up" || saved.good === "down" ? saved.good : "neutral",
             bold: saved.bold === "on" ? "on" : "off",
+            rowLevels: saved[INDICATOR_LEVELS.property] === INDICATOR_LEVELS.on ? INDICATOR_LEVELS.on : INDICATOR_LEVELS.off,
             event: horizontal ? event : null,
             eventChoices: horizontal ? measures : [],
         };
     });
 }
 
-/** 指標の設定から、行を組む指定を作る（置く場所の「表の最後」「表の最初」は null。最初は atStart） */
-export function indicatorSpecs(settings: IndicatorSetting[], warn: (message: string) => void = () => {}): IndicatorSpec[] {
+/** 行の階層を出す指標か（行の後ろに置いた指標だけ） */
+const levelsOn = (s: IndicatorSetting) => s.rowLevels === INDICATOR_LEVELS.on && s.placement === INDICATOR_MODES.after;
+
+/**
+ * 指標の行の下に出す「行」の階層の節（指標の行のコード → その指標の値のある節）。並びは、行は表の行の並び、表に無い行（金額の無い行）と
+ * 区分・中分類は届いた順で後ろ（区分・中分類は rows.ts で中の行の一番小さい並びになる）。値を読んでいない指標（書式ペインで出すにしたばかりで、
+ * 続きの読み込みを足し合わせた受け取り）は入れない
+ */
+export function indicatorLevels(input: InputData, settings: IndicatorSetting[]): Map<string, IndicatorLevel[]> {
+    const result = new Map<string, IndicatorLevel[]>();
+    const on = settings.filter((s) => levelsOn(s) && input.indicatorLevelsRead.includes(s.code));
+    if (on.length === 0 || input.indicatorNodes.size === 0) return result;
+    const valued = new Set(input.indicatorFacts.map((f) => f.code));
+    const after = input.accounts.size;
+    for (const s of on) {
+        const levels: IndicatorLevel[] = [];
+        for (const node of input.indicatorNodes.values()) {
+            const code = indicatorLevelCode(s.code, node.id);
+            if (!valued.has(code)) continue;
+            const order = node.account !== null ? (input.accounts.get(node.account)?.order ?? null) : null;
+            levels.push({ code, trail: node.trail, account: node.account, order: order ?? after + node.seen });
+        }
+        if (levels.length > 0) result.set(s.code, levels);
+    }
+    return result;
+}
+
+/** 指標の設定から、行を組む指定を作る（置く場所の「表の最後」「表の最初」は null。最初は atStart）。levels は行の階層の節（indicatorLevels） */
+export function indicatorSpecs(settings: IndicatorSetting[], warn: (message: string) => void = () => {}, levels?: Map<string, IndicatorLevel[]>): IndicatorSpec[] {
     return settings.map((s) => ({
+        ...(levels?.has(s.code) ? { levels: levels.get(s.code)! } : {}),
         code: s.code,
         name: s.name,
         target: s.after === CALC_TABLE_END || s.after === CALC_TABLE_START ? null : s.after,
@@ -380,6 +431,8 @@ export function indicatorSpecs(settings: IndicatorSetting[], warn: (message: str
         aggregation: s.aggregation === "stock" ? "stock" : "flow",
         format: indicatorFormat(s.format, s.name, warn, s.measureFormat),
         good: s.good === "up" ? 1 : s.good === "down" ? -1 : 0,
+        // 片側だけ空の月は、その組織にデータがあれば 0 とみなして差を出す（値の行と同じ。欄は置かない、2026-11-06 ユーザー）
+        ...(s.placement !== INDICATOR_MODES.hidden ? { blankZero: true } : {}),
     }));
 }
 
@@ -395,7 +448,8 @@ export function indicatorFacts(input: InputData, settings: IndicatorSetting[], e
         const name = eventModel.events.find((e) => e.measure?.queryName === s.event)?.name;
         assigned.set(s.code, s.event === INDICATOR_ALL_EVENTS ? eventNames : name !== undefined ? [name] : []);
     }
-    return input.indicatorFacts.flatMap((f) => (f.event !== "" ? [f] : (assigned.get(f.code) ?? []).map((event) => ({ ...f, event }))));
+    // 行の階層の値は、親の指標のイベントに割り当てる
+    return input.indicatorFacts.flatMap((f) => (f.event !== "" ? [f] : (assigned.get(indicatorOfLevel(f.code)) ?? []).map((event) => ({ ...f, event }))));
 }
 
 /**
@@ -426,6 +480,27 @@ function measureRateFormat(measureFormat: string | undefined): RowFormat | null 
     return { kind: "percent", decimals: rate.digits, prefix: "", suffix: "", grouping: false, ...(rate.scale === 1 ? { scale: 1 } : {}) };
 }
 
+/** 計算行の開始・終了の保存値を、区分の名前（from・after）と選んだときの区分の並び（fromSequence・afterSequence）に分ける */
+function sectionPick<K extends "from" | "after">(key: K, value: string | null) {
+    const { label, sequence } = value === null ? { label: null, sequence: null } : parseSectionChoice(value);
+    return { [key]: label, [`${key}Sequence`]: sequence } as Record<K, string | null> & Record<`${K}Sequence`, string[] | null>;
+}
+
+/**
+ * 計算行の挿入位置（place）の保存値。空・「終了位置の後ろ」は undefined（終了位置の区分の後ろ。割り算は前の版の挿入位置 after）。
+ * 区分は選んだときの区分の並びを添えた値（§sec:区分§seq:[…]）
+ */
+function calcPlace(value: string): CalcRowSpec["place"] {
+    if (value === "" || value === CALC_AFTER_RANGE) return undefined;
+    if (value === CALC_TABLE_START) return { target: null, atStart: true, sequence: null };
+    if (value === CALC_TABLE_END) return { target: null, atStart: false, sequence: null };
+    if (value.startsWith(SECTION_KEY)) {
+        const { label, sequence } = parseSectionChoice(value.slice(SECTION_KEY.length));
+        return { target: SECTION_KEY + label, atStart: false, sequence };
+    }
+    return { target: value, atStart: false, sequence: null };
+}
+
 /** 書式ペインの計算行の保存値から、行を組む指定を作る（種類が「使わない」の行は入れない） */
 export function calcSpecs(saved: CalcSaved[]): CalcRowSpec[] {
     return saved.flatMap((s, i): CalcRowSpec[] =>
@@ -436,8 +511,10 @@ export function calcSpecs(saved: CalcSaved[]): CalcRowSpec[] {
                       kind: s.kind,
                       // 名前が空でも仮の名前で出す（適用先・数値の対象の一覧と同じ名前。通し確認の 11、2026-10-17 ユーザー）
                       name: s.name.trim() || `計算行 ${i + 1}`,
-                      from: s.from === "" || s.from === CALC_TABLE_START ? null : s.from,
-                      after: s.after === "" || s.after === CALC_TABLE_END ? null : s.after,
+                      // 開始・終了は区分の名前と選んだときの区分の並び（区分が表から消えたときに並びで範囲を決める。rows.ts の emitCalc）
+                      ...sectionPick("from", s.from === "" || s.from === CALC_TABLE_START ? null : s.from),
+                      ...sectionPick("after", s.after === "" || s.after === CALC_TABLE_END ? null : s.after),
+                      ...(calcPlace(s.place ?? "") ? { place: calcPlace(s.place ?? "") } : {}),
                       numerator: s.numerator || null,
                       denominator: s.denominator || null,
                       format: s.format.trim() || null,
@@ -467,7 +544,10 @@ export function transform(
     given?: InputData,
     theme: Theme = DEFAULT_THEME
 ): ViewModel {
-    const input = given ?? readInput(dataView);
+    const fiscalStartMonth = Number(dropdownValue(settings.periods.fiscalStartMonth, "4")) || 4;
+    const yearLabel: YearLabel = dropdownValue(settings.table.yearLabel, "start") === "end" ? "end" : "start";
+    // 四半期だけの値（2026-Q1）は、期首の月と年度の表記で四半期の値のキーに直す（compute.ts・periods.ts）
+    const input = resolveQuarterInput(given ?? readInput(dataView), { startMonth: fiscalStartMonth, yearLabel });
     const style = styleOf(settings, theme);
     const ratioCap = ratioCapOf(settings);
     const unitByName = style.unitPlace === UNIT_PLACES.name;
@@ -573,10 +653,25 @@ export function transform(
     // 太字にした指標の行（後ろに置いた指標だけ。うちは親の行と同じ見せ方）
     const boldRows = new Set(indicatorSaved.filter((s) => s.bold === "on" && s.placement === INDICATOR_MODES.after).map((s) => s.code));
     // 指標の値は組織 × イベント × 月の小計で読む。小計が届いていなければ visual.ts が小計を入れる設定を保存する
+    // 行の階層を出す指標があれば、科目の 2 段目から下の段の小計（区分ごと・中分類ごとの値）も要る。無ければ、残っている設定を切る（データ量を戻す）
+    const wantLevels = indicatorSaved.some(levelsOn) && input.facts.length > 0;
+    const missingLevels = wantLevels ? input.indicatorLevel.levels.filter((level) => !level.subtotals && level.queryName !== "") : [];
+    const missingTotal = input.indicators.length > 0 && input.facts.length > 0 && !input.indicatorLevel.subtotals;
     const indicatorSubtotals =
-        input.indicators.length > 0 && input.facts.length > 0 && !input.indicatorLevel.subtotals && input.indicatorLevel.queryName !== null
-            ? { queryName: input.indicatorLevel.queryName, enabled: input.indicatorLevel.enabled }
+        (missingTotal || missingLevels.length > 0) && input.indicatorLevel.queryName !== null
+            ? {
+                  queryName: input.indicatorLevel.queryName,
+                  enabled: (!missingTotal || input.indicatorLevel.enabled) && missingLevels.every((level) => level.enabled),
+                  ...(missingLevels.length > 0 ? { levels: missingLevels.map((level) => level.queryName) } : {}),
+              }
             : null;
+    const subtotalsOff = wantLevels || input.facts.length === 0 ? [] : input.indicatorLevel.levels.filter((level) => level.enabled && level.queryName !== "").map((level) => level.queryName);
+    // 書式ペインで行の階層を出すにしたが、まだ値を読んでいない指標（続きの読み込みを足し合わせた受け取りは、書式の変更では読み直さない）
+    for (const s of indicatorSaved) {
+        if (levelsOn(s) && !input.indicatorLevelsRead.includes(s.code) && input.has.accountLevels + Number(input.has.code) > 0) {
+            warnings.push(`指標「${s.name}」の行の階層は、データを読み直すと出る（フィルターを変えるか、レポートを開き直す）`);
+        }
+    }
 
     // 区分の向きの多数は金額で見る（科目の金額の絶対値の和）
     const magnitude = new Map<string, number>();
@@ -587,7 +682,7 @@ export function transform(
         magnitude: (code) => magnitude.get(code) ?? 0,
         position: dropdownValue(settings.rows.accountTotal, "bottom") === "top" ? "above" : "below",
         calcRows: calcSpecs(calcSaved),
-        indicators: indicatorSpecs(indicatorSaved, (message) => warnings.push(message)),
+        indicators: indicatorSpecs(indicatorSaved, (message) => warnings.push(message), indicatorLevels(input, indicatorSaved)),
         sectionMaster: input.has.sectionMaster,
         flags: { credit: input.has.creditFlag, balance: input.has.balanceFlag },
         // 根の合計行：自動は、科目の段が 1 つ以下（科目名だけ・科目なし）なら出す
@@ -614,11 +709,7 @@ export function transform(
     // 値を取る側：イベントの候補の並び（組織 × まとまり × 月ごとに、データのある最初の候補を使う）
     const mainRef: EventRef = { events: main === LATEST ? latest : [main], shift: 0 };
 
-    const calendar: FiscalCalendar = {
-        startMonth: Number(dropdownValue(settings.periods.fiscalStartMonth, "4")) || 4,
-        yearLabel: (dropdownValue(settings.table.yearLabel, "start") === "end" ? "end" : "start") as YearLabel,
-        words,
-    };
+    const calendar: FiscalCalendar = { startMonth: fiscalStartMonth, yearLabel, words };
     // 符号の持ち方：表全体の設定（数値のカード）。自動はシナリオごとに見分けて借方プラスにそろえる（2.0 でシナリオ・メジャーごとの設定はやめた）
     const tableSign = dropdownValue(settings.numbers.amountSign, "auto") as AmountSign;
     const signs = resolveSigns(allFacts, model.traits, eventNames, () => tableSign);
@@ -741,7 +832,9 @@ export function transform(
         compareItems: candidates.map((value) => ({ value, label: choiceLabel(value) })),
         compares: { all: allSlots.views, fallback, view: DEFAULT_COMPARE_VIEW },
     };
-    if ((selectedStart === undefined && !noPeriods) || table === null) return { ...empty([]), warnings, format, menu, landing: [], indicatorSubtotals };
+    if ((selectedStart === undefined && !noPeriods) || table === null) {
+        return { ...empty([]), warnings, format, menu, landing: [], indicatorSubtotals, ...(subtotalsOff.length > 0 ? { indicatorSubtotalsOff: subtotalsOff } : {}) };
+    }
 
     const periodColumns = table.columns;
 
@@ -759,6 +852,7 @@ export function transform(
     const usedCompares = candidates.filter((value) => Array.from(periodSpecs.values()).some((specs) => specs.some((spec) => spec.compare === value)));
     const compareLabel = compare === null ? "" : label(compare);
     const swap = settings.comparison.diffSwap.value;
+    const valueFirst = settings.comparison.valueFirst.value;
     const toneMode = dropdownValue(settings.comparison.toneMode, TONE_MODES.both);
     const subtotalsBelow = dropdownValue(settings.rows.accountTotal, "bottom") !== "top";
 
@@ -934,7 +1028,7 @@ export function transform(
         // データの無い期間は「―」（空の見出しだと、列がずれたように見える）
         const mainHeader = mainUsed ? latestName(mainUsed, latestRule, isMonth) || "―" : main;
         const mainItems = main === LATEST ? byOrgItems(breakdownItems(mainUsed), calc.eventsByOrgMonth(mainRef, period.months)) : undefined;
-        columns.push({ periodKey: period.key, periodKind: period.kind, kind: "main", header: mainHeader, sub: "", ...titled(mainItems) });
+        const inPeriod: ValueColumn[] = [{ periodKey: period.key, periodKind: period.kind, kind: "main", header: mainHeader, sub: "", ...titled(mainItems) }];
         for (const spec of specs) {
             const at = spec.partner;
             // 比較の月ごとの内訳：下のイベントへ落とした月があるとき（期間を通して落としたときも）と、最新見込み・前年同期でイベントが混ざるとき。
@@ -947,7 +1041,7 @@ export function transform(
             const ownLatest = at.compare === LATEST && used ? latestName(used, latestRule, isMonth) : "";
             const compareName = ownLatest && !specs.some((other) => other.partner.compare !== LATEST && other.partner.label === ownLatest) ? ownLatest : at.label;
             const [header, sub] = compareHeaderLines(compareName, spec.view, swap, words);
-            columns.push({
+            inPeriod.push({
                 periodKey: period.key,
                 periodKind: period.kind,
                 kind: spec.view === COMPARE_VIEWS.value ? "compare" : "diff",
@@ -960,6 +1054,7 @@ export function transform(
                 ...titled(items),
             });
         }
+        columns.push(...arrangePeriod(inPeriod, specs, valueFirst));
     }
 
     // 組織のブロックの木。組織の欄が無ければ null（表は 1 つ）
@@ -973,8 +1068,8 @@ export function transform(
     const hierarchyLevels = { account: new Set<number>(), org: new Set<number>() };
     const accountTargets = (nodes: AccountNode[], path: string[]) => nodes.forEach(n => {
         const names = [...path, n.row.def.name];
-        // 合計行は、うちだけ（見る人が区分をうちにした）でも対象にする
-        if (n.children.length || (n.row.def.code === TOTAL_KEY && n.following.length)) {
+        // 合計行は、うちだけ（見る人が区分をうちにした）でも対象にする。指標の行の下の「行」の階層の行は、段だけ対象にする（行ごとに並べると多い）
+        if ((n.children.length || (n.row.def.code === TOTAL_KEY && n.following.length)) && !isIndicatorLevel(n.row.def.code)) {
             hierarchyLevels.account.add(path.length);
             hierarchyTargets.push({ value: `account:node:${n.row.def.code}`, displayName: `行：${names.join(" / ")}` });
         }
@@ -1008,7 +1103,10 @@ export function transform(
         };
         format.segmentRows = {
             orgs: allNodes(tree.root).map((node) => ({ value: node.path ?? ROOT_FOLD, displayName: node.path?.split(ORG_SEPARATOR).join(" / ") ?? node.label })),
-            rows: model.display.filter((d) => d.def.type !== "heading" && d.def.type !== "blank").map((d) => ({ value: d.def.code, displayName: rowPath(d.def.code).join(" / ") })),
+            // 指標の行の下の「行」の階層の行は入れない（指標の行を隠せば一緒に隠れる）
+            rows: model.display
+                .filter((d) => d.def.type !== "heading" && d.def.type !== "blank" && !isIndicatorLevel(d.def.code))
+                .map((d) => ({ value: d.def.code, displayName: rowPath(d.def.code).join(" / ") })),
             saved: segmentRowsSaved,
             parents: Array.from(rowChildren.keys()),
         };
@@ -1021,8 +1119,11 @@ export function transform(
     const rowsClosedByDefault = tree !== null;
     const openRows = new Set(viewer.openRows);
     const foldKey = (prefix: string, code: string) => (tree ? `${prefix}\u0001${code}` : code);
-    // その他・小計をうちにした行は、既定で閉じる。行を既定で開く表（セグメントなし）では、見る人の「閉じた行」の記録を反転して読む（押すと開く）
-    const closedByDefault = new Set(foldableCodes.filter((code) => code.startsWith(OTHERS_KEY) || code.startsWith(UNDER_KEY)));
+    // その他・小計をうちにした行と、指標の行の下の「行」の階層（指標の行と、その中の区分・中分類）は、既定で閉じる。行を既定で開く表（セグメントなし）では、
+    // 見る人の「閉じた行」の記録を反転して読む（押すと開く）
+    const closedByDefault = new Set(
+        foldableCodes.filter((code) => code.startsWith(OTHERS_KEY) || code.startsWith(UNDER_KEY) || (code.startsWith(INDICATOR_KEY) && (model.rows.get(code)?.children ?? []).some(isIndicatorLevel)))
+    );
     const closedRowsSet = new Set(viewer.closedRows);
     const closedIn = (prefix: string) =>
         new Set(rowsClosedByDefault
@@ -1191,16 +1292,16 @@ export function transform(
                               ...values,
                           ];
                 const withTooltip = (cell: Cell): Cell => (tooltip ? { ...cell, tooltip } : cell);
-                cells.push(withTooltip({ text: formatRowValue(mainValue, def.format, rowUnit, rowSign, ratioCap), tone: null }));
+                const inPeriod: Cell[] = [withTooltip({ text: formatRowValue(mainValue, def.format, rowUnit, rowSign, ratioCap), tone: null })];
                 specs.forEach((spec, i) => {
                     const result = results[i];
                     if (spec.view === COMPARE_VIEWS.value) {
-                        cells.push(withTooltip({ text: formatRowValue(result.compare, def.format, rowUnit, rowSign, ratioCap), tone: null }));
+                        inPeriod.push(withTooltip({ text: formatRowValue(result.compare, def.format, rowUnit, rowSign, ratioCap), tone: null }));
                         return;
                     }
                     // 色は表に出る差の符号で決める（丸めて 0 は塗らない、▲0 は悪い向きなら塗る）。比・率だけの列も差の向きで塗る
                     const tone = toneOf(diffSign(result.diff, def.format, rowUnit, rowSign), def.good, toneMode);
-                    cells.push(
+                    inPeriod.push(
                         withTooltip(
                             diffCell(result.main, result.compare, tone, def.format.kind === "percent", spec.view, swap, rowSign, ratioCap, () =>
                                 formatDiff(result.diff, def.format, rowUnit, rowSign, ratioCap)
@@ -1208,6 +1309,7 @@ export function transform(
                         )
                     );
                 });
+                cells.push(...arrangePeriod(inPeriod, specs, valueFirst));
             }
             return {
                 key: `${prefix}\u0001${def.code}`,
@@ -1238,11 +1340,12 @@ export function transform(
     let layout: LayoutPlan | undefined;
     {
         const options = (kind: "account" | "org", id: string, level: number) => hierarchyOptions({ ...settings.rows, ...settings.segments } as unknown as HierarchyDefaults, hierarchySaved, kind, id, level);
-        const codes = tree && settings.segments.hideEmptyAccounts.value ? codesByOrg(tree.root, input.facts) : null;
+        // 指標の行の下の「行」の階層の行も、セグメントに値が無ければ隠す
+        const codes = tree && settings.segments.hideEmptyAccounts.value ? codesByOrg(tree.root, [...input.facts, ...input.indicatorFacts.filter((f) => isIndicatorLevel(f.code))]) : null;
         // 表に出す月（前年同期を比べるなら 12 か月前も）。「値の無い行を隠す」「0 だけの行を隠す」がどちらも切なら null
         const hideZero = settings.rows.hideZeroRows.value ?? false;
         const shownMonths = settings.rows.hideBlankRows.value || hideZero
-            ? new Set(periodColumns.flatMap(p => usedCompares.includes(PRIOR_YEAR) ? [...p.months, ...p.months.map(m => m - 12)] : p.months))
+            ? new Set(withQuarterKeys(periodColumns.flatMap(p => usedCompares.includes(PRIOR_YEAR) ? [...p.months, ...p.months.map(m => m - 12)] : p.months)))
             : null;
         const shownRefs = [mainRef, ...usedCompares.map(refOf)];
         const block = (node?: OrgNode): LayoutPlan => {
@@ -1306,6 +1409,14 @@ export function transform(
         rows.push(...planRows(layout));
     }
 
+    // 最新見込みなどで、同じ四半期の月がほかのシナリオを採ったので足さなかった四半期の値
+    for (const ref of [mainRef, ...usedCompares.map(refOf)]) calc.resolution(ref);
+    if (calc.skippedQuarters.size > 0) {
+        warnings.push(
+            `四半期だけの値のうち ${calc.skippedQuarters.size} 件は、同じ四半期の月にほかのシナリオの値があるので足していない（四半期の値は、その四半期の 3 か月がほかのシナリオを使わないときだけ足す）`
+        );
+    }
+
     return {
         landing: [],
         title: table.title,
@@ -1353,6 +1464,7 @@ export function transform(
             ? { hideNames: true }
             : {}),
         indicatorSubtotals,
+        ...(subtotalsOff.length > 0 ? { indicatorSubtotalsOff: subtotalsOff } : {}),
     };
 }
 
@@ -1780,6 +1892,17 @@ export function compareHeaderLines(compareLabel: string, view: CompareView, swap
             return swap ? [second, diff] : [diff, second];
         }
     }
+}
+
+/**
+ * 期間の列の並び。items は基準の列と、列 1〜3 の順の比較の列（specs と同じ順）。valueFirst なら、見せ方が値の比較の列を基準の前に出す
+ * （予算・実績・予算差の並び）。値の列どうし、差・比・率の列どうしは列 1〜3 の順のまま。見出しとセルを同じ決まりで並べる
+ */
+export function arrangePeriod<T>(items: T[], specs: ReadonlyArray<{ view: string }>, valueFirst: boolean): T[] {
+    if (!valueFirst) return items;
+    const [main, ...rest] = items;
+    const isValue = (i: number) => specs[i].view === COMPARE_VIEWS.value;
+    return [...rest.filter((_, i) => isValue(i)), main, ...rest.filter((_, i) => !isValue(i))];
 }
 
 function diffCell(

@@ -9,7 +9,7 @@
  * - 選べる表示単位は固定の単位だけ。表全体の単位と違えば、親と単位の違う行の名前に単位を添える
  * - 保存のキーは行のコード（区分は「§sec:区分」、中分類は「§grp:区分:中分類」、科目はコード）と段（「§level:深さ」）。枠の番号や並びでは覚えない
  */
-import { INDICATOR_KEY } from "./data";
+import { INDICATOR_KEY, indicatorOfLevel, isIndicatorLevel } from "./data";
 import { RowDef, RowModel, TOTAL_KEY } from "./rows";
 import { ROW_NUMBER_TABLE, RowNumberProp, RowNumberSaved, rowNumberAllowed } from "./settings";
 
@@ -67,7 +67,8 @@ export function rowNumberTargets(model: RowModel): RowNumberTarget[] {
     // 計算行と後ろに置いた指標の行（表の並び）。名前の頭に種類を付ける
     const own = model.display
         // 合計行は科目の木の行として上で並べたので、ここでは外す（「合計」と「計算行：合計」が 2 回並んだ。通し確認の 12）
-        .filter((d) => ownRow(d.def) && d.def.code !== TOTAL_KEY)
+        // 指標の行の下の「行」の階層の行は選ばせない（指標の行の上書きを継ぐ。resolveRowNumbers）
+        .filter((d) => ownRow(d.def) && d.def.code !== TOTAL_KEY && !isIndicatorLevel(d.def.code))
         .map((d) => ({ value: d.def.code, displayName: `${d.def.type === "measure" ? "指標" : "計算行"}：${d.def.name || d.def.code}`, own: true }));
     return [
         ...depths.map((depth) => ({ value: LEVEL_KEY + depth, displayName: `レベル ${depth + 1} の行すべて` })),
@@ -124,6 +125,13 @@ export function resolveRowNumbers(model: RowModel, overrides: ReadonlyMap<string
     };
     for (const { def, depth } of model.display) {
         if (ownRow(def)) {
+            // 指標の行の下の「行」の階層の行は、指標の行の上書きを継ぐ（同じ書式・単位で見せる）。太字は継がない（指標の行の内訳なので）
+            if (isIndicatorLevel(def.code)) {
+                const inherited: RowNumberOverride = { ...(overrides.get(indicatorOfLevel(def.code)) ?? {}) };
+                delete inherited.bold;
+                if (Object.keys(inherited).length > 0) result.set(def.code, inherited);
+                continue;
+            }
             const own = overrides.get(def.code);
             if (own && Object.keys(own).length > 0) result.set(def.code, { ...own });
             continue;

@@ -10,7 +10,9 @@
  *   比率は分子の行 ÷ 分母の行
  * - 指標の行：指標の欄のメジャーを、書式ペインのメジャーごとの置く場所に置く。行の後ろ（人数・時間・EBITDA
  *   のような会社独自の行。届いた値のまま、集計・書式・良し悪しはメジャーごとの設定）か、行の「うち」（親の行と同じ見せ方）。
- *   科目の表の「内訳の親」と「書式」の欄はやめた（ファクトが足せない形と、ディメンションに見せ方を持たせる形になるため）
+ *   科目の表の「内訳の親」と「書式」の欄はやめた（ファクトが足せない形と、ディメンションに見せ方を持たせる形になるため）。
+ *   行の後ろに置いた指標は、その下に「行」の階層（区分 → 中分類 → 行）でその指標の値を出せる（書式ペインの「行の階層」。値のある節だけ、
+ *   値は Power BI が段ごとに計算したまま）
  * - 科目の性質は 2 つのフラグ：貸方フラグ（正常な残高が貸方）と残高フラグ（期末を取る）。
  *   空の貸方フラグは区分の向きを継ぎ、空の残高フラグはフロー。収益・費用・資産…の分類は持たない
  * - 符号：データは借方プラスにそろえてから受け取る（signs.ts）。区分は自分の向きでプラスに見せる。区分の向きは区分の中の科目の
@@ -20,9 +22,9 @@
  * - 比率の行は、分子と分母の行を期間で集計してから割る
  * - 並び：区分の中は科目の並び → コード。小計を科目の上か下に置くかは表全体で選ぶ。うちは親の行の下
  */
-import { maxOf } from "./shared/minMax";
+import { maxOf, minOf } from "./shared/minMax";
 import { compareJa } from "./collate";
-import { AccountRecord, INDICATOR_KEY, TOTAL_ACCOUNT } from "./data";
+import { AccountRecord, INDICATOR_KEY, TOTAL_ACCOUNT, indicatorOfLevel, isIndicatorLevel } from "./data";
 import { Expr, FormulaError, parseFormula } from "./formula";
 import { AMOUNT_FORMAT, RowFormat, parseRowFormat } from "./numberFormat";
 
@@ -56,6 +58,8 @@ export interface RowDef {
     children: string[];
     /** 小計・段階の行で足す行 */
     summands: Summand[];
+    /** 指標の行（と行の階層の行）で、片側だけ空の月を 0 とみなして差を出すか（表に出す指標はいつも。表に出さない指標は計算行の分子・分母にだけ使うので付けない。compute.ts の basisMonths） */
+    blankZero?: boolean;
     /** 段階の行のうち、後の段階の行が足す範囲に自分の範囲を含むもの（売上総利益 → 営業利益 → …の途中）。線は二重線でなく小計の線 */
     continued?: boolean;
 }
@@ -124,6 +128,18 @@ export interface CalcRowSpec {
     from: string | null;
     /** この区分の後に置く（小計はここまで足す）。null は表の最後 */
     after: string | null;
+    /**
+     * 開始・終了の区分を選んだときの、表の区分の並び（sectionChoiceValue）。区分が表に無いとき（外のフィルターで区分の科目が全部
+     * 値なしになり、区分ごと消えたとき）に、この並びで範囲を決める。科目の並びの値は届いた科目だけで振り直される（data.ts の
+     * assignOrder）ので、区分が消えると位置がずれて使えない。名前だけの古い保存値は null（区分が無ければ出さない）
+     */
+    fromSequence?: string[] | null;
+    afterSequence?: string[] | null;
+    /**
+     * 挿入位置（書式ペインの「挿入位置」）。無ければ after の区分の後ろ（小計は終了位置の後ろ）。target は CalcChoices.places の value
+     * （区分は「§sec:区分」）で、null は表の最後（atStart なら表の最初）。sequence は区分を選んだときの区分の並び（区分が消えたら前に出ている区分）
+     */
+    place?: { target: string | null; atStart: boolean; sequence: string[] | null };
     /** 比率の分子・分母の行（CalcChoices.refs の value） */
     numerator: string | null;
     denominator: string | null;
@@ -150,12 +166,44 @@ export interface IndicatorSpec {
     /** 後ろに置くときの書式（空は金額） */
     format: RowFormat;
     good: GoodDirection;
+    /** 行の後ろに置いた指標の下に出す「行」の階層の節（値のある節だけ）。無ければ出さない */
+    levels?: IndicatorLevel[];
+    /** 片側だけ空の月を 0 とみなして差を出す（viewModel が表に出す指標に付ける。値の行と同じ） */
+    blankZero?: boolean;
+}
+
+/** 指標の行の下に出す「行」の階層の節（data.ts の IndicatorNode に、行のコードと並びを添えたもの） */
+export interface IndicatorLevel {
+    /** 行のコード（data.ts の indicatorLevelCode） */
+    code: string;
+    /** 上の段からの値（空の段は null）。行は最後が行の名前 */
+    trail: Array<string | null>;
+    /** 行（行の葉）なら科目のキー。区分・中分類は null */
+    account: string | null;
+    /** 並び（小さいほど先）。行は表の行の並び、表に無い行と区分・中分類は届いた順。区分・中分類は中の行の一番小さい並び */
+    order: number;
 }
 
 /** 分子・分母・置く場所の行のキーで、区分の行を指すもの（区分の科目が 1 つだと行のコードが科目のコードになるので、区分の名前で持つ） */
 export const SECTION_KEY = "§sec:";
 /** 書式ペインで足した行のコード（何本目か）。名前から作ると、同じ名前の小計とぶつかって付け替わる */
 export const CALC_KEY = "§calc:";
+/** 計算行の開始・終了の保存値で、区分の名前の後ろに表の区分の並び（JSON の配列）を添える印 */
+const SECTION_SEQUENCE_MARK = "§seq:";
+/** 計算行の開始・終了の選択肢の値：区分の名前と、表の区分の並び */
+export const sectionChoiceValue = (label: string, sequence: string[]): string => `${label}${SECTION_SEQUENCE_MARK}${JSON.stringify(sequence)}`;
+/** 計算行の開始・終了の保存値を、区分の名前と区分の並びに分ける。名前だけの値（前の版の保存）は並びが null */
+export function parseSectionChoice(value: string): { label: string; sequence: string[] | null } {
+    const at = value.indexOf(SECTION_SEQUENCE_MARK);
+    if (at < 0) return { label: value, sequence: null };
+    try {
+        const sequence: unknown = JSON.parse(value.slice(at + SECTION_SEQUENCE_MARK.length));
+        if (Array.isArray(sequence) && sequence.every((v) => typeof v === "string")) return { label: value.slice(0, at), sequence };
+    } catch {
+        // 読めない並びは名前だけとして扱う
+    }
+    return { label: value.slice(0, at), sequence: null };
+}
 
 export interface BuildOptions {
     position: ParentPosition;
@@ -622,35 +670,46 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         return false;
     });
     const calcDone = new Set<CalcRowSpec>();
-    const emitCalc = (spec: CalcRowSpec) => {
+    /** 計算行を表の最後に出す（置く場所へは呼び出し側が動かす）。出せなければ null */
+    const emitCalc = (spec: CalcRowSpec): RowDef | null => {
         calcDone.add(spec);
         if (spec.kind === "ratio") {
             if (!spec.numerator || !spec.denominator) {
                 warn(`計算行「${spec.name}」の分子か分母が空。出さなかった`);
-                return;
+                return null;
             }
-            emitRatio(spec.name, spec.numerator, spec.denominator, ratioFormat(spec.format, spec.name), spec.good, CALC_KEY + spec.slot);
-            return;
+            return emitRatio(spec.name, spec.numerator, spec.denominator, ratioFormat(spec.format, spec.name), spec.good, CALC_KEY + spec.slot);
         }
         // 小計：どこからの区分から、置く場所の区分まで（表の並び。どこからの既定は表の最初、置く場所は表の最後も選べる）
-        const end = spec.after === null ? emitted.length - 1 : emitted.findIndex((sec) => sec.label === spec.after);
-        const start = spec.from === null ? 0 : emitted.findIndex((sec) => sec.label === spec.from);
+        const anchor = anchors.get(spec);
+        const end = anchor ? emitted.indexOf(anchor) : emitted.length - 1;
+        let start = spec.from === null ? 0 : emitted.findIndex((sec) => sec.label === spec.from);
+        // 開始の区分が表に無い：選んだときの並びで、開始より後で最初に出ている区分から
+        const fromAt = spec.from !== null && !sectionMap.has(spec.from) ? (spec.fromSequence?.indexOf(spec.from) ?? -1) : -1;
+        const fromMoved = fromAt >= 0;
+        if (fromMoved) {
+            const first = spec.fromSequence!.slice(fromAt).find((label) => sectionMap.has(label));
+            start = first === undefined ? -1 : emitted.findIndex((sec) => sec.label === first);
+        }
         if (start < 0 || start > end) {
+            // 位置で寄せた範囲に、出ている区分が 1 つも無い（フィルターで消えた）。表が空のときと同じく知らせない
+            if (fromMoved || (spec.after !== null && !sectionMap.has(spec.after))) return null;
             warn(
                 spec.from !== null && sectionMap.has(spec.from)
                     ? `計算行「${spec.name}」の開始位置の区分「${spec.from}」が、終了位置より後にある。出さなかった`
                     : `計算行「${spec.name}」の開始位置の区分「${spec.from}」が表に無い。出さなかった`
             );
-            return;
+            return null;
         }
-        emitSubtotal(spec.name, emitted.slice(start, end + 1), CALC_KEY + spec.slot);
+        return emitSubtotal(spec.name, emitted.slice(start, end + 1), CALC_KEY + spec.slot);
     };
     /** 出したが、まだ計算行を出していない区分 */
     let unflushed: Section[] = [];
     const flushCalc = () => {
         const done = unflushed;
         unflushed = [];
-        for (const section of done) for (const spec of calcSpecs) if (!calcDone.has(spec) && spec.after === section.label) emitCalc(spec);
+        // 挿入位置を選んだ計算行は、ここでは出さない（表を組んだあと、指標と一緒に置く場所へ置く）
+        for (const section of done) for (const spec of calcSpecs) if (!calcDone.has(spec) && !spec.place && anchors.get(spec) === section) emitCalc(spec);
     };
 
     let blanks = 0;
@@ -667,6 +726,22 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         (a, b) =>
             last(a) - last(b) || (a.master.order ?? Number.POSITIVE_INFINITY) - (b.master.order ?? Number.POSITIVE_INFINITY) || byOrder(a.accounts[0], b.accounts[0])
     );
+    // 計算行を置く区分（小計はここまで足す）。undefined は置けない、null は表の最後。終了の区分が表に無ければ、選んだときの並びで
+    // 終了より前で最後に出ている区分の後ろに置く（外のフィルターで区分の科目が全部値なしになり、区分ごと消えたとき）
+    const anchors = new Map<CalcRowSpec, Section | null | undefined>();
+    for (const spec of calcSpecs) {
+        if (spec.after === null) {
+            anchors.set(spec, null);
+            continue;
+        }
+        let anchor = sectionMap.get(spec.after);
+        const afterAt = anchor ? -1 : (spec.afterSequence?.indexOf(spec.after) ?? -1);
+        if (afterAt >= 0) {
+            const lastShown = spec.afterSequence!.slice(0, afterAt + 1).reverse().find((label) => sectionMap.has(label));
+            anchor = lastShown === undefined ? undefined : sectionMap.get(lastShown);
+        }
+        anchors.set(spec, anchor);
+    }
     for (const section of sections) {
         flushCalc();
         emitSection(section);
@@ -687,9 +762,10 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     // 表の最後に置く計算行。合計行のあとに作る（合計行は区分をまとめる木の根で、先に作った計算行は根のまとまりより上に並んだ）。置く場所の区分が表に無い計算行は出さない（フィルターで区分が消えたときも）。
     // 表が空（フィルターで科目が無い）なら、どの行も出さず、知らせもしない
     for (const spec of emitted.length > 0 ? calcSpecs : []) {
-        if (calcDone.has(spec)) continue;
-        if (spec.after === null) emitCalc(spec);
-        else warn(`計算行「${spec.name}」の挿入位置の区分「${spec.after}」が表に無い。出さなかった`);
+        if (calcDone.has(spec) || spec.place) continue;
+        if (anchors.get(spec) === null) emitCalc(spec);
+        // 位置を保存した計算行で、範囲の区分が 1 つも出ていない（フィルターで消えた）なら、表が空のときと同じく知らせない
+        else if (!spec.afterSequence?.includes(spec.after!)) warn(`計算行「${spec.name}」の挿入位置の区分「${spec.after}」が表に無い。出さなかった`);
     }
 
     // ---- 表に置けなかった科目は無いはずだが、落とさずに最後に出して知らせる
@@ -813,6 +889,7 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         if (!parent) {
             if (spec.atStart) display.splice(atStart++, 0, { def: row, depth: 0 });
             else display.push({ def: row, depth: 0 });
+            emitLevels(spec, row);
             return;
         }
         // 後ろ：置く場所の行とその下の行（子・うち）の後ろに、置く場所の行と同じ深さで
@@ -820,6 +897,55 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         display.splice(blockEnd(afterTail.get(parent.code) ?? parent.code) + 1, 0, { def: row, depth });
         afterTail.set(parent.code, row.code);
         following.set(parent.code, [...(following.get(parent.code) ?? []), row.code]);
+        emitLevels(spec, row);
+    };
+    /**
+     * 指標の行の下の「行」の階層：区分 → 中分類 → 行の木を、値のある節だけで組み、指標の行の子にする（開き閉じできる）。
+     * 親は 1 つ上の段の節。空の段（区分より下）は行にせず、その下を上の段の子にする（科目の木と同じ）。空の区分は「区分なし」で最後。
+     * 子が 1 つで同じ名前の行なら、その行を段の行にする（科目の木と同じ）。値は節ごとに Power BI が計算した値で、子を足さない。
+     * 見せ方（集計・書式・良し悪し）は指標の行と同じ。名前で探す分子・分母や書式ペインの選択肢には入れない（科目と同じ名前になるので）
+     */
+    const emitLevels = (spec: IndicatorSpec, parent: RowDef) => {
+        const levels = spec.levels ?? [];
+        if (levels.length === 0) return;
+        type Node = { level: IndicatorLevel; kids: Node[] };
+        const keyOf = (trail: Array<string | null>) => JSON.stringify(trail);
+        const groups = new Map(levels.filter((l) => l.account === null).map((l): [string, IndicatorLevel] => [keyOf(l.trail), l]));
+        const nodes = new Map(levels.map((l): [IndicatorLevel, Node] => [l, { level: l, kids: [] }]));
+        /** 行にできる区分・中分類：区分（空なら区分なし）と、空でない中分類 */
+        const usable = (trail: Array<string | null>) => trail.length === 1 || trail[trail.length - 1] !== null;
+        const roots: Node[] = [];
+        for (const level of levels) {
+            if (level.account === null && !usable(level.trail)) continue;
+            let above: Node | undefined;
+            for (let j = level.trail.length - 1; j >= 1 && above === undefined; j--) {
+                const prefix = level.trail.slice(0, j);
+                const group = groups.get(keyOf(prefix));
+                if (group && usable(prefix)) above = nodes.get(group);
+            }
+            (above ? above.kids : roots).push(nodes.get(level)!);
+        }
+        const nameOf = (node: Node) => node.level.trail[node.level.trail.length - 1] ?? NO_CATEGORY;
+        const ranks = new Map<Node, number>();
+        const rank = (node: Node): number => {
+            let value = ranks.get(node);
+            if (value === undefined) ranks.set(node, (value = Math.min(node.level.order, minOf(node.kids.map(rank)))));
+            return value;
+        };
+        const noCategory = (node: Node) => node.level.account === null && node.level.trail.length === 1 && node.level.trail[0] === null;
+        const sorted = (list: Node[]) => [...list].sort((a, b) => Number(noCategory(a)) - Number(noCategory(b)) || rank(a) - rank(b));
+        const depth = display.find((d) => d.def.code === parent.code)!.depth;
+        const out: DisplayRow[] = [];
+        const emit = (node: Node, at: number): string => {
+            const only = node.kids.length === 1 ? node.kids[0] : undefined;
+            const shown = node.level.account === null && only && only.level.account !== null && only.kids.length === 0 && nameOf(only) === nameOf(node) ? only : node;
+            const row = add({ code: shown.level.code, name: nameOf(shown), type: "measure", sign: 1, good: spec.good, aggregation: spec.aggregation, format: spec.format });
+            out.push({ def: row, depth: at });
+            row.children = sorted(shown.kids).map((kid) => emit(kid, at + 1));
+            return row.code;
+        };
+        parent.children.push(...sorted(roots).map((node) => emit(node, depth + 1)));
+        display.splice(display.findIndex((d) => d.def.code === parent.code) + 1, 0, ...out);
     };
     // 表に出さない指標：行の定義だけ作り（値は計算行が読む）、並びには入れない。置く場所は見ない
     const hiddenIndicators: RowDef[] = [];
@@ -829,10 +955,64 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         hiddenIndicators.push(add({ code: spec.code, name: spec.name, type: "measure", sign: 1, good: spec.good, aggregation: spec.aggregation, format: spec.format }));
         noteName(spec.name, spec.code);
     }
-    // 表が空（フィルターで科目が無い）なら、指標も出さず、知らせない（計算行と同じ）
+    /**
+     * 挿入位置を選んだ計算行を置く。終了位置（小計の範囲）は区分の並びで決め、行は表の最後に作ってから置く場所へ動かす。
+     * 置く場所が別の計算行・指標でまだ置いていなければ "wait"
+     */
+    const placeCalc = (spec: CalcRowSpec, waitFor: (code: string) => boolean): "done" | "wait" => {
+        const place = spec.place!;
+        let target: string | undefined;
+        if (place.target !== null) {
+            let key = place.target;
+            // 区分が表に無い：選んだときの並びで、その区分より前で最後に出ている区分の後ろ。どれも出ていなければ（フィルターで消えた）知らせない
+            if (key.startsWith(SECTION_KEY) && !sectionMap.has(key.slice(SECTION_KEY.length)) && place.sequence) {
+                const at = place.sequence.indexOf(key.slice(SECTION_KEY.length));
+                const shown = at >= 0 ? place.sequence.slice(0, at + 1).reverse().find((label) => sectionMap.has(label)) : undefined;
+                if (at >= 0 && shown === undefined) {
+                    calcDone.add(spec);
+                    return "done";
+                }
+                if (shown !== undefined) key = SECTION_KEY + shown;
+            }
+            target = placeOf(key);
+            if (target === undefined) {
+                if (waitFor(key)) return "wait";
+                calcDone.add(spec);
+                if (hiddenCodes.has(key)) warn(`計算行「${spec.name}」の挿入位置「${placeLabel(key)}」は表に出さない指標なので、置けない。出さなかった`);
+                else warn(`計算行「${spec.name}」の挿入位置「${placeLabel(key)}」が表に無い。出さなかった`);
+                return "done";
+            }
+        }
+        // 小計の終了位置の区分が表に無く、並びでも寄せられない：前の版と同じく知らせて出さない
+        if (spec.kind === "subtotal" && spec.after !== null && anchors.get(spec) === undefined) {
+            calcDone.add(spec);
+            if (!spec.afterSequence?.includes(spec.after)) warn(`計算行「${spec.name}」の終了位置の区分「${spec.after}」が表に無い。出さなかった`);
+            return "done";
+        }
+        const row = emitCalc(spec);
+        if (!row) return "done";
+        const [item] = display.splice(display.findIndex((d) => d.def === row), 1);
+        if (target === undefined) {
+            display.splice(place.atStart ? atStart++ : display.length, 0, item);
+            return "done";
+        }
+        // 後ろ：置く場所の行とその下の行（子・うち・後ろに置いた行）の後ろに、置く場所の行と同じ深さで
+        item.depth = display.find((d) => d.def.code === target)!.depth;
+        display.splice(blockEnd(afterTail.get(target) ?? target) + 1, 0, item);
+        afterTail.set(target, row.code);
+        following.set(target, [...(following.get(target) ?? []), row.code]);
+        return "done";
+    };
+    // 表が空（フィルターで科目が無い）なら、挿入位置を選んだ計算行も指標も出さず、知らせない
+    let pendingCalc = emitted.length > 0 ? calcSpecs.filter((spec) => spec.place && !calcDone.has(spec)) : [];
     let pending = emitted.length > 0 ? (opts.indicators ?? []).filter((s) => s.mode !== "hidden") : [];
-    while (pending.length > 0) {
+    while (pending.length > 0 || pendingCalc.length > 0) {
         const waiting: IndicatorSpec[] = [];
+        const waitingCalc: CalcRowSpec[] = [];
+        /** 置く場所が、まだ置いていない計算行か指標か */
+        const notYet = (self: CalcRowSpec | IndicatorSpec) => (key: string) =>
+            pendingCalc.some((p) => p !== self && CALC_KEY + p.slot === key) || pending.some((p) => p !== self && p.code === key);
+        for (const spec of pendingCalc) if (placeCalc(spec, notYet(spec)) === "wait") waitingCalc.push(spec);
         for (const spec of pending) {
             if (rows.has(spec.code)) {
                 warn(`指標「${spec.name}」が 2 つある。最初のものを出した`);
@@ -850,18 +1030,25 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
             }
             const target = placeOf(spec.target);
             if (target !== undefined) placeIndicator(spec, target);
-            // 置く場所の指標をまだ置いていない（後ろの指標のうち・後ろに置いた）なら、次の回で置く
-            else if (pending.some((p) => p !== spec && p.code === spec.target)) waiting.push(spec);
+            // 置く場所の指標・計算行をまだ置いていない（後ろの指標のうち・後ろに置いた）なら、次の回で置く
+            else if (notYet(spec)(spec.target)) waiting.push(spec);
             else if (hiddenCodes.has(spec.target)) warn(`指標「${spec.name}」の挿入位置「${placeLabel(spec.target)}」は表に出さない指標なので、置けない。出さなかった`);
             else warn(`指標「${spec.name}」の挿入位置「${placeLabel(spec.target)}」が表に無い。出さなかった`);
         }
-        if (waiting.length === pending.length) {
+        if (waiting.length === pending.length && waitingCalc.length === pendingCalc.length) {
             // どれも置けない：置く場所が輪になっている
-            warn(`指標の挿入位置が輪になっている（${list(waiting.map((spec) => spec.name))}）。出さなかった`);
+            const names = [...waitingCalc.map((spec) => spec.name), ...waiting.map((spec) => spec.name)];
+            warn(`${waitingCalc.length === 0 ? "指標" : waiting.length === 0 ? "計算行" : "計算行と指標"}の挿入位置が輪になっている（${list(names)}）。出さなかった`);
+            for (const spec of waitingCalc) calcDone.add(spec);
             break;
         }
         pending = waiting;
+        pendingCalc = waitingCalc;
     }
+
+    // ---- 空の月を 0 とみなす指標：指標の行と、その行の階層の行に印を付ける（差の計算が読む）
+    const blankZeroCodes = new Set((opts.indicators ?? []).filter((spec) => spec.blankZero).map((spec) => spec.code));
+    if (blankZeroCodes.size > 0) for (const def of rows.values()) if (blankZeroCodes.has(indicatorOfLevel(def.code))) def.blankZero = true;
 
     // ---- 比率の行の分子・分母を行に結ぶ。キーは区分（§sec:区分）か行のコード。見つからなければ名前でも探す。比率の行は指さない（輪になる）
     for (const { row, numerator, denominator } of pendingRatios) {
@@ -901,7 +1088,9 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
     const valueLabel = new Map(Array.from(sectionValue, ([label, code]) => [code, label] as const));
     const headLabel = new Map(Array.from(sectionHead, ([label, code]) => [code, label] as const));
     const nameCount = new Map<string, number>();
-    for (const def of [...display.map((d) => d.def), ...hiddenIndicators]) if (hasValue(def.type)) nameCount.set(def.name, (nameCount.get(def.name) ?? 0) + 1);
+    // 指標の行の階層の行は、選択肢に入れない（科目と同じ名前の行が並ぶので、数えると科目の名前に出どころが付く）
+    const choosable = display.filter(({ def }) => !isIndicatorLevel(def.code));
+    for (const def of [...choosable.map((d) => d.def), ...hiddenIndicators]) if (hasValue(def.type)) nameCount.set(def.name, (nameCount.get(def.name) ?? 0) + 1);
     /** 同じ名前の行に添える、行の出どころ（科目は科目コード、指標はメジャーの queryName） */
     const sourceOf = (code: string) =>
         code.startsWith(CALC_KEY)
@@ -916,10 +1105,11 @@ export function buildRows(accounts: Map<string, AccountRecord>, options: Partial
         if (label !== undefined) return { value: SECTION_KEY + label, displayName: label };
         return { value: def.code, displayName: (nameCount.get(def.name) ?? 0) > 1 ? `${def.name}（${sourceOf(def.code)}）` : def.name };
     };
+    const emittedLabels = emitted.map((sec) => sec.label);
     const calcChoices: CalcChoices = {
-        sections: emitted.map((sec) => ({ value: sec.label, displayName: sec.label })),
-        refs: [...display.filter(({ def }) => hasValue(def.type) && def.type !== "calc").map(({ def }) => def), ...hiddenIndicators].map(choiceOf),
-        places: display.filter(({ def }) => def.type !== "blank").map(({ def }) => choiceOf(def)),
+        sections: emitted.map((sec) => ({ value: sectionChoiceValue(sec.label, emittedLabels), displayName: sec.label })),
+        refs: [...choosable.filter(({ def }) => hasValue(def.type) && def.type !== "calc").map(({ def }) => def), ...hiddenIndicators].map(choiceOf),
+        places: choosable.filter(({ def }) => def.type !== "blank").map(({ def }) => choiceOf(def)),
     };
 
     const sectionOf = new Map<string, string>();

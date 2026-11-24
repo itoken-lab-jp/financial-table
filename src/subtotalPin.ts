@@ -59,7 +59,9 @@ export interface PinPlace {
  * 下の内訳にかかったときだけ残す（内側の小計が見えてから、外の小計を重ねて隠さない）。ただし残す行は、内訳の 1 行目（入れ子のあとなら、
  * 内側の小計のすぐ下の行）から下の端までに収まるときだけ（区分の外や内側の小計に重ねない。収まらないあいだは何も残さない）。
  * 囲む小計が無いときは、自分の位置が下の端のすぐ上（見えている高さの分）にある小計に印を付けておく。止まらないので見た目は変わらず、
- * 上へ送り返したとき、印を付ける前の 1 コマに小計が下の端から沈んで見えないように
+ * 上へ送り返したとき、印を付ける前の 1 コマに小計が下の端から沈んで見えないように。height は列の見出しの下から見えている高さで、
+ * 行が全部その中にあるときだけ印を付ける。印の付いた行は見出しと同じ重なりで、見出しより後ろに書くので、見出しの裏に入った行に印を
+ * 残すと見出しの上に描かれた（2026-10-29 Desktop。本体の最後の小計が列の見出しの 2 段目を隠した）
  */
 export function activePin(places: readonly PinPlace[], edge: number, height: number): number {
     let best = -1;
@@ -68,7 +70,7 @@ export function activePin(places: readonly PinPlace[], edge: number, height: num
         if (p.start < edge && p.bottom > edge + 0.5) {
             // 内側：内訳の始まりが下のもの。始まりが同じ（人件費が販管費の最初の内訳）なら、小計が上のもの
             if (best < 0 || p.start > places[best].start || (p.start === places[best].start && p.bottom < places[best].bottom)) best = i;
-        } else if (p.bottom <= edge + 0.5 && p.bottom > edge - height && (ahead < 0 || p.bottom > places[ahead].bottom)) {
+        } else if (p.bottom <= edge + 0.5 && p.top >= edge - height - 0.5 && (ahead < 0 || p.bottom > places[ahead].bottom)) {
             ahead = i;
         }
     });
@@ -139,8 +141,8 @@ export function placePins(scroller: HTMLElement | null): void {
     if (!scroller || !tables?.length) return;
     const height = scroller.clientHeight;
     const scrollTop = scroller.scrollTop;
-    const mark = (side: Side, edge: number, name: string) => {
-        const on = activePin(side.places, edge, height);
+    const mark = (side: Side, edge: number, name: string, seen: number) => {
+        const on = activePin(side.places, edge, seen);
         side.rows.forEach((tr, i) => {
             const value = i === on ? name : null;
             if (tr.getAttribute("data-pin-on") !== value) {
@@ -153,7 +155,7 @@ export function placePins(scroller: HTMLElement | null): void {
         });
     };
     for (const { bottom, top, head } of tables) {
-        mark(bottom, scrollTop + height, "bottom");
-        mark(top, -(scrollTop + head), "top");
+        mark(bottom, scrollTop + height, "bottom", height - head);
+        mark(top, -(scrollTop + head), "top", height - head);
     }
 }

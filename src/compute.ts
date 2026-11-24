@@ -13,13 +13,16 @@
  * - 前年同期は、同じ候補の 12 か月前の月（月の名前ではなく月番号で引く）
  * - 小計・段階の行は、足す行（区分・中分類・科目）の借方プラスのデータの値を足し、行の向き（sign）で見せる。
  *   足す行ごとに自分のまとまりでイベントを採るので、フローと残高の区分をまたぐ段階の行も、表示した行の和と合う
+ * - 四半期だけの値（periods.ts の QUARTER_KEY）は、期間がその四半期をまるごと覆うときだけ足す（月の列には出さない）。最新見込みでは、
+ *   四半期の 3 か月がどれもほかのイベントを採らないときだけ、そのイベントの四半期の値を使う（月の値と別のイベントの四半期の値を
+ *   重ねない）。比べる月は、四半期の値がある四半期を 1 つのまとまりで見て、両側がその四半期を覆う（四半期の値か 3 か月の値）ときだけ入れる
  * - 比率の行は、分子と分母がどちらもフロー（合計）なら、組織ごとに、どちらにも値のある月だけで集計してから割る（指標はメジャー
  *   1 本ずつのまとまりなので、総労働時間の入っていない月・組織の営業利益を足さない）。残高（期末）は期間の
  *   最後の月を採るので、フロー ÷ 残高（売上 ÷ 総資産）の月はそろえない（そろえると通期の売上が残高のある月に切られた）
  */
 import { Fact, INDICATOR_KEY } from "./data";
 import { evaluateFormula } from "./formula";
-import { MonthIndex } from "./periods";
+import { MonthIndex, isQuarterKey, quarterStart, withQuarterKeys } from "./periods";
 import { RowDef, RowModel } from "./rows";
 
 /** 値を取る側。events は候補（先が優先）、shift は月のずらし（前年同期は -12） */
@@ -59,6 +62,10 @@ export class Calculator {
     private readonly seriesCache = new Map<string, Map<Slot, Series>>();
     /** 科目・イベント・組織 → データの月の値 */
     private readonly orgValueCache = new Map<string, Series>();
+    /** 四半期だけの値があるか（無ければ月の並びに四半期の値のキーを足さない：今までと同じ動き） */
+    private readonly hasQuarters: boolean;
+    /** 最新見込みなどで、同じ四半期の月が別のイベントを採ったので使わなかった四半期の値（組織・まとまり・四半期・イベント） */
+    readonly skippedQuarters = new Set<string>();
 
     constructor(private readonly model: RowModel, facts: Fact[]) {
         for (const fact of facts) {
@@ -72,6 +79,12 @@ export class Calculator {
             } else byMonth.set(fact.month, { sum: fact.value, last: fact.last });
             getOrSet(getOrSet(this.presence, fact.event, () => new Map<Slot, Set<MonthIndex>>()), slot, () => new Set<MonthIndex>()).add(fact.month);
         }
+        this.hasQuarters = facts.some((fact) => isQuarterKey(fact.month));
+    }
+
+    /** 期間の月に、まるごと覆う四半期の値のキーを足す（四半期の値が無ければそのまま） */
+    private withQuarters(months: MonthIndex[]): MonthIndex[] {
+        return this.hasQuarters ? withQuarterKeys(months) : months;
     }
 
     private row(code: string): RowDef | undefined {
@@ -111,9 +124,22 @@ export class Calculator {
         const result: Resolution = new Map();
         for (const slot of this.slots.keys()) {
             const months = new Map<MonthIndex, string>();
+            const quarters = new Set<MonthIndex>();
             // 優先の低い候補から書き、高い候補で上書きする
             for (let i = ref.events.length - 1; i >= 0; i--) {
-                for (const m of this.presence.get(ref.events[i])?.get(slot) ?? []) months.set(m - ref.shift, ref.events[i]);
+                for (const m of this.presence.get(ref.events[i])?.get(slot) ?? []) {
+                    if (isQuarterKey(m)) quarters.add(m - ref.shift);
+                    else months.set(m - ref.shift, ref.events[i]);
+                }
+            }
+            // 四半期の値：データのある候補のうち、四半期の 3 か月がどれもほかのイベントを採っていない最初のもの
+            for (const q of quarters) {
+                const start = quarterStart(q);
+                const fits = (event: string) => [start, start + 1, start + 2].every((m) => (months.get(m) ?? event) === event);
+                const holders = ref.events.filter((event) => this.presence.get(event)?.get(slot)?.has(q + ref.shift));
+                const chosen = holders.find(fits);
+                if (chosen !== undefined) months.set(q, chosen);
+                else if (holders.length > 0) this.skippedQuarters.add(`${slot}\u0000${q + ref.shift}\u0000${holders[0]}`);
             }
             if (months.size > 0) result.set(slot, months);
         }
@@ -177,9 +203,10 @@ export class Calculator {
     /**
      * 表示の値（符号を掛けたあと）を、月の集まりで集計する。byOrg を渡すと、組織ごとにその月だけで集計する（比率の行の分子・分母）
      */
-    aggregate(code: string, ref: EventRef, months: MonthIndex[], stack = new Set<string>(), byOrg?: Map<string, MonthIndex[]>): number | null {
+    aggregate(code: string, ref: EventRef, periodMonths: MonthIndex[], stack = new Set<string>(), byOrg?: Map<string, MonthIndex[]>): number | null {
         const row = this.row(code);
-        if (!row || stack.has(code) || months.length === 0) return null;
+        if (!row || stack.has(code) || periodMonths.length === 0) return null;
+        const months = this.withQuarters(periodMonths);
         switch (row.type) {
             case "heading":
             case "blank":
@@ -213,22 +240,60 @@ export class Calculator {
 
     /** 主と比較。組織 × まとまりごとに両側のある月だけで集計してから足し、引く */
     compare(code: string, main: EventRef, compare: EventRef, months: MonthIndex[]): Comparison {
-        const basis = this.basis(code, main, compare, this.basisMonths(main, compare, months), new Set());
+        const basis = this.basis(code, main, compare, this.basisMonths(main, compare, this.withQuarters(months)), new Set());
         if (!basis) return { main: null, compare: null, diff: null };
         return { ...basis, diff: basis.main === null || basis.compare === null ? null : basis.main - basis.compare };
     }
 
-    /** 組織 × まとまりごとの、比べる月（主と比較の両方にデータのある月） */
+    /**
+     * 組織 × まとまりごとの、比べる月（主と比較の両方にデータのある月）。表に出す指標の組は、片側に指標の値が
+     * 無くても、その側でその組織にほかのデータ（科目・ほかの指標）がある月は比べる月に入れる（空の指標を 0 とみなす。科目の「予算の無い
+     * 科目は予算 0」とそろえる）。両側とも指標が無い月、組織にデータの無い月（まだ来ていない月）、その側にその組の指標の値が 1 か月も無い
+     * ときは入れない。表に出さない指標（計算行の分子・分母）は、どちらかに値が無い月を比べない
+     */
     private basisMonths(main: EventRef, compare: EventRef, months: MonthIndex[]): Map<Slot, MonthIndex[]> {
         const a = this.resolution(main);
         const b = this.resolution(compare);
+        const orgA = this.orgMonths(a);
+        const orgB = this.orgMonths(b);
         const result = new Map<Slot, MonthIndex[]>();
-        for (const slot of this.slots.keys()) {
+        for (const [slot, { org }] of this.slots) {
             const ma = a.get(slot);
             const mb = b.get(slot);
-            if (!ma || !mb) continue;
-            const overlap = months.filter((m) => ma.has(m) && mb.has(m));
+            const indicator = this.blankZero(slot);
+            // その側にこの指標の値が 1 か月も無い（横持ちで予算の指標メジャーが無いなど）なら 0 とみなさない
+            const onA = (m: MonthIndex) => !!ma?.has(m) || (indicator && !!ma && !!orgA.get(org)?.has(m));
+            const onB = (m: MonthIndex) => !!mb?.has(m) || (indicator && !!mb && !!orgB.get(org)?.has(m));
+            const included = new Set(months.filter((m) => (ma?.has(m) || mb?.has(m)) && onA(m) && onB(m)));
+            // 四半期の値のある四半期は 1 つのまとまり：両側がその四半期を覆う（四半期の値か 3 か月の値がある）なら 3 か月と四半期の値を
+            // まるごと入れ、覆わない側があれば四半期の値を入れない（3 か月のうち 2 か月の実績と四半期の予算を比べない）
+            if (this.hasQuarters) {
+                for (const q of months) {
+                    if (!isQuarterKey(q) || !(ma?.has(q) || mb?.has(q))) continue;
+                    const start = quarterStart(q);
+                    const unit = [start, start + 1, start + 2];
+                    const covers = (side: Map<MonthIndex, string> | undefined) => !!side && (side.has(q) || unit.every((m) => side.has(m)));
+                    if (covers(ma) && covers(mb)) for (const m of [...unit, q]) included.add(m);
+                    else included.delete(q);
+                }
+            }
+            const overlap = months.filter((m) => included.has(m));
             if (overlap.length > 0) result.set(slot, overlap);
+        }
+        return result;
+    }
+
+    /** 空の月を 0 とみなす指標の組か（指標のまとまりは行のコード。表に出す指標の行と行の階層の行） */
+    private blankZero(slot: Slot): boolean {
+        return !this.accountSlot(slot) && this.row(this.slots.get(slot)!.group)?.blankZero === true;
+    }
+
+    /** 組織 → どれかのまとまりにデータのある月 */
+    private orgMonths(resolution: Resolution): Map<string, Set<MonthIndex>> {
+        const result = new Map<string, Set<MonthIndex>>();
+        for (const [slot, months] of resolution) {
+            const set = getOrSet(result, this.slots.get(slot)!.org, () => new Set<MonthIndex>());
+            for (const m of months.keys()) set.add(m);
         }
         return result;
     }
@@ -250,7 +315,7 @@ export class Calculator {
                 if (!row.formula) return null;
                 // フローの分子・分母が 2 つ以上なら、どれにも比べる月（主と比較の両方）のある月だけで集計する
                 const flows = this.flowRefs(row);
-                const aligned = flows.length >= 2 ? this.alignBasis(flows, main, months) : months;
+                const aligned = flows.length >= 2 ? this.alignBasis(flows, main, compare, months) : months;
                 if (aligned.size === 0) return null;
                 stack.add(code);
                 const bases = new Map(row.refs.map((r) => [r, this.basis(r, main, compare, aligned, stack)]));
@@ -267,14 +332,16 @@ export class Calculator {
             }
             default: {
                 // 行のまとまりの組だけ（ほかのまとまりの組は series に無い）
+                const group = this.groupOf(code);
                 const side = (ref: EventRef) => {
                     const bySlot = this.series(row, ref);
                     let total: number | null = null;
                     for (const [slot, slotMonths] of months) {
                         const series = bySlot.get(slot);
-                        if (!series) continue;
-                        const v = aggregateSeries(series, row, slotMonths);
+                        const v = series ? aggregateSeries(series, row, slotMonths) : null;
                         if (v !== null) total = (total ?? 0) + v;
+                        // 指標の組の比べる月で、この側に指標の値が無い（basisMonths で組織のデータから入れた月だけ）なら 0
+                        else if (this.blankZero(slot) && this.slots.get(slot)!.group === group) total = total ?? 0;
                     }
                     return total === null ? null : signed(total, row.sign);
                 };
@@ -318,16 +385,18 @@ export class Calculator {
 
     /**
      * 比べる月（組織 × まとまりごと）を、比率の行の分子・分母のどれにもある月に絞る（組織ごと）。分子・分母それぞれの月は、その行の
-     * まとまりの組の比べる月（主と比較の両方にある月）
+     * まとまりの組の比べる月のうち、主と比較の両方にその組のデータがある月（空の指標を 0 とみなして入れた月では、そろえる月に数えない）
      */
-    private alignBasis(refs: string[], main: EventRef, months: Map<Slot, MonthIndex[]>): Map<Slot, MonthIndex[]> {
+    private alignBasis(refs: string[], main: EventRef, compare: EventRef, months: Map<Slot, MonthIndex[]>): Map<Slot, MonthIndex[]> {
+        const a = this.resolution(main);
+        const b = this.resolution(compare);
         const present = refs.map((r) => {
             const def = this.row(r);
             const byOrg = new Map<string, Set<MonthIndex>>();
             if (def) {
                 for (const slot of this.series(def, main).keys()) {
                     const set = getOrSet(byOrg, this.slots.get(slot)!.org, () => new Set<MonthIndex>());
-                    for (const m of months.get(slot) ?? []) set.add(m);
+                    for (const m of months.get(slot) ?? []) if (a.get(slot)?.has(m) && b.get(slot)?.has(m)) set.add(m);
                 }
             }
             return byOrg;
@@ -348,7 +417,7 @@ export class Calculator {
      */
     hasValue(code: string, refs: EventRef[], months: Iterable<MonthIndex>, skipZero: boolean): boolean {
         const group = this.groupOf(code);
-        const shown = Array.from(months);
+        const shown = this.withQuarters(Array.from(months));
         for (const ref of refs) {
             for (const [slot, byMonth] of this.resolution(ref)) {
                 const { org, group: slotGroup } = this.slots.get(slot)!;
@@ -460,17 +529,27 @@ export class Calculator {
         const accountsOnly = this.hasAccountSlots();
         for (const [slot, byMonth] of this.resolution(ref)) {
             if (accountsOnly && !this.accountSlot(slot)) continue;
-            for (const [m, event] of byMonth) if (accept(event) && (last === null || m > last)) last = m;
+            // 四半期の値は数えない（四半期の見込みで累計の終わり・年度の既定を先へ伸ばさない）
+            for (const [m, event] of byMonth) if (!isQuarterKey(m) && accept(event) && (last === null || m > last)) last = m;
         }
         return last;
     }
 
-    /** データにある月（すべてのイベント）。科目のまとまりがあれば科目だけで見る（指標だけの月で年度の選択肢を増やさない） */
+    /**
+     * データにある月（すべてのイベント）。科目のまとまりがあれば科目だけで見る（指標だけの月で年度の選択肢を増やさない）。
+     * 四半期の値はその 3 か月（四半期の予算しか無い年度も選べる）
+     */
     months(): MonthIndex[] {
         const accountsOnly = this.hasAccountSlots();
         const all = new Set<MonthIndex>();
         for (const bySlot of this.presence.values()) {
-            for (const [slot, months] of bySlot) if (!accountsOnly || this.accountSlot(slot)) for (const m of months) all.add(m);
+            for (const [slot, months] of bySlot) {
+                if (accountsOnly && !this.accountSlot(slot)) continue;
+                for (const m of months) {
+                    if (!isQuarterKey(m)) all.add(m);
+                    else for (let i = 0; i < 3; i++) all.add(quarterStart(m) + i);
+                }
+            }
         }
         return Array.from(all).sort((a, b) => a - b);
     }
@@ -480,7 +559,8 @@ export class Calculator {
         const bySlot = this.presence.get(event);
         if (!bySlot) return false;
         const accountsOnly = this.hasAccountSlots();
-        for (const [slot, present] of bySlot) if ((!accountsOnly || this.accountSlot(slot)) && months.some((m) => present.has(m))) return true;
+        const wanted = this.withQuarters(months);
+        for (const [slot, present] of bySlot) if ((!accountsOnly || this.accountSlot(slot)) && wanted.some((m) => present.has(m))) return true;
         return false;
     }
 }

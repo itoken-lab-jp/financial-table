@@ -59,6 +59,11 @@
 .ft-layout-frame-org > .ft-layout-label { font-size: var(--ft-size-org); }
 .ft-layout-unit { margin-left: auto; font-weight: normal; font-size: var(--ft-size-unit); }
 .ft-layout-split > .ft-layout-label { background: var(--ft-frame-fill); color: var(--ft-frame-text); border-bottom: 1px solid var(--ft-line-block); }
+// 分割の帯の名前は、横にスクロールしても箱の左に残す（帯は表の幅いっぱいなので、名前が左へ流れて消えた。2026-11-24 ユーザー
+// 「セグメントを分割にしたときに横スクロールで事業ラベルが消える」）。帯の中でだけ止まるので、左右の分割でも自分の帯の外へは出ない
+// 名前を止める範囲は単位の手前まで（.ft-layout-name を帯の残りいっぱいに伸ばし、その中で止める）。帯ごとだと、帯の右の端が見えるまで送ると名前が単位に重なった
+.ft-layout-name { flex: 1 0 auto; }
+.ft-layout-split > .ft-layout-label > .ft-layout-name > .ft-layout-title { position: sticky; left: var(--ft-label-inset); }
 // 帯のすぐ下の表は、表の上の外枠を引かない（帯の下線と重なって二重線になった。通し確認 2026-10-17）
 .ft-layout-split > .ft-layout-label + :is(.ft-freeze, .ft-table) > .ft-table, .ft-layout-split > .ft-layout-label + .ft-table { border-top-width: 0; }
 .ft-layout-box, .ft-layout-columns { display: grid; grid-template-columns: max-content auto; }
@@ -73,8 +78,29 @@
 // 外枠は表ごとに引く。スクロールすると表の左と上の枠線は流れて消えるので、スクロールした向きだけ箱の縁に線を引いて代わりにする
 // （縁はいつも 1px 取っておき、色だけ変える。線を足すと中身が 1px ずれる）
 .ft-scroll.ft-layout-scroll { border: 1px solid transparent; }
-.ft-scroll.ft-layout-scroll:not([data-single]).ft-scrolled-x { border-left-color: var(--ft-line-outer); }
+// 左に残す表（.ft-freeze-left[data-frozen]）は自分の左の枠線ごと左に止まるので、表がどれも止まっているなら左の縁には引かない
+// （引くと表の枠線と 2 本で太く見え、分割の帯の左にも線が出た。2026-11-24 ユーザー「行ヘッダまわりの罫線もおかしい」）
+.ft-scroll.ft-layout-scroll:not([data-single]):is(:not(:has(.ft-freeze-left)), :has(.ft-freeze-left:not([data-frozen]))).ft-scrolled-x { border-left-color: var(--ft-line-outer); }
 .ft-scroll.ft-layout-scroll:not([data-single]).ft-scrolled-y { border-top-color: var(--ft-line-outer); }
+// 下にスクロールしているとき、列の見出しの一番下の線のすぐ下の 1 画素の行に、後ろを流れる字が透けた（Desktop の 125%・ページに合わせる。
+// 上に残す見出しの下の端が端数の位置に来て、線のにじみの行の残りに後ろの行が描かれる。2026-11-13、scripts/desktop-line-probe.mjs で測った）。
+// スクロールしているときだけ、線のすぐ下の 1px を表の地で覆う（画面の 1 画素（--ft-px）では、Desktop のページに合わせる拡大で右の表に透けが残った）。スクロールしていないときは覆わない（1 行目の塗りの上の端が欠ける）。
+// 線は、行を 1 段で描く表では見出しの下に置いた部品（.ft-line-head、見出しのセルの外）、ほかは 2 段目の見出しのセルの下の枠線。
+// セルの影は、上へ出す影（見出しの地）を .ft-table thead の規則と同じに並べる
+.ft-scroll.ft-scrolled-y .ft-table thead {
+    .ft-line-head {
+        box-shadow: 0 1px 0 var(--ft-bg);
+    }
+
+    tr:first-child:last-child th,
+    tr:first-child th[rowspan="2"] {
+        box-shadow: 0 -8px 0 var(--ft-head-bg), 0 1px 0 var(--ft-bg);
+    }
+
+    tr:nth-child(2):last-child th {
+        box-shadow: 0 -1px 0 var(--ft-head-bg), 0 1px 0 var(--ft-bg);
+    }
+}
 // 表が 1 つのとき（App.tsx の data-single）は、右と下は表の枠線、上と左は箱の外に重ねた部品（下の .ft-frame-lines）が引き、箱の縁には引かない。
 // 箱の内側の右と下に 1px の余白を足し、箱の切り取りの端を表の右と下の線から離す（ちょうど重なると、Desktop の拡大で端の丸めに線が切られ、
 // 一番下の線が薄くなったり消えたりした）。上と左の線の長さは表の端までなので、余白の分だけ線がはみ出すこともない
@@ -279,9 +305,12 @@
         border-bottom: 1px solid var(--ft-line-head);
         font-weight: normal;
         color: var(--ft-head-muted);
-        // 1 段目（期間）との境の線を、2 段目のセルからも上へ 1px かぶせて引く。Desktop の拡大で 2 つの段の境に端数の隙間ができ、
-        // 下にスクロールしたとき、線の所から後ろを流れる数字が透けた（2026-10-15）
-        box-shadow: 0 -1px 0 var(--ft-line-row);
+        // 1 段目（期間）との境の線は 2 段目の上の枠線で 1 本だけ引く（枠線は画素にそろう）。影で引くと拡大で 2〜3 画素ににじみ、1 段目の下の
+        // 枠線と重ねると端数ずれて倍の太さに見えた（2.1.16.3、2026-11-12 ユーザー「グレーの線が太い」）。
+        // 影は見出しの地の色で上へ 1px 出し、Desktop の拡大で 2 つの段の境にできる端数の隙間を埋める（下にスクロールしたとき、
+        // 隙間から後ろを流れる数字が透けた。2026-10-15）
+        border-top: 1px solid var(--ft-line-row);
+        box-shadow: 0 -1px 0 var(--ft-head-bg);
     }
 
     .ft-corner {
@@ -295,9 +324,9 @@
         vertical-align: middle;
     }
 
+    // 1 段目と 2 段目の境の線は、2 段目のセルの上の枠線（上の thead tr:nth-child(2) th）だけで引く
     .ft-period {
         text-align: center;
-        border-bottom: 1px solid var(--ft-line-row);
         font-size: var(--ft-size-period);
     }
 
@@ -355,8 +384,9 @@
     display: block;
     position: absolute;
     left: -1px;
-    // 行の上の枠線（締めの二重線は 4px）の上まで伸ばす
-    top: -4px;
+    // 行の上の枠線（1px）の上まで伸ばす。締めの行も枠線は 1px で、二重線の 2 本目は余白の中の部品（ft-total-line）なので 1px でよい。
+    // 前は 4px 伸ばして上の行の線と重ねていて、Desktop の拡大で重なりの所が行の境目ごとに太くにじんだ（2.1.16.3、2026-11-12 ユーザー）
+    top: -1px;
     bottom: 0;
     width: 0;
     // 線は塗りではなく枠線で引く。Desktop の拡大（125% など）で塗りの 1px は 2 画素にまたがって太く見えた。枠線の太さは画素にそろう
@@ -379,9 +409,23 @@
     background: var(--ft-head-bg, var(--ft-bg));
 }
 
-// 見出しの 1 段目は表の上の端。上にはみ出すと外枠を突き抜けるので、外枠で閉じる（下の端と同じ）
+// 見出しの 1 段目は表の上の端。外枠の線（1px）の所まで伸ばす。top: 0 では外枠の線のすぐ下で切れ、Desktop の拡大で外枠との間に
+// 隙間が見えた（2026-11-12 ユーザー）。1px なら外枠の線の中に収まり、上へ突き抜けない（ハーネスの 100〜175% で画素を読んで確かめた）
 .ft-table thead tr:first-child .ft-period-start > .ft-period-line {
-    top: 0;
+    top: -1px;
+}
+
+// 2 段目より下は、上の枠線の上の 1px まで伸ばす。2 段目の見出しは段の境の隙間を埋める影（見出しの地の色で上へ 1px）を持ち、その影が
+// 1 段目の線の下の端（bottom: -1px）を覆って、段の境で縦線が切れた（2026-11-12 ユーザー「期間の縦線が途切れている」）
+.ft-table thead tr:not(:first-child) .ft-period-start > .ft-period-line {
+    top: -2px;
+}
+
+// 見出しの縦の線は、セルの下の枠線（2 段目の下の見出しの線）の所まで伸ばす。bottom: 0 だと枠線の所で切れ、Desktop の拡大で
+// 見出しの下の線との間に隙間が見えた（2.1.16.3、2026-11-12 ユーザー「切れてるところがある」）。下の行の部品は上に伸ばしても
+// 上に残す見出しの下に隠れるので、見出しの側で届かせる
+.ft-table thead .ft-period-start > .ft-period-line {
+    bottom: -1px;
 }
 
 // 「期間の区切り」を入れているときは、行の名前の列と最初の期間のあいだの縦線も期間の区切りの線にする
@@ -495,6 +539,11 @@ tbody:where(:first-of-type) .ft-row:first-child {
  * 2 本とも部品で引くと、Desktop の左に残す名前の列で上の線だけ 1〜2 画素下に出た（div の線と罫線のずれ。frozenLines.ts）。上の線は枠線にして、
  * 左に残す表でも th の罫線にそろえる。部品を枠線の所に重ねる（top: -4px）形は、枠線の太さは画素に切り捨て・部品の位置は端数のままで 2 画素ずれた
  */
+/*
+ * 締めの行の高さはほかの行とそろえる（2.1.16.3、2026-11-12 ユーザー「通常行と合計行の高さがちょっと違う」）。二重線は上に 3px 多く場所を取るので、
+ * 上の余白に 3px 足すと行が 3px 高くなった。上に 1.5px 足して下から 1.5px 引き、字を二重線の下の残りの真ん中に置く。下の余白が 1.5px より
+ * 小さい行の高さ（詰める・もっと詰める）では 0 で止まり、その分だけ高くなる
+ */
 .ft-row-total {
     th {
         border-top: 4px double var(--ft-line-total);
@@ -502,7 +551,7 @@ tbody:where(:first-of-type) .ft-row:first-child {
     > td {
         position: relative;
         border-top: 1px solid var(--ft-line-total);
-        padding-top: calc(var(--ft-row-pad, 0.15em) + 3px);
+        padding-top: calc(var(--ft-row-pad, 0.15em) + 1.5px); padding-bottom: max(0px, calc(var(--ft-row-pad, 0.15em) - 1.5px));
     }
 }
 
@@ -612,7 +661,7 @@ tbody:where(:first-of-type) .ft-row:first-child > td > .ft-total-line {
 .ft-table tbody th.ft-org { padding-right: 1em; }
 
 .ft-table tbody .ft-row-total th.ft-name {
-    padding-top: calc(var(--ft-row-pad, 0.15em) + 4px);
+    padding-top: calc(var(--ft-row-pad, 0.15em) + 2.5px); padding-bottom: max(0px, calc(var(--ft-row-pad, 0.15em) - 1.5px));
 }
 
 .ft-name-line {
@@ -782,6 +831,27 @@ tbody:where(:first-of-type) .ft-row:first-child .ft-seg-box-line {
     white-space: nowrap;
 }
 
+// 上に重ねる親の名前（しるしと字）。内側の箱の縦線を、行の高さいっぱいに地で隠す（App.tsx の OrgHead）
+.ft-org-head-name {
+    display: inline-block;
+}
+
+// 隠しを名前の上の端からセルの上の線（上に別の名前の行があればその行の下の端）まで伸ばす。長さは App.tsx の placeHeadMasks が測って置く
+.ft-org-head-mask {
+    position: relative;
+
+    &::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 100%;
+        height: var(--ft-head-rise, 0px);
+        background: var(--ft-head-mask);
+        pointer-events: none;
+    }
+}
+
 .ft-table thead th.ft-org-head {
     text-align: center;
     vertical-align: middle;
@@ -835,12 +905,16 @@ tbody:where(:first-of-type) .ft-row-block:first-child {
     cursor: pointer;
 }
 
-/* 組織の名前は、その組織の行が見えているあいだ列の見出しの下に残す（top は App.tsx が見出しの高さを測って渡す） */
+/*
+ * 組織の名前は、その組織の行が見えているあいだ列の見出しの下に残す。止める位置（見出しの下の端）は scroll-margin-top に置き、App.tsx の stickOrgLabels が
+ * スクロールのたびに top で下げる（sticky の動きを写す）。sticky にすると、名前のセルが別の層になり、Desktop の拡大（ビジュアルごと端数の倍率で縮める）で
+ * セグメントの列の横線だけが画素の途中に描かれ、一番下の線が値の列より薄くにじんだ（2026-11-12。ハーネスで全体を 0.93 倍にして再現し、relative で消えた）
+ */
 .ft-org-label {
-    position: sticky;
-    // 左右に分けた表は、行に top を渡さず、測った見出しの下の端を表に置く（App.tsx）
+    position: relative;
+    // 左右に分けた表は、行に止める位置を渡さず、測った見出しの下の端を表に置く（App.tsx）
     // セルの上の余白（th.ft-org の padding-top）のぶん下げて、見出しの線に字が付かないようにする
-    top: calc(var(--ft-org-top, 0px) + var(--ft-row-pad, 0.15em) + 1px);
+    scroll-margin-top: calc(var(--ft-org-top, 0px) + var(--ft-row-pad, 0.15em) + 1px);
 }
 
 // 囲む親の名前。その親の名前が画面に見えていないあいだだけ、名前の上に小さく出す（App.tsx の placeOrgLabels）
@@ -849,6 +923,9 @@ tbody:where(:first-of-type) .ft-row-block:first-child {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    // 下の上に重ねた名前の隠し（.ft-org-head-mask の ::before）は、この行の所まで伸びる。字を隠しの上に描く
+    position: relative;
+    z-index: 1;
 }
 
 .ft-org-parents-text {
@@ -1240,9 +1317,9 @@ thead th.ft-dim {
     > th.ft-name, > td { border-bottom: 0; }
 }
 .ft-table .ft-row-end.ft-row-total {
-    > td { border-top: 1px solid var(--ft-line-total); padding-top: calc(var(--ft-row-pad, 0.15em) + 3px); }
+    > td { border-top: 1px solid var(--ft-line-total); padding-top: calc(var(--ft-row-pad, 0.15em) + 1.5px); padding-bottom: max(0px, calc(var(--ft-row-pad, 0.15em) - 1.5px)); }
     > th.ft-name, > td { border-bottom: 0; }
-    > th.ft-name { padding-top: calc(var(--ft-row-pad, 0.15em) + 4px); }
+    > th.ft-name { padding-top: calc(var(--ft-row-pad, 0.15em) + 2.5px); padding-bottom: max(0px, calc(var(--ft-row-pad, 0.15em) - 1.5px)); }
     .ft-name-line, .ft-box-line { display: block; height: 2px; border-top: 1px solid var(--ft-line-total); border-bottom: 1px solid var(--ft-line-total); }
 }
 // 表の最後の行が締めの行なら、締めの線は引かず、表の外枠で締める（外枠を消して締めの線に任せると、締めの線の無い左の列
@@ -1268,12 +1345,6 @@ thead th.ft-dim {
 .ft-bold-aggregates .ft-layout-table .ft-row-collapsed > td,
 .ft-bold-aggregates .ft-row-subtotal > td { font-weight: 600; }
 
-// 行別の書式（2.1.7.14 までは指標カード）で太字にした行：名前と数字を太字。「合計行を太字」を切った（ft-bold-name-off など）表でも太字（行ごとに選んだので）
-.ft-root tr.ft-row.ft-row-bold > :is(th, td),
-.ft-root tr.ft-row.ft-row-bold > td :is(div, .ft-sub) { font-weight: 600 !important; }
-// 行別の書式で「太字にしない」を選んだ計算行・指標の行：「合計行を太字」「集計の数字を太字」でも太字にしない
-.ft-root tr.ft-row.ft-row-plain > :is(th, td),
-.ft-root tr.ft-row.ft-row-plain > td :is(div, .ft-sub) { font-weight: 400 !important; }
 
 // 横積みでは新しく始まる親セルから右だけを区切り、継続中の上位セルを横断しない。
 .ft-layout-table .ft-row-hierarchy-start:not(:where(tbody:first-of-type) > :first-child) {
@@ -1308,6 +1379,15 @@ thead th.ft-dim {
 // 左上の列の見出し（「セグメント」「項目」）
 .ft-bold-segment-head .ft-table thead th.ft-org-head { font-weight: 600 !important; }
 .ft-bold-row-head .ft-corner-label { font-weight: 600 !important; }
+
+// 行別の書式（2.1.7.14 までは指標カード）で太字にした行：名前と数字を太字。「合計行を太字」を切った（ft-bold-name-off など）表でも太字（行ごとに選んだので）
+.ft-root tr.ft-row.ft-row-bold > :is(th, td),
+.ft-root tr.ft-row.ft-row-bold > td :is(div, .ft-sub) { font-weight: 600 !important; }
+// 表全体の太字（上の ft-bold-*。「数字をすべて太字」など）より後ろに置く。前に置いていたら、比較の数字の決まり（ft-bold-compare-on の
+// td.ft-value:not(.ft-col-main) > div:first-child）と強さが同じで後ろの方が勝ち、「太字にしない」の行の比較の数字が太字のまま残った（2.1.16.3、2026-11-12 ユーザー）
+// 行別の書式で「太字にしない」を選んだ計算行・指標の行：「合計行を太字」「集計の数字を太字」でも太字にしない
+.ft-root tr.ft-row.ft-row-plain > :is(th, td),
+.ft-root tr.ft-row.ft-row-plain > td :is(div, .ft-sub) { font-weight: 400 !important; }
 
 /*
  * 見出しの下の線と、行の名前の列と数字の列のあいだの縦線は、表に 1 本ずつ重ねて引く（App.tsx の HEAD_LINE・NAME_LINE）。
@@ -1453,6 +1533,17 @@ thead th.ft-dim {
  * 切るとセグメントの列どうしの境の縦線（右のセルの ft-edge-line。セルの外の左に引く）も切れるので、左のセルの右の枠線で引く（frozenLines.ts の orgEdges）
  */
 .ft-fl-hide { display: none !important; }
+// 表の一番下の線は、表の枠線でなく一番下に届くセルの下の枠線で引く（frozenLines.ts の tableBottom）
+.ft-table[data-fl-bottom] { border-bottom-width: 0 !important; }
+.ft-table[data-fl-bottom] .ft-fl-bottom { border-bottom: var(--ft-fl-bottom) !important; }
+// セグメントの列のセルは、下の枠線（太さは残す）を透明にし、th の背景の絵で引く（frozenLines.ts の tableBottom）
+.ft-table[data-fl-bottom] th.ft-org.ft-fl-bottom { border-bottom-color: transparent !important; }
+// 罫線の脇の帯の地を 1px 空ける（その 1px は th の地を帯の色にして埋める。frozenLines.ts の underLine）。帯の地が罫線に接すると、端数の倍率で画素に
+// そろえた帯の地が、2 画素にまたがった罫線の画素を塗り、その列だけ線が細く薄く見えた
+.ft-table tbody :is(th.ft-name > .ft-box, th.ft-org > .ft-seg-box).ft-fl-rise { background-clip: content-box !important; padding-top: 1px !important; }
+.ft-table[data-fl-bottom] th.ft-org.ft-fl-bottom > .ft-seg-box { background-clip: content-box !important; padding-bottom: 1px !important; }
+// 一番下の行は表の線が端から端まで続くので、外の段の帯の所で締めの線を消す部品（ft-fl-cover-bottom）は使わない（表の下へはみ出して灰色の帯になった）
+.ft-table[data-fl-bottom] .ft-fl-bottom > .ft-fl-cover-bottom { display: none; }
 .ft-fl-second { border-top-width: 0 !important; }
 .ft-fl-cover { top: calc(-1px - var(--ft-fl-bw, 0px)) !important; height: calc(var(--ft-fl-bw, 0px) + 2px) !important; bottom: auto !important; background-color: var(--ft-bg); }
 .ft-fl-cover-bottom { position: absolute; top: auto !important; bottom: calc(-1px - var(--ft-fl-bwb, 0px)) !important; height: calc(var(--ft-fl-bwb, 0px) + 3px) !important; background-color: var(--ft-bg); }

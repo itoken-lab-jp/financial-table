@@ -12,7 +12,7 @@
  * 見分けには区分の合計に足す科目だけを使う（損益の区分の残高フラグの科目・内訳は数えない）
  */
 import { Fact } from "./data";
-import { yearOf } from "./periods";
+import { realMonth, yearOf } from "./periods";
 import { AccountTraits } from "./rows";
 
 export type AmountSign = "auto" | "debit" | "credit" | "positive";
@@ -88,7 +88,7 @@ export function resolveSigns(
         add(sum);
         let byPart = parts.get(fact.event);
         if (!byPart) parts.set(fact.event, (byPart = new Map()));
-        const key = `${fact.org}\u0000${trait.stock ? "stock" : "flow"}\u0000${yearOf(fact.month)}`;
+        const key = `${fact.org}\u0000${trait.stock ? "stock" : "flow"}\u0000${yearOf(realMonth(fact.month))}`;
         let part = byPart.get(key);
         if (!part) byPart.set(key, (part = emptySums()));
         add(part);

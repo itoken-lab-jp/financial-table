@@ -23,7 +23,7 @@ import { htmlImage } from "./shared/htmlImage";
 import { fitsWholeImage } from "./shared/wholeImage";
 import { SCROLL_STARTS, useScrollStart } from "./shared/scrollStart";
 import { maxOf, minOf } from "./shared/minMax";
-import { OrgCell } from "./orgs";
+import { OrgCell, OrgHeadLine } from "./orgs";
 import { GridPosition, SpannedCell, VisibleRows, buildGrid, foldOf, isClearKey, isMenuKey, isSelectKey, moveInGrid, moveOf, positionOf } from "./keyboard";
 import { SelectTarget, cellActive, orgSelected, periodActive, plainCellActive, plainRowActive, rowActive, rowTarget as selectRow, targetKey, unselectableRowActive } from "./selection";
 import { Cell, EventMenu, SlotView, TableRow, TooltipItem, ViewModel, periodNameOf, tableUnitOf, textOn } from "./viewModel";
@@ -106,8 +106,20 @@ async function fullSheetImage(root: HTMLElement, sheet: HTMLElement, background:
             tr.removeAttribute("data-pin-stuck");
         }
         placeFrame(host, copy.querySelector<HTMLElement>(":scope > .ft-frame-lines"));
+        // 見出しの下の線は、画面の画素に丸めずに見出しの下の端に置く。画面の画素に丸めた位置のままだと、画像の描き方（htmlImage）が見出しの地と線を
+        // 別々に画像の画素へ丸め、Desktop で地と線のあいだに 1 画素の隙間ができ、1 行目の囲みの縦線がそこに飛び出して見えた（2026-11-13 ユーザー
+        // 「画像のほうここ飛び出してる」）
+        const headLine = copy.querySelector<HTMLElement>(":scope > .ft-frame-lines > .ft-frame-head");
+        const head = copy.querySelector<HTMLElement>(".ft-scroll .ft-freeze > table > thead");
+        if (headLine && head && !headLine.hidden) {
+            const delta = (head.getBoundingClientRect().bottom - headLine.getBoundingClientRect().top) / scale;
+            headLine.style.top = `${(parseFloat(headLine.style.top) || 0) + delta}px`;
+        }
         // 写しは表全体なので、親の名前はどれも親のブロックに写る。名前の上に重ねた親の名前は出さない
         for (const line of Array.from(copy.querySelectorAll(".ft-org-parents[data-shown]"))) line.removeAttribute("data-shown");
+        // セグメントの名前は、画面ではスクロールに合わせて下げている（stickOrgLabels の top）。写しはスクロールしないので、どの名前もブロックの頭に置く
+        // （下げたまま写すと、名前がブロックの頭からスクロールの分だけずれた。2026-11-13 ユーザー「画像コピーを見てみてよ。めちゃめちゃ狂ってる」）
+        for (const label of Array.from(copy.querySelectorAll<HTMLElement>("th.ft-org > .ft-org-label"))) label.style.top = "";
         const box = copy.getBoundingClientRect();
         if (!fitsWholeImage(box.width, box.height)) return undefined;
         return await htmlImage(copy, background, COPY_SKIP);
@@ -721,7 +733,9 @@ export function App({
             const band = table.closest(".ft-layout-split")?.querySelector<HTMLElement>(":scope > .ft-layout-label");
             if (!band?.querySelector(".ft-layout-unit")) continue;
             const style = getComputedStyle(band);
-            const required = Array.from(band.children).reduce((sum, e) => sum + e.getBoundingClientRect().width / scale, 0)
+            // 名前の枠（.ft-layout-name）は帯の残りいっぱいに伸びるので、中の名前の幅で測る（枠で測ると、帯の幅を足すたびに広がった）
+            const parts = Array.from(band.children).map((e) => (e.classList.contains("ft-layout-name") ? e.firstElementChild ?? e : e));
+            const required = parts.reduce((sum, e) => sum + e.getBoundingClientRect().width / scale, 0)
                 + parseFloat(style.columnGap) + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
             const pair = Array.from(table.parentElement?.querySelectorAll<HTMLTableElement>(":scope > table") ?? [table]);
             const current = pair.flatMap((t) => Array.from(t.querySelectorAll<HTMLTableColElement>("col"))).reduce((sum, col) =>
@@ -848,7 +862,10 @@ export function App({
     // 表が 1 つのときの外枠の上と左の線、見出しの下の線（placeFrame）。行の高さをそろえたあとに置く。内訳の下に残す小計も、ここで位置を測り直す
     React.useLayoutEffect(() => {
         const root = rootRef.current;
-        placeOrgLabels(root);
+        stickOrgLabels(root);
+        // 親の名前を出し入れすると名前の高さが変わり、セルの下の端で止める位置も変わる
+        if (placeOrgLabels(root)) stickOrgLabels(root);
+        placeHeadMasks(root);
         placeFrame(root, frameLines.current);
         // 外枠の線を置くと表が動くことがある（data-frame-top）ので、そのあとで測る
         if (root) measurePins(root.querySelector<HTMLElement>(":scope .ft-scroll"), layoutScale(root));
@@ -1038,7 +1055,9 @@ export function App({
                         const y = e.currentTarget.scrollTop > 0;
                         if (x !== scrolled.x || y !== scrolled.y) setScrolled({ x, y });
                         // 親の名前を先に置く（出し入れはまれで、ふだんはどちらも測るだけで、スクロールでレイアウトを計算し直さない）
-                        placeOrgLabels(rootRef.current);
+                        stickOrgLabels(rootRef.current);
+                        if (placeOrgLabels(rootRef.current)) stickOrgLabels(rootRef.current);
+                        placeHeadMasks(rootRef.current);
                         placeFrame(rootRef.current, frameLines.current);
                         // 表を動かしたら、見出しから離れた ▾ のメニューを閉じる
                         if (columnMenu) closeColumnMenu(false);
@@ -1509,7 +1528,8 @@ function FrameLabel({ header, unit, viewModel, selection = [], onSelect, onConte
     const active = header.row ? nameActive(header.row, selection) : plainRowActive(selection, header.org ?? null);
     return <div className={`ft-layout-label${active ? "" : " ft-dim"}`} tabIndex={0} data-cell={header.key}
         {...pickProps(picking, target, toggle ? { open: header.open!, toggle } : undefined)}>
-        <span className="ft-layout-title"><span className="ft-toggle-slot">{toggle && <Toggle open={header.open!} above={header.above} label={header.label} onClick={toggle} />}</span>{header.hideLabel ? "" : header.label}</span>
+        {/* 名前は、単位の手前までの枠（.ft-layout-name）の中で左に残す（visual.less）。枠を挟まないと、横に送ったとき名前が単位に重なった */}
+        <span className="ft-layout-name"><span className="ft-layout-title"><span className="ft-toggle-slot">{toggle && <Toggle open={header.open!} above={header.above} label={header.label} onClick={toggle} />}</span>{header.hideLabel ? "" : header.label}</span></span>
         {unit && <span className="ft-layout-unit">{unit}</span>}
     </div>;
 }
@@ -1555,6 +1575,12 @@ const EDGE_LINE = <span className="ft-edge-line" />;
  */
 function placeFrame(root: HTMLElement | null, lines: HTMLElement | null): void {
     if (!root || !lines) return;
+    // 表が 2 つ以上になった箱（分割に切り替えたなど。箱の要素はそのまま使われる）から、表が 1 つのときの印を外す。残すと、重ねた部品は
+    // 隠したまま見出しの線と行の名前の縦線を隠す規則だけが効き、線が消えた（2026-11-24 ユーザー「行ヘッダまわりの罫線もおかしい」）
+    for (const stale of Array.from(root.querySelectorAll<HTMLElement>(".ft-scroll.ft-layout-scroll:not([data-single]):is([data-frame-top], [data-frame-split])"))) {
+        stale.removeAttribute("data-frame-top");
+        stale.removeAttribute("data-frame-split");
+    }
     const box = root.querySelector<HTMLElement>(".ft-scroll.ft-layout-scroll[data-single]");
     const tables = box ? Array.from(box.querySelectorAll<HTMLTableElement>(".ft-freeze > table")) : [];
     const top = tables.some((t) => t.hasAttribute("data-touch-top"));
@@ -1633,16 +1659,48 @@ function placeFrame(root: HTMLElement | null, lines: HTMLElement | null): void {
 }
 
 /**
+ * 組織の名前（.ft-org-label）を、sticky と同じに、スクロールの箱の上の端から止める位置（scroll-margin-top）の所に残す。名前は自分のセルの中身の
+ * 下の端より下へは行かない。sticky をやめた理由は visual.less の .ft-org-label。先に全部を測ってから書く
+ */
+function stickOrgLabels(root: HTMLElement | null): void {
+    if (!root) return;
+    const labels = Array.from(root.querySelectorAll<HTMLElement>(".ft-scroll th.ft-org > .ft-org-label"));
+    if (!labels.length) return;
+    const scale = layoutScale(root);
+    const ports = new Map<HTMLElement, number>();
+    const writes = labels.map((label): [HTMLElement, string] => {
+        const scroller = label.closest<HTMLElement>(".ft-scroll");
+        const th = label.parentElement!;
+        if (!scroller) return [label, ""];
+        let port = ports.get(scroller);
+        if (port === undefined) {
+            port = scroller.getBoundingClientRect().top + scroller.clientTop * scale;
+            ports.set(scroller, port);
+        }
+        const shift = parseFloat(label.style.top) || 0;
+        const rect = label.getBoundingClientRect();
+        const top = rect.top - shift * scale;
+        const bottom = rect.bottom - shift * scale;
+        const cs = getComputedStyle(th);
+        const floor = th.getBoundingClientRect().bottom - ((parseFloat(cs.borderBottomWidth) || 0) + (parseFloat(cs.paddingBottom) || 0)) * scale;
+        const stick = parseFloat(getComputedStyle(label).scrollMarginTop) || 0;
+        const want = Math.max(0, Math.min((port + stick * scale - top) / scale, (floor - bottom) / scale));
+        return [label, want > 0 ? `${want}px` : ""];
+    });
+    for (const [label, top] of writes) if (label.style.top !== top) label.style.top = top;
+}
+
+/**
  * 囲む親の名前（.ft-org-parents、親ごとに 1 行）を、その親の名前（親の計のセルや、上に重ねた名前の行。data-org-key）が画面に見えていないあいだ、
  * 子のブロックの名前の上に出す（行に data-shown。visual.less）。スクロールの一番上でも、2 つ目より後ろのブロックでも同じ（2026-10-24 ユーザー
  * 「合計のラベルが１画面に出てるんだったら合計ラベルいらない」）。出した行の数だけ名前が高くなるので、セルの残りに入るときだけ出す
  * （入らないのに出すと、セルの中身が行より高くなって行の高さが変わる）。
  * スクロールのたびに呼ぶので、先に全部を測ってから書く（測ると書くを交互にすると、名前ごとにレイアウトを計算し直して重かった）
  */
-function placeOrgLabels(root: HTMLElement | null): void {
-    if (!root) return;
+function placeOrgLabels(root: HTMLElement | null): boolean {
+    if (!root) return false;
     const tables = Array.from(root.querySelectorAll<HTMLTableElement>(".ft-scroll table")).filter((t) => t.querySelector(":scope > tbody .ft-org-parents"));
-    if (!tables.length) return;
+    if (!tables.length) return false;
     const scale = layoutScale(root);
     const writes: Array<[HTMLElement, boolean]> = [];
     for (const table of tables) {
@@ -1671,7 +1729,38 @@ function placeOrgLabels(root: HTMLElement | null): void {
             lines.forEach((line, i) => writes.push([line, want[i] && fits]));
         }
     }
-    for (const [line, on] of writes) if (line.hasAttribute("data-shown") !== on) line.toggleAttribute("data-shown", on);
+    let changed = false;
+    for (const [line, on] of writes) {
+        if (line.hasAttribute("data-shown") === on) continue;
+        line.toggleAttribute("data-shown", on);
+        changed = true;
+    }
+    return changed;
+}
+
+/**
+ * 上に重ねた親の名前の隠し（.ft-org-head-mask）を、名前の上の端からセルの上の線まで（上に別の名前の行があればその行の下の端まで）伸ばす
+ * 長さ（--ft-head-rise）。隠しが名前の字の高さだけだと、セルの上の余白に内側の箱の縦線が残り、つなぎの横線の下へ 2〜3 画素はみ出して見えた
+ * （2026-11-12。倍率 100% でも出た）。名前は sticky で動くので、スクロールのたびに測り直す。先に全部を測ってから書く
+ */
+function placeHeadMasks(root: HTMLElement | null): void {
+    if (!root) return;
+    const masks = Array.from(root.querySelectorAll<HTMLElement>("th.ft-org .ft-org-head-mask"));
+    if (!masks.length) return;
+    const scale = layoutScale(root);
+    const writes = masks.map((mask) => {
+        const th = mask.closest<HTMLElement>("th")!;
+        // 上の小さい親の名前（合計など）の所も隠す（字は隠しの上に描く。visual.less の .ft-org-parents）。そこで止めると、内側の箱の縦線が
+        // 「合計」の横に残った（2026-11-12 Desktop）。上に重ねた別の名前の行では止める（その字を隠さない）
+        let prev = mask.closest(".ft-org-line")?.previousElementSibling ?? null;
+        while (prev && (prev.getBoundingClientRect().height === 0 || prev.classList.contains("ft-org-parents"))) prev = prev.previousElementSibling;
+        // セルの上の線までなら、線の下の 1 画素を空ける。端数の倍率で線は 2 画素にまたがり、画素にそろえた隠しの地が下の画素を塗って、セグメントの
+        // 列だけ線が細く見えた（2026-11-12。名前を sticky でなくしてから出た。sticky の名前は別の層で、線の上に重ならなかった）
+        const gap = 1 / ((window.devicePixelRatio || 1) * scale);
+        const top = prev ? prev.getBoundingClientRect().bottom : th.getBoundingClientRect().top + ((parseFloat(getComputedStyle(th).borderTopWidth) || 0) + gap) * scale;
+        return [mask, `${Math.max(0, (mask.getBoundingClientRect().top - top) / scale)}px`] as const;
+    });
+    for (const [mask, rise] of writes) if (mask.style.getPropertyValue("--ft-head-rise") !== rise) mask.style.setProperty("--ft-head-rise", rise);
 }
 
 /**
@@ -1991,6 +2080,10 @@ function OrgHead({
     const target: SelectTarget | null = cell.path !== null ? { kind: "org", path: cell.path } : null;
     const selected = orgSelected(picking.selection, cell.path);
     const depth = cell.depth ?? 0;
+    // 囲みなしの段（囲みの親の中で囲みなしにしたノードと、自分が囲みなしのセル）は、自分の塗りを持たず外の親の色で塗る。左の辺と字下げは囲みと同じ
+    const insideBox = (cell.rails ?? []).some((d) => !(cell.plainRails ?? []).includes(d));
+    const plainAt = (d: number): boolean => (cell.plainRails ?? []).includes(d) || (!!cell.plain && d === depth);
+    const paintAt = (d: number): string | undefined => (!fill || d < 0 ? undefined : plainAt(d) ? paintAt(d - 1) : fill[Math.min(d, fill.length - 1)]);
     // ブロックの切れ目の横線は、上のブロックと共通する一番近い親の縦線から引く
     return (
         <th
@@ -2009,37 +2102,45 @@ function OrgHead({
               入れ子の箱：囲む親の段ごとに 1 段の幅の帯（親の箱の左の部分）、自分の段から右は名前の所。
               帯は親の箱がこのブロックで始まれば上の辺、終われば下の辺を引く。名前の所は左と上の辺（次のブロックが深ければ下の辺も）
             */}
-            {/* 囲みなしは塗りと帯を引かず、ブロックの切れ目の横線だけ引く */}
+            {/*
+              囲みなしは自分の塗りを持たない。囲みの親の中では左の辺と字下げを囲みと同じにして、外の親の囲みの線を途切れさせない（1 つだけ囲みなしにした
+              ノード（東日本本部）のセルで合計の囲みが途切れ、開くと子が親と同じ字下げで並んだ。2026-11-12 ユーザー）。囲みの親が無ければ、箱を引かず
+              ブロックの切れ目の横線だけ引く
+            */}
             <NestedBox
                 // ブロックの境目の横線は下のブロックだけが引く。帯の上の辺は、親の箱がこのブロックで始まる所だけ
-                strips={cell.plain ? [] : (cell.rails ?? []).map((d) => ({ level: d, topLine: cell.boxStart?.includes(d) ?? false }))}
+                strips={(cell.rails ?? []).map((d) => ({ level: d, topLine: cell.boxStart?.includes(d) ?? false }))}
                 depth={depth}
                 // 帯が上から続いてくる所（小計が下の親の小計）は、帯の幅に横線を引かない
-                ownStripTop={cell.plain || !cell.ownAbove}
-                colorOf={fill && !cell.plain ? (d) => fill[Math.min(d, fill.length - 1)] : null}
+                ownStripTop={(!!cell.plain && !insideBox) || !cell.ownAbove}
+                own={!cell.plain || insideBox}
+                edgeless={cell.edgeless}
+                colorOf={fill ? (d) => paintAt(d) ?? "var(--ft-bg)" : null}
                 indent={SEGMENT_INDENT_EM}
                 border={1}
-                // 囲みなしは段が 0 なので、左の縦線も引かない（NestedBox は 0 段の左の辺を引かない）
                 className="ft-seg-box"
             />
-            <div className="ft-org-label" style={top ? { top } : undefined}>
+            {/* 止める位置（見出しの下の端）。top は stickOrgLabels がスクロールに合わせて置く（React は触らない） */}
+            <div className="ft-org-label" style={top ? { scrollMarginTop: top } : undefined}>
                 {/* 囲む親の名前。その親の名前が画面に見えていないあいだだけ出す（placeOrgLabels が行に data-shown を付ける） */}
                 {/* 上に重ねて出す親（heads）は、もう名前の上にあるので除く */}
                 {/*
                   親ごとに 1 行。1 行に「合計 › 第一事業部」と並べると、列の幅で近い親が切れた。字の左は自分の名前の字にそろえる（同じ字下げと、
                   開き閉じのしるしの幅）。親の段ごとに字下げすると、内側の親の帯の縦線が外の親の名前の字を横切った（2026-10-24 Desktop）
                 */}
-                {cell.parents?.map((parent) => !cell.heads?.some((head) => head.key === parent.key) && (
-                    <div key={parent.key} className="ft-org-parents" data-parent-key={parent.key} style={{ paddingLeft: `${depth * SEGMENT_INDENT_EM}em` }}>
-                        <span className="ft-toggle-slot" /><span className="ft-org-parents-text">{parent.label}</span>
+                {/*
+                  小さく出す親の名前と上に重ねる名前は、外の親から順に交ぜて並べる。小さく出す名前を全部先に並べると、本部だけ小計なしの 3 段で、
+                  内の親（第一事業部）が上に重ねた外の親（東日本本部）より上に出た（2026-11-12 ユーザー）。
+                  上に重ねる名前は parents（外から順）の同じ印の所に置き、parents に無いものは最後（自分の名前の上）に置く
+                */}
+                {[
+                    ...(cell.parents ?? []).map((parent) => cell.heads?.find((head) => head.key === parent.key) ?? parent),
+                    ...(cell.heads ?? []).filter((head) => !cell.parents?.some((parent) => parent.key === head.key)),
+                ].map((line) => ("depth" in line ? orgHead(line) : (
+                    <div key={line.key} className="ft-org-parents" data-parent-key={line.key} style={{ paddingLeft: `${depth * SEGMENT_INDENT_EM}em` }}>
+                        <span className="ft-toggle-slot" /><span className="ft-org-parents-text">{line.label}</span>
                     </div>
-                ))}
-                {cell.heads?.map((head) => (
-                    <div key={head.path ?? ""} className="ft-org-line" data-org-key={head.key} style={{ paddingLeft: `${head.depth * SEGMENT_INDENT_EM}em` }}>
-                        <span className="ft-toggle-slot">{head.toggle && onToggle && <Toggle open={head.toggle.open} label={head.label} onClick={() => onToggle(head.toggle!.path)} />}</span>
-                        {head.label}
-                    </div>
-                ))}
+                )))}
                 <div className="ft-org-line" data-org-key={cell.labelKey} style={{ paddingLeft: `${depth * SEGMENT_INDENT_EM}em` }}>
                     {/* 計を中身の下に置いたとき（子のブロックが上）は、開いたしるしを上向きにする（行の小計を下に置いたときと同じ） */}
                     <span className="ft-toggle-slot">{toggle && <Toggle open={toggle.open} above={!!cell.ownAbove} label={cell.label} onClick={() => onToggle!(toggle.path)} />}</span>
@@ -2048,6 +2149,26 @@ function OrgHead({
             </div>
         </th>
     );
+
+    /*
+      上に重ねる親の名前は、自分より内側の箱（同じ行で始まる）の縦線を、しるしと字の所だけその段の箱の地で隠す。隠さないと、囲み・小計なしの
+      3 段で本部の名前に事業部の箱の縦線がかかった（「東｜日本本部」。2026-10-29 Desktop）
+    */
+    function orgHead(head: OrgHeadLine): React.JSX.Element {
+        const color = paintAt(head.depth) ?? "var(--ft-bg)";
+        // 隠しは名前の上のセルの余白まで伸ばす（placeHeadMasks が --ft-head-rise を置く。visual.less の .ft-org-head-mask）
+        const mask = !cell.plain && head.depth < depth ? { background: color, ["--ft-head-mask" as string]: color } : undefined;
+        // 隠すのはしるしと字の両方。字の所だけにすると、しるしと字のあいだを内側の箱の縦線が通って「▾｜東日本本部」になった（2026-11-12 ユーザー）。
+        // しるしと名前は、同じ囲みの内側にそろえる
+        return (
+            <div key={head.path ?? ""} className="ft-org-line" data-org-key={head.key} style={{ paddingLeft: `${head.depth * SEGMENT_INDENT_EM}em` }}>
+                <span className={`ft-org-head-name${mask ? " ft-org-head-mask" : ""}`} style={mask}>
+                    <span className="ft-toggle-slot">{head.toggle && onToggle && <Toggle open={head.toggle.open} label={head.label} onClick={() => onToggle(head.toggle!.path)} />}</span>
+                    {head.label}
+                </span>
+            </div>
+        );
+    }
 }
 
 /** セグメントの字下げの幅（em）。段ごとの縦線は、その段の名前の開き閉じのしるしの下に引く */
@@ -2125,6 +2246,8 @@ function NestedBox({
     ownStripTop,
     colorOf,
     ownColor,
+    own = true,
+    edgeless,
     indent,
     border,
     className,
@@ -2135,25 +2258,35 @@ function NestedBox({
     colorOf: ((level: number) => string) | null;
     /** 自分の段の塗りを段の色でなくこの色にする（塗りがあるときだけ） */
     ownColor?: string;
+    /** 自分の箱（名前の所の塗りと左の辺）を引くか。囲みなしは引かず、外の親の帯の塗りがそのまま右の端まで続く */
+    own?: boolean;
+    /** 左の辺を引かない段（囲みなしの親のすぐ下の子の段） */
+    edgeless?: number[];
     indent: number;
     border: number;
     className: string;
 }): React.JSX.Element {
     const at = (level: number) => `${level * indent}em`;
     const paint = (level: number) => (colorOf ? colorOf(level) : undefined);
-    const edge = (level: number): React.CSSProperties => (level === 0 ? { borderLeftStyle: "none" } : {});
+    const edge = (level: number): React.CSSProperties => (level === 0 || edgeless?.includes(level) ? { borderLeftStyle: "none" } : {});
+    // ブロックの境の横線の左の端。左の辺を引かない段（囲みなしの親のすぐ下の子）から始まるときは、外側に実際に引かれている一番近い縦線の段まで
+    // 伸ばしてつなげる。字下げの位置から始めると、横線が外の縦線（合計の囲みの線）から離れて浮いて見えた（2026-11-13 ユーザー「囲みなしの小計ありの
+    // ときってこの線の形正しいんだっけ？」）。段全体を囲みなしにした形（境の横線が左端から引かれる）と見え方をそろえる
+    let lineFrom = ownStripTop ? depth : depth + 1;
+    while (lineFrom > 0 && edgeless?.includes(lineFrom)) lineFrom--;
     return (
         <>
             {strips.map((strip) => (
                 <span key={strip.level} className={className} style={{ left: at(strip.level), right: 0, top: 0, background: paint(strip.level), ...edge(strip.level) }} />
             ))}
-            <span className={className} style={{ left: at(depth), right: 0, top: 0, background: colorOf && ownColor ? ownColor : paint(depth), ...edge(depth) }} />
+            {own && <span className={className} style={{ left: at(depth), right: 0, top: 0, background: colorOf && ownColor ? ownColor : paint(depth), ...edge(depth) }} />}
             {/*
               上の行から続く帯は、帯の幅だけ 1px 上へ重ねて塗る（行の境目が小数の px だと、白い横線が透けた）。上の行のその幅は同じ箱の同じ色なので
               にじまない
             */}
             {strips
-                .filter((strip) => !strip.topLine)
+                // 横線を伸ばした所（lineFrom から右）は、上から続く帯でも上の辺を消さない
+                .filter((strip) => !strip.topLine && strip.level < lineFrom)
                 .map((strip) => (
                     <span
                         key={`p${strip.level}`}
@@ -2161,15 +2294,15 @@ function NestedBox({
                         style={{ left: at(strip.level), width: `${indent}em`, top: -1, height: border + 2, bottom: "auto", background: paint(strip.level), ...edge(strip.level) }}
                     />
                 ))}
-            {!ownStripTop && (
+            {own && !ownStripTop && depth < lineFrom && (
                 <span className={className} style={{ left: at(depth), width: `${indent}em`, top: -1, height: border + 2, bottom: "auto", background: paint(depth), ...edge(depth) }} />
             )}
             {strips
-                .filter((strip) => strip.topLine)
+                .filter((strip) => strip.topLine && strip.level < lineFrom)
                 .map((strip) => (
                     <span key={`l${strip.level}`} className={`${className}-line`} style={{ left: at(strip.level), width: `${indent}em`, top: 0 }} />
                 ))}
-            <span className={`${className}-line`} style={{ left: at(ownStripTop ? depth : depth + 1), right: 0, top: 0 }} />
+            <span className={`${className}-line`} style={{ left: at(lineFrom), right: 0, top: 0 }} />
         </>
     );
 }

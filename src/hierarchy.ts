@@ -1,5 +1,5 @@
 import { maxOf, minOf } from "./shared/minMax";
-import { INDICATOR_KEY } from "./data";
+import { INDICATOR_KEY, isIndicatorLevel } from "./data";
 import { UNDER_KEY } from "./picks";
 import { TOTAL_KEY, type DisplayRow, type RowModel } from "./rows";
 import type { TableRow } from "./viewModel";
@@ -29,7 +29,10 @@ export function accountTree(model: RowModel, stepParents = true): AccountTree {
         };
         // 科目・指標の行の子はうち（rows.ts）なので、いつも親の下に続ける（集計の行として下に回さない）
         // 小計をうちにした行（UNDER_KEY）の子は、元の小計の中身なので子にする（開き閉じできる）
-        attach(def.children, def.type === "detail" || (def.type === "breakdown" && !def.code.startsWith(UNDER_KEY)) || def.type === "measure" ? node.following : node.children);
+        // 指標の行の下の「行」の階層（rows.ts の emitLevels）は子にする（開き閉じできる）
+        const levels = def.type === "measure" ? def.children.filter(isIndicatorLevel) : [];
+        attach(levels, node.children);
+        attach(def.children.filter(code => !levels.includes(code)), def.type === "detail" || (def.type === "breakdown" && !def.code.startsWith(UNDER_KEY)) || def.type === "measure" ? node.following : node.children);
         // 合計行のうち（見る人が区分をうちにした行）は子にする（合計行の囲みの設定が、うちの行に効く）
         // 見る人がうちにした行（科目・小計）は子と同じ扱い（親の囲みと展開時の合計の位置が効く）。
         // 書式ペインで指標を「行のうち」に置いた行は、いつも親の下に続ける
@@ -113,53 +116,12 @@ export function compactOrgBoxes(plan: LayoutPlan): LayoutPlan {
     return pure === plan ? compactOrgMixed(plan) : pure;
 }
 
+/**
+ * 横積みだけのセグメントは段ごとの列に並べる。囲み・囲みなしは compactOrgMixed に任せる（以前は一番上の段の形だけを見てまとめ、途中の段の
+ * 「囲みなし」を囲みとして描いていた。2026-10-29）
+ */
 function compactOrgPure(plan: LayoutPlan): LayoutPlan {
-    if (plan.kind === "frame" && plan.style === "columns") return compactOrgColumns(plan);
-    const compatible = (p: LayoutPlan): boolean => p.kind === "table" || (p.kind === "stack" ? !p.preserveTables && p.direction === "vertical" && p.children.every(compatible)
-        : p.header.kind === "org" && (p.style === "box" || p.style === "plain" || p.key.endsWith(":total")) && compatible(p.content));
-    // 囲みと囲みなしのセグメントは 1 つの表にまとめる（囲みなしは箱の塗りと線を引かないだけ）
-    if (plan.kind !== "frame" || plan.header.kind !== "org" || (plan.style !== "box" && plan.style !== "plain") || !compatible(plan)) return plan;
-    const rows: TableRow[] = [];
-    const cells = new Map<string, OrgCell>();
-    let orgHeader: LayoutHeader | undefined;
-    const hasOrgFrame = (p: LayoutPlan): boolean => p.kind === "frame" || (p.kind === "stack" && p.children.some(hasOrgFrame));
-    // names：囲む親（rails の段）の名前。親の名前が画面に見えていないあいだ、名前の上に小さく出す（App.tsx の placeOrgLabels）
-    const visit = (p: LayoutPlan, depth: number, rails: number[], names: OrgParent[]): void => {
-        if (p.kind === "table") { rows.push(...p.rows); return; }
-        if (p.kind === "stack") { p.children.forEach(c => visit(c, depth, rails, names)); return; }
-        const start = rows.length;
-        const parent = hasOrgFrame(p.content);
-        const root = p.header.org === null && parent;
-        const hasTotal = (q: LayoutPlan): boolean => q.kind === "stack" && q.children.some(c =>
-            c.kind === "frame" && c.header.key === `${p.header.key}:total`);
-        const enclosing = parent && (!root || hasTotal(p.content));
-        visit(p.content, enclosing ? depth + 1 : depth, enclosing ? [...rails, depth] : rails, enclosing ? [...names, { key: p.header.key, label: p.header.label }] : names);
-        if (rows.length === start) return;
-        const toggle = p.header.fold !== undefined ? { path: p.header.fold, open: p.header.open! } : null;
-        if (!parent) {
-            const cell: OrgCell = { label: p.header.label, labelKey: p.header.key, path: p.header.org ?? null, column: 0, colSpan: 1,
-                rowSpan: rows.length - start, toggle, total: p.key.endsWith(":total"),
-                // 囲みなしは字下げも箱もしない（科目の囲みなしと同じ平らな名前の列）
-                ...(plan.style === "plain" ? { depth: 0, rails: [], plain: true } : { depth, rails, parents: names }) };
-            rows[start] = { ...rows[start], orgCells: [cell] };
-            cells.set(p.header.key, cell);
-        } else {
-            const total = cells.get(`${p.header.key}:total`);
-            if (total) {
-                total.toggle = toggle; total.label = p.header.label; total.labelKey = p.header.key; total.depth = plan.style === "plain" ? 0 : depth; total.rails = plan.style === "plain" ? [] : rails;
-                total.parents = plan.style === "plain" ? undefined : names;
-                total.ownAbove = rows[start].orgCells?.[0] !== total;
-            }
-            else if (root) orgHeader = p.header;
-            else {
-                const first = rows[start].orgCells?.[0];
-                if (first) first.heads = [{ label: p.header.label, key: p.header.key, path: p.header.org ?? null, depth: plan.style === "plain" ? 0 : depth, toggle }, ...(first.heads ?? [])];
-            }
-        }
-    };
-    visit(plan, 0, [], []);
-    const nameColumns = Math.max(1, maxOf(rows.map(r => (r.nameColumn ?? 0) + (r.nameSpan ?? 1))));
-    return { kind: "table", key: plan.key, rows: rows.map(r => ({ ...r, nameSpan: nameColumns - (r.nameColumn ?? 0) })), nameColumns, orgColumns: 1, orgHeader };
+    return plan.kind === "frame" && plan.style === "columns" ? compactOrgColumns(plan) : plan;
 }
 
 function compactOrgColumns(plan: LayoutPlan): LayoutPlan {
@@ -216,9 +178,11 @@ function compactOrgMixed(plan: LayoutPlan): LayoutPlan {
         rows[start] = { ...rows[start], orgCells: [cell, ...(rows[start].orgCells ?? [])] };
     };
     // names：同じ列の中で囲む親（rails の段）の名前（compactOrgPure と同じ）。横積みの段は自分の列に名前があるので、次の列では空から
-    const visit = (p: LayoutPlan, column: number, depth: number, rails: number[], names: OrgParent[]): void => {
+    // plains：rails のうち囲みなしの段（自分の塗りを持たず、外の親の塗りのまま。左の辺と字下げは囲みと同じ）
+    // edgeless：囲みの左の辺を引かない段（囲みなしの親のすぐ下の子の段）
+    const visit = (p: LayoutPlan, column: number, depth: number, rails: number[], names: OrgParent[], plains: number[] = [], edgeless: number[] = []): void => {
         if (p.kind === "table") { rows.push(...p.rows.map(r => ({ ...r }))); return; }
-        if (p.kind === "stack") { p.children.forEach(c => visit(c, column, depth, rails, names)); return; }
+        if (p.kind === "stack") { p.children.forEach(c => visit(c, column, depth, rails, names, plains, edgeless)); return; }
         const start = rows.length;
         // 計の表の枠（:total）は囲みなしの形で届くが、塗りと線は親の形で決める（下の Object.assign）。ここで囲みなしにすると、合計を下に置いたとき
         // 合計のセルだけ箱が切れた（2026-10-21 ユーザー「本部合計を下にしたときに囲みが区切られちゃってる」）
@@ -226,7 +190,7 @@ function compactOrgMixed(plan: LayoutPlan): LayoutPlan {
         if (p.style === "columns" && !p.key.endsWith(":total")) {
             // 全社の合計を出さない根（名前を隠した根）は列を持たない
             if (p.header.hideLabel && p.header.org === null) { visit(p.content, column, depth, rails, names); return; }
-            visit(p.content, column + 1, 0, [], []);
+            visit(p.content, column + 1, 0, [], [], []);
             if (rows.length === start) return;
             place({ identity: `${p.header.key}:${column}`, label: p.header.label, labelKey: p.header.key, path: p.header.org ?? null, column, colSpan: 1,
                 rowSpan: rows.length - start, toggle: toggleOf(p), total: false, depth, rails, parents: names }, start);
@@ -235,28 +199,38 @@ function compactOrgMixed(plan: LayoutPlan): LayoutPlan {
         const parent = hasOrgFrame(p.content);
         const root = p.header.org === null && parent;
         const hasTotal = (q: LayoutPlan): boolean => q.kind === "stack" && q.children.some(c => c.kind === "frame" && c.header.key === `${p.header.key}:total`);
-        const enclosing = parent && !plain && (!root || hasTotal(p.content));
-        visit(p.content, column, enclosing ? depth + 1 : depth, enclosing ? [...rails, depth] : rails, enclosing ? [...names, { key: p.header.key, label: p.header.label }] : names);
+        // 囲みの親の中で囲みなしにしたノード（東日本本部だけ囲みなし）も、子を一段内側に入れ、左の辺を引く（塗りだけ外の親のまま）。囲まないと、子（第一事業部）が
+        // 親と同じ字下げで並び、合計の囲みの左の辺も東日本本部の所で途切れた（2026-11-12 ユーザー）。外に囲みの親が無い囲みなし（全体を囲みなし）は今までどおり囲まない
+        const insideBox = rails.some(r => !plains.includes(r));
+        const enclosing = parent && (!plain || insideBox) && (!root || hasTotal(p.content));
+        const nextPlains = enclosing && plain ? [...plains, depth] : plains;
+        // 囲みなしの親の下の子は、子の数にかかわらず囲みの左の辺を引かない（子どうしの境の横線と字下げは残す）。子が 1 つなら親と同じ行をなぞる
+        // だけで、2 つ以上でも境は横線と字下げで分かる（2026-11-12 ユーザー「これ縦線必要？第一事業部の左」「ここの縦線が必要なのかどうなのか」）
+        const nextEdgeless = enclosing && plain ? [...edgeless, depth + 1] : edgeless;
+        visit(p.content, column, enclosing ? depth + 1 : depth, enclosing ? [...rails, depth] : rails, enclosing ? [...names, { key: p.header.key, label: p.header.label }] : names, nextPlains, nextEdgeless);
         if (rows.length === start) return;
         if (!parent) {
+            // 囲みなしの段（ノードの上書きで 1 つだけ囲みなしにしたものも）は、自分の箱を引かないだけで、外の親の帯と字下げは残す。段 0・帯なしに
+            // すると、外が囲みのとき（東日本本部だけ囲みなし）、そのセルだけ合計の帯が切れて境の線が左にずれ、▾ が囲みの外に出た（2026-11-12 ユーザー）
             const cell: OrgCell = { label: p.header.label, labelKey: p.header.key, path: p.header.org ?? null, column, colSpan: 1, rowSpan: rows.length - start, toggle: toggleOf(p),
-                total: p.key.endsWith(":total"), ...(plain ? { depth: 0, rails: [], plain: true } : { depth, rails, parents: names }) };
+                total: p.key.endsWith(":total"), depth, rails, parents: names, ...(plain ? { plain: true } : {}), ...(plains.length ? { plainRails: plains } : {}), ...(edgeless.length ? { edgeless } : {}) };
             place(cell, start);
             cells.set(p.header.key, cell);
             return;
         }
         const total = cells.get(`${p.header.key}:total`);
         if (total) {
-            Object.assign(total, { toggle: toggleOf(p), label: p.header.label, labelKey: p.header.key, depth: plain ? 0 : depth, rails: plain ? [] : rails, parents: plain ? undefined : names,
-                ownAbove: !rows[start].orgCells?.includes(total) });
+            Object.assign(total, { toggle: toggleOf(p), label: p.header.label, labelKey: p.header.key, depth, rails, parents: names,
+                ownAbove: !rows[start].orgCells?.includes(total), ...(plains.length ? { plainRails: plains } : {}), ...(edgeless.length ? { edgeless } : {}) });
             if (plain) total.plain = true;
         } else if (root && column === 0) orgHeader = p.header;
         else {
             const first = rows[start].orgCells?.find(c => c.column === column);
-            if (first) first.heads = [{ label: p.header.label, key: p.header.key, path: p.header.org ?? null, depth: plain ? 0 : depth, toggle: toggleOf(p) }, ...(first.heads ?? [])];
+            if (first) first.heads = [{ label: p.header.label, key: p.header.key, path: p.header.org ?? null, depth, toggle: toggleOf(p) }, ...(first.heads ?? [])];
         }
     };
     visit(plan, 0, 0, [], []);
+    markBoxStarts(rows);
     const orgColumns = Math.max(1, maxOf(all.map(c => c.column + 1)));
     // 右に子の列が無いセル（囲みの葉・計）は残りの列まで伸ばす。数値の列がずれないように
     for (const row of rows) for (const cell of row.orgCells ?? []) {
@@ -264,6 +238,24 @@ function compactOrgMixed(plan: LayoutPlan): LayoutPlan {
     }
     const nameColumns = Math.max(1, maxOf(rows.map(r => (r.nameColumn ?? 0) + (r.nameSpan ?? 1))));
     return { kind: "table", key: plan.key, rows: rows.map(r => ({ ...r, nameSpan: nameColumns - (r.nameColumn ?? 0) })), nameColumns, orgColumns, orgHeader };
+}
+
+/**
+ * 囲む親の段のうち、箱がこのブロックで始まる段（boxStart）。帯の上の辺を引く（App.tsx の NestedBox）。列ごとに上のブロックと比べ、その段で囲む
+ * 箱（段が自分の段なら自分。計のブロックは親そのもの）が違えば始まる。付けていなかったので、帯の上の辺がどこにも引かれず、第一事業部の計の下に
+ * 第二事業部の最初の子が続く所で、事業部の段の線が欠けて 2 つの事業部の箱がつながって見えた（2026-10-29 ユーザー）
+ */
+function markBoxStarts(rows: TableRow[]): void {
+    const boxAt = (cell: OrgCell, d: number) => {
+        const depth = cell.depth ?? 0;
+        return d < depth ? cell.parents?.[d]?.key : d === depth ? cell.labelKey : undefined;
+    };
+    const above = new Map<number, OrgCell>();
+    for (const row of rows) for (const cell of row.orgCells ?? []) {
+        const previous = above.get(cell.column);
+        cell.boxStart = (cell.rails ?? []).filter(d => !previous || boxAt(previous, d) !== boxAt(cell, d));
+        above.set(cell.column, cell);
+    }
 }
 
 export function accountPlan(

@@ -8,7 +8,9 @@
  * 葉（指標だけが科目ごとに届いた葉）の科目は受け取らない（1 つのファクトに単位の列を持つ形で、量の科目が空の行として出ないように）。同じ科目の定義が食い違うと別の葉で届く。最初の定義を使い、食い違えば知らせる。
  *
  * 指標は、いつも組織 × イベント × 月の小計を読む。科目とつながらないファクトの人数も、科目を外した値で正しく届く。小計は宣言の既定で切ってあり、指標があるときだけ
- * ビジュアルが科目の最初の段の小計を入れる設定を保存する。ほかの段の小計の節点は読まない。
+ * ビジュアルが科目の最初の段の小計を入れる設定を保存する。書式ペインで「行の階層」を出すにした指標があれば、その指標の値を行の段ごとにも読む：
+ * 行の葉の値（行ごとの値）と、科目の 2 段目から下の段の小計の節点（区分ごと・中分類ごとの値）。どれも Power BI が計算した値のまま
+ * 使う（子を足さない。平均や率のメジャーが合うように）。2 段目から下の段の小計は、その指標があるときだけビジュアルが入れる設定を保存する。
  *
  * 続きの読み込みは 1 回分ずつ届く（fetchMoreData(false)）。1 回分ずつ readInput で読み、mergeInput で足し合わせる。続きの回は前の回と
  * 少し重なって届く（Microsoft の fetchMoreData の説明。table・categorical の lastMergeIndex にあたるものが matrix には無い）ので、
@@ -19,7 +21,7 @@
  */
 import powerbi from "powerbi-visuals-api";
 
-import { MonthIndex, toMonthDay } from "./periods";
+import { FiscalCalendar, MonthDay, MonthIndex, isRawQuarter, resolveRawQuarter, toMonthDay, toRawQuarter } from "./periods";
 
 import DataView = powerbi.DataView;
 import DataViewHierarchyLevel = powerbi.DataViewHierarchyLevel;
@@ -55,6 +57,40 @@ export const TOTAL_ACCOUNT_NAME = "合計";
 
 /** 指標の行のコードの頭（後ろはメジャーの queryName）。行のキーと、書式ペインの置く場所・分子・分母の保存値に使う */
 export const INDICATOR_KEY = "§ind:";
+
+/** 指標の行の下に出す「行」の階層の行のコードの印（指標の行のコード + 印 + 節の id） */
+export const INDICATOR_LEVEL_KEY = "§lv:";
+/** 指標の行の階層の行のコード */
+export const indicatorLevelCode = (indicatorCode: string, id: string): string => `${indicatorCode}${INDICATOR_LEVEL_KEY}${id}`;
+/** 指標の行の階層の行か */
+export const isIndicatorLevel = (code: string): boolean => code.startsWith(INDICATOR_KEY) && code.includes(INDICATOR_LEVEL_KEY);
+/** 指標の行の階層の行の、親の指標の行のコード（階層の行でなければそのまま） */
+export function indicatorOfLevel(code: string): string {
+    const at = code.indexOf(INDICATOR_LEVEL_KEY);
+    return at < 0 || !code.startsWith(INDICATOR_KEY) ? code : code.slice(0, at);
+}
+/** 書式ペインの「指標」の「行の階層」の保存先と値 */
+export const INDICATOR_LEVELS = { property: "rowLevels", on: "on", off: "off" } as const;
+/**
+ * 指標の行の下に「行」の階層を出すか（書式ペインの保存値）。行の後ろに置く指標だけ（うちは親の行と同じ見せ方の行、表に出さない指標は
+ * 行が無いので出さない）
+ */
+export function indicatorLevelsOn(saved: Record<string, string>): boolean {
+    return saved[INDICATOR_LEVELS.property] === INDICATOR_LEVELS.on && saved.placement !== "under" && saved.placement !== "hidden";
+}
+
+/**
+ * 指標の行の階層の節：区分・中分類（科目の段の小計の節点）か行（行の葉）。trail は上の段からの値（空の段は null）で、行は最後が行の名前。
+ * 指標ごとには持たない（どの指標の値があるかは、指標の値のコードで見る）
+ */
+export interface IndicatorNode {
+    id: string;
+    trail: Array<string | null>;
+    /** 行（行の葉）なら科目のキー（科目コード、無ければ区分・中分類・科目名）。区分・中分類は null */
+    account: string | null;
+    /** 届いた順 */
+    seen: number;
+}
 
 /**
  * 区分マスタの 1 行（科目の行を通して届く。読んだまま）。区分の属性だけを持つ。段階の行・率の行は書式ペインの「計算行」
@@ -183,9 +219,13 @@ export interface InputData {
     indicatorFacts: Fact[];
     /**
      * 指標の小計：科目の最初の段の欄（小計を入れる段。queryName）、その段の小計の節点が届いたか、小計を入れる設定が保存されているか
-     * （保存が無ければ visual.ts が保存する）
+     * （保存が無ければ visual.ts が保存する）。levels は科目の 2 段目から下の段（指標の行の階層の、区分ごと・中分類ごとの値の段）の同じもの
      */
-    indicatorLevel: { queryName: string | null; subtotals: boolean; enabled: boolean };
+    indicatorLevel: { queryName: string | null; subtotals: boolean; enabled: boolean; levels: IndicatorSubtotalLevel[] };
+    /** 指標の行の階層の節（id → 節）。行の階層を出す指標が無ければ空 */
+    indicatorNodes: Map<string, IndicatorNode>;
+    /** 行の段ごとの値を読んだ指標（指標の行のコード）。書式ペインで出すにしてから、まだ読み直していない指標を見分ける */
+    indicatorLevelsRead: string[];
     /**
      * 指標の値が届いた所（指標の行のコード）：科目の葉（読まない）と、科目の最初の段の小計の節点。葉にだけ値があれば、メジャーが科目の段でだけ
      * 値を返している（ISINSCOPE の条件が逆など）ので知らせる
@@ -210,6 +250,13 @@ export interface InputData {
     orgs: string[];
     /** 選択 ID を作る節点（visual.ts が withMatrixNode で作る）。値を入れた科目・組織・月のもの */
     selection: SelectionNodes;
+}
+
+/** 科目の 2 段目から下の段の小計：段の欄（queryName）、その段の小計の節点が届いたか、小計を入れる設定が保存されているか */
+export interface IndicatorSubtotalLevel {
+    queryName: string;
+    subtotals: boolean;
+    enabled: boolean;
 }
 
 /**
@@ -283,7 +330,9 @@ const EMPTY: InputData = {
     measureCount: 0,
     indicators: [],
     indicatorFacts: [],
-    indicatorLevel: { queryName: null, subtotals: false, enabled: false },
+    indicatorLevel: { queryName: null, subtotals: false, enabled: false, levels: [] },
+    indicatorNodes: new Map(),
+    indicatorLevelsRead: [],
     indicatorPresence: { leaf: new Set(), subtotal: new Set() },
     leafKeys: new Set(),
     fingerprint: "",
@@ -392,7 +441,7 @@ const pathText = (values: PrimitiveValue[]) =>
  */
 export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<string>): InputData {
     const matrix = dataView?.matrix;
-    if (!matrix) return { ...EMPTY, leafKeys: new Set(), indicatorPresence: { leaf: new Set(), subtotal: new Set() }, orgs: [], selection: emptySelection() };
+    if (!matrix) return { ...EMPTY, leafKeys: new Set(), indicatorPresence: { leaf: new Set(), subtotal: new Set() }, indicatorNodes: new Map(), orgs: [], selection: emptySelection() };
     const rowLevels = matrix.rows?.levels ?? [];
     const columnLevels = matrix.columns?.levels ?? [];
     const valueSources = matrix.valueSources ?? [];
@@ -459,8 +508,18 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
     };
     if (matrix.columns?.root) walkColumns(matrix.columns.root, undefined, 0, false);
     const periods = new Set(columnLeaves.filter((leaf) => !leaf.subtotal).map((leaf) => text(leaf.period ?? null) ?? ""));
-    /** 列の葉の月。月の欄が無ければ、すべて 1 つの月（全期間） */
-    const monthOfLeaf = (leaf: ColumnLeaf | undefined) => (hasPeriod ? toMonthDay(leaf?.period ?? null) : { month: ALL_PERIODS_MONTH, day: 0 });
+    /**
+     * 列の葉の月。月の欄が無ければ、すべて 1 つの月（全期間）。2026-Q1 の形は四半期だけの値（読んだままの四半期。表を組むときに
+     * 期首の月で四半期の値のキーに直す。periods.ts）
+     */
+    const monthOfLeaf = (leaf: ColumnLeaf | undefined): MonthDay | null => {
+        if (!hasPeriod) return { month: ALL_PERIODS_MONTH, day: 0 };
+        const period = leaf?.period ?? null;
+        const monthDay = toMonthDay(period);
+        if (monthDay !== null) return monthDay;
+        const quarter = toRawQuarter(period);
+        return quarter === null ? null : { month: quarter, day: 0 };
+    };
 
     const eventSource: InputData["eventSource"] = eventLevel >= 0 ? "column" : amountSources.length > 1 ? "measures" : "single";
     const measureName = (a: number) => amountSources[a].displayName ?? `値${a + 1}`;
@@ -474,6 +533,13 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
             saved: savedTexts(source.objects?.indicators),
         };
     });
+
+    // 行の階層を出す指標（書式ペイン）。科目の段が無ければ（組織・イベントだけの表）出す階層が無い
+    const levelIndicators = indicators.map((indicator) => accountLevel >= 0 && indicatorLevelsOn(indicator.saved));
+    const anyLevels = levelIndicators.some(Boolean);
+    const indicatorNodes = new Map<string, IndicatorNode>();
+    /** 科目の 2 段目から下の段の小計の節点が届いたか（[k - 1] が accountLevels[k] の段） */
+    const levelSubtotalsSeen = accountLevels.slice(1).map(() => false);
 
     const accounts = new Map<string, AccountRecord>();
     const conflicts = new Set<string>();
@@ -623,6 +689,11 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
         }
         // 組織・イベントより下の段が無い表は小計の節点が無いので、指標の値を葉で読む（葉が組織 × イベント × 月の値）
         if (accountLevel < 0 && indicators.length > 0) readSubtotal(node);
+        // 行の階層を出す指標：行ごとの値（金額の無い行も。1 つのファクトに単位の列を持つ形の、量の行）
+        if (anyLevels) {
+            const account = keyOfPath();
+            if (account !== null) readLevelValues(cells, keys, `a${account}`, [...accountLevels.slice(0, -1).map(at), at(nameLevel) ?? account], account);
+        }
         // 金額が 1 つも無い葉（指標だけが科目ごとに届いた葉）の科目は受け取らない。量の科目が空の行として出ないように
         if (!hasAmount) return;
         const code = keyOfPath();
@@ -723,21 +794,61 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
             presence.subtotal.add(indicators[i].code);
         }
         if (values.length === 0) return;
-        let event: string;
-        if (eventSource === "column") {
-            const name = at(eventLevel);
-            if (name === null) {
-                dropped.noEvent++;
-                return;
-            }
-            event = amountSources.length > 1 ? `${name}・${measureName(0)}` : name;
-        } else event = eventSource === "single" && amountSources.length === 1 ? measureName(0) : "";
+        const event = indicatorEvent();
+        if (event === null) {
+            dropped.noEvent++;
+            return;
+        }
         const org = orgOfPath();
         for (const v of values) {
             addFact(indicatorMap, { code: v.indicator.code, month: v.month, event, org, value: v.value, last: v.value, lastDay: v.day });
             if (orgLevels.length > 0 && !selection.orgs.has(org)) noteSelection(null);
             orgSeen.add(org);
         }
+    };
+
+    /** 指標の値のイベント（readSubtotal の説明）。縦持ちでイベントが空なら null */
+    function indicatorEvent(): string | null {
+        if (eventSource !== "column") return eventSource === "single" && amountSources.length === 1 ? measureName(0) : "";
+        const name = at(eventLevel);
+        if (name === null) return null;
+        return amountSources.length > 1 ? `${name}・${measureName(0)}` : name;
+    }
+
+    /**
+     * 行の階層を出す指標の、行の段ごとの値（行の葉か、科目の 2 段目から下の段の小計の節点）を読む。値は Power BI が計算したまま。
+     * 数でない値・読めない月・空のイベントは、組織 × イベント × 月の小計（readSubtotal）が数えるので、ここでは数えずに飛ばす
+     */
+    function readLevelValues(cells: { [key: number]: powerbi.DataViewMatrixNodeValue }, keys: string[], id: string, trail: Array<string | null>, account: string | null): void {
+        const event = indicatorEvent();
+        if (event === null) return;
+        const org = orgOfPath();
+        for (const key of keys) {
+            const cell = cells[Number(key)];
+            const leaf = columnLeaves[Number(key)];
+            if (leaf?.subtotal) continue;
+            const i = indicatorIndex[cell.valueSourceIndex ?? leaf?.measure ?? 0] ?? -1;
+            if (i < 0 || !levelIndicators[i]) continue;
+            const value = num(cell.value);
+            const monthDay = value === null ? null : monthOfLeaf(leaf);
+            if (value === null || monthDay === null) continue;
+            if (!indicatorNodes.has(id)) indicatorNodes.set(id, { id, trail, account, seen: indicatorNodes.size });
+            addFact(indicatorMap, { code: indicatorLevelCode(indicators[i].code, id), month: monthDay.month, event, org, value, last: value, lastDay: monthDay.day });
+        }
+    }
+
+    /** 科目の 2 段目から下の段（accountLevels[k]）の小計の節点：1 つ上の段までの区分・中分類ごとの値。行の階層を出す指標だけ読む */
+    const readLevelSubtotal = (node: DataViewMatrixNode, k: number): void => {
+        const subtotalKey = `${pathText(path.slice(0, accountLevels[k]))}\u0001§sub`;
+        const cells = node.values ?? {};
+        const keys = Object.keys(cells);
+        subtotalCount++;
+        hashA = mix(hashA, subtotalKey);
+        for (const key of keys) hashB = mix(hashB, `s${key}=${String(cells[Number(key)].value)}`);
+        if (seen?.has(subtotalKey) || leafKeys.has(subtotalKey)) return;
+        leafKeys.add(subtotalKey);
+        const trail = accountLevels.slice(0, k).map(at);
+        readLevelValues(cells, keys, `g${JSON.stringify(trail)}`, trail, null);
     };
 
     let subtotalsSeen = false;
@@ -749,6 +860,13 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
                 if (level === accountLevel && accountLevel >= 0) {
                     subtotalsSeen = true;
                     if (indicators.length > 0) readSubtotal(child);
+                } else {
+                    // 科目の 2 段目から下の段の小計：行の階層を出す指標の、区分ごと・中分類ごとの値
+                    const k = accountLevels.indexOf(level);
+                    if (k >= 1) {
+                        levelSubtotalsSeen[k - 1] = true;
+                        if (anyLevels) readLevelSubtotal(child, k);
+                    }
                 }
                 continue;
             }
@@ -770,6 +888,7 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
     const accountSource = accountLevel >= 0 ? rowLevels[accountLevel]?.sources?.[0] : undefined;
     const subTotals = dataView?.metadata?.objects?.subTotals;
     const levelEnabled = accountSource?.objects?.subTotals?.levelSubtotalEnabled === true;
+    const rowSubtotalsOn = subTotals?.rowSubtotals === true && subTotals?.perRowLevel === true;
 
     return {
         accounts,
@@ -808,8 +927,14 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
         indicatorLevel: {
             queryName: accountSource?.queryName ?? null,
             subtotals: subtotalsSeen || accountLevel < 0,
-            enabled: subTotals?.rowSubtotals === true && subTotals?.perRowLevel === true && levelEnabled,
+            enabled: rowSubtotalsOn && levelEnabled,
+            levels: accountLevels.slice(1).map((level, k) => {
+                const source = rowLevels[level]?.sources?.[0];
+                return { queryName: source?.queryName ?? "", subtotals: levelSubtotalsSeen[k], enabled: rowSubtotalsOn && source?.objects?.subTotals?.levelSubtotalEnabled === true };
+            }),
         },
+        indicatorNodes,
+        indicatorLevelsRead: indicators.filter((_, i) => levelIndicators[i]).map((indicator) => indicator.code),
         indicatorPresence: presence,
         leafKeys,
         fingerprint: `${leafCount}|${subtotalCount}|${hashA.toString(16)}|${hashB.toString(16)}|${dataView?.metadata?.segment ? "more" : "end"}`,
@@ -823,6 +948,12 @@ export function readInput(dataView: DataView | undefined, seen?: ReadonlySet<str
         orgs: orgLevels.length > 0 ? Array.from(orgSeen) : [],
         selection,
     };
+}
+
+/** 続きの回の指標の行の階層の節を足す（先に届いたものを使い、届いた順は前の回の後ろ） */
+function mergeNodes(base: Map<string, IndicatorNode>, next: Map<string, IndicatorNode>): Map<string, IndicatorNode> {
+    for (const node of next.values()) if (!base.has(node.id)) base.set(node.id, { ...node, seen: base.size });
+    return base;
 }
 
 /** 続きの回の選択の節点を足す（先に届いたものを使う。段の欄は新しい回のもの） */
@@ -876,6 +1007,18 @@ function mergeFacts(target: Fact[], index: Map<string, Fact>, next: Fact[]): voi
 }
 
 const indexOf = (facts: Fact[]) => new Map(facts.map((fact): [string, Fact] => [factKey(fact), fact]));
+
+/**
+ * 読んだままの四半期だけの値（2026-Q1）を、期首の月と年度の表記で四半期の値のキーに直す（periods.ts）。四半期の値が無ければ input のまま。
+ * 読むとき（readInput）は書式を見ないので、表を組むときに直す
+ */
+export function resolveQuarterInput(input: InputData, calendar: Pick<FiscalCalendar, "startMonth" | "yearLabel">): InputData {
+    const fix = (facts: Fact[]) =>
+        facts.some((f) => isRawQuarter(f.month)) ? facts.map((f) => (isRawQuarter(f.month) ? { ...f, month: resolveRawQuarter(f.month, calendar) } : f)) : facts;
+    const facts = fix(input.facts);
+    const indicatorFacts = fix(input.indicatorFacts);
+    return facts === input.facts && indicatorFacts === input.indicatorFacts ? input : { ...input, facts, indicatorFacts };
+}
 
 /**
  * 続きの読み込みの 1 回分（next）を、それまでの分（base）に足し合わせる。欄の有無・メジャーは同じ宣言なので base のまま、
@@ -952,7 +1095,12 @@ export function mergeInput(base: InputData, next: InputData): InputData {
         orderConflicts: Array.from(orderConflicts),
         unreadableOrders: Array.from(new Set([...base.unreadableOrders, ...next.unreadableOrders])),
         truncated: next.truncated,
-        indicatorLevel: { ...next.indicatorLevel, subtotals: base.indicatorLevel.subtotals || next.indicatorLevel.subtotals },
+        indicatorLevel: {
+            ...next.indicatorLevel,
+            subtotals: base.indicatorLevel.subtotals || next.indicatorLevel.subtotals,
+            levels: next.indicatorLevel.levels.map((level, k) => ({ ...level, subtotals: level.subtotals || (base.indicatorLevel.levels[k]?.subtotals ?? false) })),
+        },
+        indicatorNodes: mergeNodes(base.indicatorNodes, next.indicatorNodes),
         indicatorPresence: {
             leaf: new Set([...base.indicatorPresence.leaf, ...next.indicatorPresence.leaf]),
             subtotal: new Set([...base.indicatorPresence.subtotal, ...next.indicatorPresence.subtotal]),

@@ -65,6 +65,66 @@ function fromParts(year: number, month: number, day: number): MonthDay | null {
     return { month: monthIndex(year, month), day };
 }
 
+/*
+ * 四半期だけの値（四半期ごとの予算・見込みの直しなど、月に割れない値）。月の欄に 2026-Q1 の形で届いた値は、月の列には出さず、
+ * その四半期をまるごと覆う列（四半期・半期・通期・累計・合計）にだけ足す（2026-11-24 ユーザー決定）。
+ *
+ * 月番号と同じ数の並びに置く：四半期の値のキーは QUARTER_KEY + 四半期の最初の月の月番号。前年同期の「− 12」がそのまま 4 四半期前になる。
+ * 読んだ直後（data.ts）は期首の月が分からないので、年度の名前の年と何番目の四半期だけを RAW_QUARTER の並びで持ち、
+ * 表を組むとき（viewModel.ts）に期首の月と年度の表記で四半期のキーに直す
+ */
+/** 四半期の値のキーの始まり。月番号（年 × 12）はここまで届かない */
+export const QUARTER_KEY = 1_000_000;
+/** 読んだままの四半期（年度の名前の年 × 4 + 何番目 − 1） */
+const RAW_QUARTER = 2_000_000;
+
+/** 四半期の値のキー（期首の月に直したあと）か */
+export const isQuarterKey = (m: MonthIndex): boolean => m >= QUARTER_KEY && m < RAW_QUARTER;
+/** 読んだままの四半期か（期首の月に直す前） */
+export const isRawQuarter = (m: MonthIndex): boolean => m >= RAW_QUARTER;
+/** 四半期の最初の月から、四半期の値のキー */
+export const quarterKey = (start: MonthIndex): MonthIndex => QUARTER_KEY + start;
+/** 四半期の値のキーの、最初の月 */
+export const quarterStart = (key: MonthIndex): MonthIndex => key - QUARTER_KEY;
+/** 月の並びに置くときの月（四半期の値のキーなら最初の月、読んだままの四半期・月はそのまま） */
+export const realMonth = (m: MonthIndex): MonthIndex => (isQuarterKey(m) ? quarterStart(m) : m);
+
+/**
+ * 月の欄の値を、四半期だけの値として読む（読んだままの四半期）。読めなければ null。
+ * 2026-Q1・2026Q1・2026 Q1・FY2026-Q1・2026年度Q1・2026年度 第1四半期 を読む。年は年度の名前の年（書式の「年度の表記」で読む）
+ */
+export function toRawQuarter(value: unknown): MonthIndex | null {
+    if (typeof value !== "string") return null;
+    const match = /^(?:FY\s*)?(\d{4})\s*(?:年度)?\s*[-/_.\s]?\s*(?:Q([1-4])|第\s*([1-4])\s*四半期)$/i.exec(value.trim());
+    if (!match) return null;
+    return RAW_QUARTER + Number(match[1]) * 4 + Number(match[2] ?? match[3]) - 1;
+}
+
+/** 読んだままの四半期を、期首の月と年度の表記で四半期の値のキーに直す */
+export function resolveRawQuarter(raw: MonthIndex, calendar: Pick<FiscalCalendar, "startMonth" | "yearLabel">): MonthIndex {
+    const n = raw - RAW_QUARTER;
+    const year = Math.floor(n / 4);
+    // 年度の名前の年：start は始まりの年、end は終わりの年（期首が 1 月なら同じ年）
+    const startYear = calendar.yearLabel === "end" && calendar.startMonth !== 1 ? year - 1 : year;
+    return quarterKey(monthIndex(startYear, calendar.startMonth) + (n % 4) * 3);
+}
+
+/**
+ * 月の並びに、まるごと覆う四半期の値のキーを足す（並びの月は変えない）。キーは、その四半期の最後の月の前に置く
+ * （期末の行は並びの後ろから値のある月を探すので、四半期末の月の値があればそれを、無ければ四半期の値を採る）。
+ * 期首に合うかは見ない（四半期の値は期首に合ったキーにしか無いので、合わないキーには値が無い）。四半期の値のキーは入れ直す
+ */
+export function withQuarterKeys(months: Iterable<MonthIndex>): MonthIndex[] {
+    const real = Array.from(months).filter((m) => !isQuarterKey(m));
+    const set = new Set(real);
+    const result: MonthIndex[] = [];
+    for (const m of real) {
+        if (set.has(m - 1) && set.has(m - 2)) result.push(quarterKey(m - 2));
+        result.push(m);
+    }
+    return result;
+}
+
 /** 年度の呼び方。start = 始まりの年で「2025年度」、end = 終わりの年で「FY2026」 */
 export type YearLabel = "start" | "end";
 

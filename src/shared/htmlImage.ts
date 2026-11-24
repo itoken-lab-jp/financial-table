@@ -299,6 +299,70 @@ function linesOf(node: Text): Array<{ text: string; rect: Rect }> {
     return lines.map((line) => ({ ...line, text: collapse(line.text) })).filter((line) => line.text);
 }
 
+/** カンマ区切りの値を、括弧の中のカンマで切らずに分ける */
+function splitTop(value: string): string[] {
+    const out: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < value.length; i++) {
+        const c = value[i];
+        if (c === "(") depth++;
+        else if (c === ")") depth--;
+        else if (c === "," && depth === 0) {
+            out.push(value.slice(start, i).trim());
+            start = i + 1;
+        }
+    }
+    out.push(value.slice(start).trim());
+    return out.filter(Boolean);
+}
+
+/** 背景の長さ（px・%・calc(100% - Npx)）を、箱の長さ length に対する px に直す。読めなければ null */
+function backgroundLength(value: string, length: number, scale: number): number | null {
+    const v = value.trim();
+    if (v === "auto") return length;
+    const percent = /^(-?[\d.]+)%$/.exec(v);
+    if (percent) return (Number(percent[1]) / 100) * length;
+    const px = /^(-?[\d.]+)px$/.exec(v);
+    if (px) return Number(px[1]) * scale;
+    const calc = /^calc\(\s*([\d.]+)%\s*([-+])\s*([\d.]+)px\s*\)$/.exec(v);
+    if (calc) return (Number(calc[1]) / 100) * length + (calc[2] === "-" ? -1 : 1) * Number(calc[3]) * scale;
+    return null;
+}
+
+/**
+ * 背景の絵のうち、1 色の linear-gradient（線を引くのに使う。予実表の左に残す表の th の線、frozenLines.ts の paintLine）が塗る四角。
+ * 位置と大きさは px・%・calc(100% - Npx) だけを読み、繰り返さない（no-repeat）ものだけ。ほかの絵は描かない
+ */
+export function solidGradientRects(style: Pick<CSSStyleDeclaration, "backgroundImage" | "backgroundPosition" | "backgroundSize" | "backgroundRepeat">, box: Rect, scale = 1): Array<{ rect: Rect; color: string }> {
+    if (!style.backgroundImage || style.backgroundImage === "none") return [];
+    const images = splitTop(style.backgroundImage);
+    const positions = splitTop(style.backgroundPosition);
+    const sizes = splitTop(style.backgroundSize);
+    const repeats = splitTop(style.backgroundRepeat);
+    const width = box.right - box.left;
+    const height = box.bottom - box.top;
+    const out: Array<{ rect: Rect; color: string }> = [];
+    images.forEach((image, i) => {
+        const m = /^linear-gradient\((.*)\)$/.exec(image);
+        if (!m) return;
+        const stops = splitTop(m[1]);
+        if (stops.length !== 2 || stops[0] !== stops[1]) return;
+        if ((repeats[i % repeats.length] ?? "repeat") !== "no-repeat") return;
+        const [sw, sh] = splitTop((sizes[i % sizes.length] ?? "auto").replace(/\s+(?![^(]*\))/g, ",")).concat(["auto"]);
+        const [px, py] = splitTop((positions[i % positions.length] ?? "0px 0px").replace(/\s+(?![^(]*\))/g, ",")).concat(["0px"]);
+        const w = backgroundLength(sw, width, scale);
+        const h = backgroundLength(sh ?? "auto", height, scale);
+        if (w === null || h === null) return;
+        // 位置の % は、箱と絵の大きさの差に対する割合
+        const x = /%$/.test(px) ? (Number.parseFloat(px) / 100) * (width - w) : backgroundLength(px, width, scale);
+        const y = /%$/.test(py) ? (Number.parseFloat(py) / 100) * (height - h) : backgroundLength(py, height, scale);
+        if (x === null || y === null || w <= 0 || h <= 0) return;
+        out.push({ rect: { left: box.left + x, top: box.top + y, right: box.left + x + w, bottom: box.top + y + h }, color: stops[0] });
+    });
+    return out;
+}
+
 /** root の中の見えている HTML（と SVG）を画像にする。skip は写さない要素のセレクター（SKIP_ATTRIBUTE のほかに）。描くものが無ければ null */
 export async function htmlImage(root: HTMLElement, background = "#ffffff", skip = ""): Promise<ChartImage | null> {
     const layers = new Map<Element, Layer>();
@@ -358,6 +422,10 @@ export async function htmlImage(root: HTMLElement, background = "#ffffff", skip 
         // 内側の影は、枠線の内側（padding box）に塗る
         const border = (side: Side) => (Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) || 0) * scale;
         const padding: Rect = { left: box.left + border("left"), top: box.top + border("top"), right: box.right - border("right"), bottom: box.bottom - border("bottom") };
+        // 1 色の背景の絵（線）。背景の原点は border box（frozenLines.ts の paintLine が置く）
+        const gradients = solidGradientRects(style, box, scale);
+        const pad = (side: Side) => (Number.parseFloat(style.getPropertyValue(`padding-${side}`)) || 0) * scale;
+        const content: Rect = { left: padding.left + pad("left"), top: padding.top + pad("top"), right: padding.right - pad("right"), bottom: padding.bottom - pad("bottom") };
         const parsedShadows = parseBoxShadows(style.boxShadow);
         const shadows = parsedShadows.flatMap((shadow) => insetShadowRects(shadow, padding, scale).map((rect) => ({ rect, color: shadow.color })));
         // 外側の影は箱の外に出るので、箱では切らず、祖先のはみ出しを切る箱と root で切る。写す範囲には数えない
@@ -372,9 +440,9 @@ export async function htmlImage(root: HTMLElement, background = "#ffffff", skip 
                   }))
             : [];
         const layer = layerOf(el, root, layers);
-        if (fill || strokes.length > 0 || shadows.length > 0 || outerShadows.length > 0) {
+        if (fill || strokes.length > 0 || shadows.length > 0 || outerShadows.length > 0 || gradients.length > 0) {
             // 入れ物そのものの地は背景で塗るので、写す範囲には数えない（余白まで写さない）
-            if (el !== root && (fill || strokes.length > 0 || shadows.length > 0)) grow(clip);
+            if (el !== root && (fill || strokes.length > 0 || shadows.length > 0 || gradients.length > 0)) grow(clip);
             const alpha = opacityOf(el, root, opacities);
             items.push({
                 layer,
@@ -389,7 +457,9 @@ export async function htmlImage(root: HTMLElement, background = "#ffffff", skip 
                     clipTo(ctx, snapRect(clip, window.devicePixelRatio || 1), origin);
                     // 地は background-clip の所まで（padding-box なら枠線の内側。透明な枠線で上下へ伸ばして地を枠線の内側だけに塗り、
                     // すぐ上の行の罫線を残す帯がある。箱いっぱいに塗ると、画像では罫線が帯の色で消えた）
-                    if (fill && el !== root) fillRect(ctx, style.backgroundClip === "padding-box" ? padding : box, origin, fill);
+                    // content-box なら余白の内側まで（罫線の脇の 1px を空けた帯。予実表の visual.less の ft-fl-rise）
+                    if (fill && el !== root) fillRect(ctx, style.backgroundClip === "padding-box" ? padding : style.backgroundClip === "content-box" ? content : box, origin, fill);
+                    for (const { rect, color } of gradients) fillRect(ctx, rect, origin, color);
                     for (const { rect, color } of shadows) fillRect(ctx, rect, origin, color);
                     for (const { stroke, color } of strokes) {
                         if (stroke.kind === "fill" && stroke.rect) fillRect(ctx, stroke.rect, origin, color);

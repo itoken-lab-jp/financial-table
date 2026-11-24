@@ -12,7 +12,7 @@
  *
  * 計の置き場所は区分と独立に選べる・左の列に縦にかける・一番上の段まで開く・閉じた組織は計の表
  */
-import { INDICATOR_KEY, ORG_SEPARATOR } from "./data";
+import { INDICATOR_KEY, ORG_SEPARATOR, isIndicatorLevel } from "./data";
 import { UNDER_KEY, isAccountRow } from "./picks";
 import { DisplayRow, RowDef } from "./rows";
 
@@ -67,8 +67,12 @@ export interface OrgCell {
     /** 自分の箱の帯が上のブロックから続いてくる（小計が下の親の小計）・下のブロックへ続く（小計が上）。帯の幅には横線を引かない */
     ownAbove?: boolean;
     ownBelow?: boolean;
-    /** 囲みなし：箱の塗りと線を引かない（名前と字下げだけ） */
+    /** 囲みなし：箱の塗りと線を引かない（名前と字下げだけ）。囲みの親の中では、左の辺と字下げは囲みと同じで、塗りだけ外の親のまま */
     plain?: boolean;
+    /** rails のうち囲みなしの段（囲みの親の中で囲みなしにしたノード）。その段の帯は外の親の色で塗る */
+    plainRails?: number[];
+    /** 囲みの左の辺を引かない段（囲みなしの親のすぐ下の子の段。子どうしの境は横線と字下げで分かる）。塗りと字下げはそのまま */
+    edgeless?: number[];
     /** 囲む親の段のうち、すぐ上のブロックがその親の小計（小計が上）の段。帯の上の辺を引く */
     afterHead?: number[];
     heads?: OrgHeadLine[];
@@ -285,6 +289,8 @@ export function emptyAccountRows(
         const def = byCode.get(code);
         let result = false;
         if (isAccountRow(def)) result = !has(code);
+        // 指標の行の下の「行」の階層の行は、科目の行と同じく値で見る（セグメントにデータの無い行を隠す）
+        else if (def && isIndicatorLevel(code)) result = !has(code);
         else if (indicators && def?.code.startsWith(INDICATOR_KEY) && (def.type === "measure" || def.type === "breakdown")) result = !has(code);
         // 見る人が小計をうちにした行：元の小計が空なら空
         else if (def?.type === "breakdown" && code.startsWith(UNDER_KEY)) result = def.summands.length > 0 && def.summands.every((s) => empty(s.code));

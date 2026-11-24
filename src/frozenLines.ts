@@ -8,6 +8,8 @@
  * 線の種類と色を決める CSS（行のクラスで決まる。visual.less）はそのまま div に効かせ、ここで div の計算スタイルを読んで th の罫線に写し、
  * div は描かない（ft-fl-hide）。部品の置き直しのクラスの意味は visual.less の「左に残す表の線を th の罫線で引く」。
  */
+import { minOf } from "./shared/minMax";
+
 /** 字下げ 1 段の幅（App.tsx の INDENT_EM と同じ） */
 const INDENT_EM = 1;
 
@@ -23,13 +25,14 @@ function resetCell(th: HTMLElement): void {
     th.style.paddingTop = "";
     th.style.paddingBottom = "";
     th.style.background = "";
+    for (const k of ["backgroundImage", "backgroundRepeat", "backgroundOrigin", "backgroundClip", "backgroundPosition", "backgroundSize"] as const) th.style[k] = "";
     th.style.borderRightWidth = "";
     th.style.removeProperty("--ft-fl-br");
     th.style.removeProperty("--ft-fl-bw");
     th.style.removeProperty("--ft-fl-bwb");
-    for (const e of Array.from(th.querySelectorAll<HTMLElement>(":scope > .ft-fl-cover-bottom"))) e.remove();
-    for (const e of Array.from(th.querySelectorAll<HTMLElement>(":scope > .ft-fl-hide, :scope > .ft-fl-second, :scope > .ft-fl-cover, :scope > .ft-fl-edge, :scope > .ft-fl-inset, :scope > .ft-fl-rise, :scope > .ft-fl-sink"))) {
-        e.classList.remove("ft-fl-hide", "ft-fl-second", "ft-fl-cover", "ft-fl-edge", "ft-fl-inset", "ft-fl-rise", "ft-fl-sink");
+    for (const e of Array.from(th.querySelectorAll<HTMLElement>(":scope > .ft-fl-cover-bottom, :scope > .ft-fl-table-bottom"))) e.remove();
+    for (const e of Array.from(th.querySelectorAll<HTMLElement>(":scope > .ft-fl-hide, :scope > .ft-fl-second, :scope > .ft-fl-lift, :scope > .ft-fl-cover, :scope > .ft-fl-edge, :scope > .ft-fl-inset, :scope > .ft-fl-rise, :scope > .ft-fl-sink"))) {
+        e.classList.remove("ft-fl-hide", "ft-fl-second", "ft-fl-lift", "ft-fl-cover", "ft-fl-edge", "ft-fl-inset", "ft-fl-rise", "ft-fl-sink");
     }
 }
 
@@ -53,12 +56,52 @@ function topLine(th: HTMLElement, td: HTMLElement, box: string): void {
     th.style.setProperty("--ft-fl-bw", `${width}px`);
     // 今までの th は、罫線の代わりに上の余白を線の太さだけ足していた
     th.style.paddingTop = `${Math.max(0, parseFloat(getComputedStyle(th).paddingTop) - was)}px`;
-    for (const e of lines) e.classList.add(double ? "ft-fl-second" : "ft-fl-hide");
     // 線を引かない所：帯を上へ重ねて塗る span（top が -1px で幅を持つもの）
     for (const e of Array.from(th.querySelectorAll<HTMLElement>(`:scope > .${box}`))) {
         if (e.style.top === "-1px" && e.style.width) e.classList.add("ft-fl-cover");
         else if (e.style.top === "0px") e.classList.add("ft-fl-rise");
     }
+    // 行の名前の列の帯（.ft-box）は、地を罫線の 1px 下から塗り（visual.less）、その 1px は th の地を帯の色にして埋める。帯の地が罫線のすぐ下から
+    // 始まると、端数の倍率で画素にそろえた帯の地が、2 画素にまたがった罫線の下の画素を塗り、行の名前の列だけ線が細く見えた（2026-11-12 ユーザー）
+    // セグメントの列の帯（.ft-seg-box）も同じ（2026-11-12。ハーネスで全体を 0.85 倍にしたとき、合計の行の上の線の下の画素が消えた）
+    underLine(th, `:scope > .${box}.ft-fl-rise`);
+    // 線の始まり（帯の右）は、div を隠す前に測る
+    const cell = th.getBoundingClientRect();
+    const scale = cell.width / (th.offsetWidth || cell.width || 1);
+    const from = minOf(lines.map((e) => (e.getBoundingClientRect().left - cell.left) / scale));
+    for (const e of lines) e.classList.add(double ? "ft-fl-second" : "ft-fl-hide");
+    // th の罫線を透明にして（太さは残す）、線のある所（帯が上の行から続くセルは帯の右から）だけ th の背景の絵（罫線の所、border box の上の端）で引く。
+    // - 罫線の上に帯の色を重ねて消すと、端数の倍率で罫線が 2 画素にまたがって描かれるのに、重ねた span はセルの外の端（overflow: clip）で画素の途中から
+    //   切られ、帯の中に薄い横線が透けた（2026-11-12 ユーザー、Desktop の拡大率が 100% 以外）
+    // - 線を div で引くと Desktop では右の td の罫線より 1〜2 画素下に描かれ、横線が列の境でずれ、角が切れた（2026-10-24 と 2026-11-12「角の線の切れとズレ」）
+    // - th の罫線のままだと、Desktop で行の名前の列だけ線の上の画素が薄かった（値の列 135 に対して 189。2026-11-12）。背景の絵は値の列とそろった
+    if (double) return;
+    paintLine(th, "top", Math.max(0, from), width, ls.borderTopColor);
+}
+
+/** th の背景の絵で横線を引く（罫線は透明にする）。上か下の端、from（border box の左から）から右の端まで */
+function paintLine(th: HTMLElement, edge: "top" | "bottom", from: number, width: number, color: string): void {
+    if (edge === "top") th.style.borderTopColor = "transparent";
+    else th.style.borderBottomColor = "transparent";
+    const add = (key: "backgroundImage" | "backgroundRepeat" | "backgroundOrigin" | "backgroundClip" | "backgroundPosition" | "backgroundSize", value: string) => {
+        th.style[key] = th.style[key] ? `${th.style[key]}, ${value}` : value;
+    };
+    add("backgroundImage", `linear-gradient(${color}, ${color})`);
+    add("backgroundRepeat", "no-repeat");
+    add("backgroundOrigin", "border-box");
+    add("backgroundClip", "border-box");
+    add("backgroundPosition", `${from}px ${edge === "top" ? "0" : "100%"}`);
+    add("backgroundSize", `calc(100% - ${from}px) ${width}px`);
+}
+
+/** 罫線の脇で地を 1px 空けた帯（selector）の色を th の地にする。帯は右の端まで塗るものの、一番内側（左が一番右）の色 */
+function underLine(th: HTMLElement, selector: string): void {
+    const bands = Array.from(th.querySelectorAll<HTMLElement>(selector)).filter((e) => e.style.right === "0px" || e.classList.contains("ft-fl-inset"));
+    let inner: HTMLElement | null = null;
+    for (const e of bands) if (!inner || e.getBoundingClientRect().left > inner.getBoundingClientRect().left) inner = e;
+    if (!inner) return;
+    const color = getComputedStyle(inner).backgroundColor;
+    if (color && color !== "rgba(0, 0, 0, 0)") th.style.backgroundColor = color;
 }
 
 /**
@@ -111,6 +154,14 @@ function orgEdges(table: HTMLTableElement): void {
         orgs.forEach((left, j) => {
             const l = rects[j];
             if (j === i || Math.abs(l.right - r.left) > 0.5 || l.bottom <= r.top + 0.5 || l.top >= r.bottom - 0.5) return;
+            // 上の線を罫線にしたセルは、右の透明な枠線を外している（applyFrozenLines）。境を引くセルは枠線を戻す（戻さないと、上の線のある
+            // 2 つ目からのブロックで境が消えた。2026-10-26 ユーザー）。色を付けるので、上の線との角で欠けることもない
+            const removed = left.style.getPropertyValue("--ft-fl-br");
+            if (removed) {
+                left.style.borderRightWidth = "";
+                left.style.removeProperty("--ft-fl-br");
+                for (const e of Array.from(left.querySelectorAll<HTMLElement>(":scope > .ft-fl-inset"))) e.classList.remove("ft-fl-inset");
+            }
             if ((parseFloat(getComputedStyle(left).borderRightWidth) || 0) > 0) left.style.borderRightColor = color;
         });
     });
@@ -153,4 +204,42 @@ export function applyFrozenLines(pairs: ReadonlyArray<readonly [HTMLElement, HTM
     }
     const tables = new Set(pairs.map(([a]) => a.closest("table")).filter((t): t is HTMLTableElement => !!t));
     for (const table of tables) orgEdges(table);
+    const all = new Set(pairs.flatMap(([a, b]) => [a.closest("table"), b.closest("table")]).filter((t): t is HTMLTableElement => !!t));
+    for (const table of all) tableBottom(table);
+}
+
+/**
+ * 表の一番下の線を、表の枠線でなく、一番下に届くセルの下の枠線で引く（左右の表とも）。表の枠線のままだと、左に残す表のセル（位置を持つ）の
+ * 地や中の帯が、端数の倍率で 2 画素にまたがった枠線の上の画素を塗り、セグメントの列と行の名前の列だけ線が細く薄く見えた（2026-11-12 ユーザー
+ * 「一番下の太さのバラつき」）。線を div で引くと Desktop で数字の表の線とずれるので、セルの枠線で引く
+ */
+function tableBottom(table: HTMLTableElement): void {
+    for (const e of Array.from(table.querySelectorAll<HTMLElement>(".ft-fl-bottom"))) e.classList.remove("ft-fl-bottom");
+    table.removeAttribute("data-fl-bottom");
+    table.style.removeProperty("--ft-fl-bottom");
+    table.style.removeProperty("--ft-fl-bottom-w");
+    const cs = getComputedStyle(table);
+    const width = parseFloat(cs.borderBottomWidth) || 0;
+    if (width <= 0 || cs.borderBottomStyle === "none") return;
+    const rows = Array.from(table.tBodies).flatMap((b) => Array.from(b.rows));
+    const last = rows.length;
+    const bottom: HTMLElement[] = [];
+    rows.forEach((tr, i) => {
+        for (const cell of Array.from(tr.cells)) if (i + (cell.rowSpan || 1) >= last) bottom.push(cell);
+    });
+    if (!bottom.length) return;
+    table.style.setProperty("--ft-fl-bottom", `${width}px ${cs.borderBottomStyle} ${cs.borderBottomColor}`);
+    table.style.setProperty("--ft-fl-bottom-w", `${width}px`);
+    table.setAttribute("data-fl-bottom", "");
+    for (const cell of bottom) {
+        cell.classList.add("ft-fl-bottom");
+        // セグメントの列の帯は、地を枠線の 1px 上で止め（visual.less）、その 1px は th の地を帯の色にして埋める。帯の地が枠線のすぐ上まで来ると、
+        // 端数の倍率で画素にそろえた帯の地が、2 画素にまたがった枠線の上の画素を塗り、セグメントの列だけ線が薄く見えた（2026-11-12 ユーザー）
+        if (cell.classList.contains("ft-org")) {
+            underLine(cell, ":scope > .ft-seg-box");
+            // セグメントの列のセル（行をまたぐ）の下の枠線は、Desktop で 3 画素ににじんで薄かった（2026-11-12）。上の線と同じく背景の絵で引く
+            cell.style.borderBottom = `${width}px ${cs.borderBottomStyle} transparent`;
+            paintLine(cell, "bottom", 0, width, cs.borderBottomColor);
+        }
+    }
 }

@@ -62,7 +62,7 @@
         },
         {
             "displayName": "指標",
-            "description": "表に行として足すメジャー（人数・時間・台数などの量、EBITDA のような会社独自の行、「うち」）。セグメント × シナリオ × 月の値（「行」フィールドを外した値）を読む。挿入位置・期間の集計・書式・良し悪しは書式ペインの「指標」でメジャーごとに決める",
+            "description": "表に行として足すメジャー（人数・時間・台数などの量、EBITDA のような会社独自の行、「うち」）。セグメント × シナリオ × 月の値（「行」フィールドを外した値）を読む。挿入位置・期間の集計・書式・良し悪しは書式ペインの「指標」でメジャーごとに決める。「行の階層」を出すにした指標は、指標の行の下に「行」フィールドのレベルごとの値（区分 → 中分類 → 行）も出す",
             "name": "indicator",
             "kind": "Measure"
         }
@@ -219,6 +219,12 @@
                 },
                 "relabelMonths": {
                     "displayName": "月の列も書き換える",
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "valueFirst": {
+                    "displayName": "比較の値を基準の前に出す",
                     "type": {
                         "bool": true
                     }
@@ -1588,6 +1594,12 @@
                         "enumeration": []
                     }
                 },
+                "place1": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator1": {
                     "displayName": "分子",
                     "type": {
@@ -1631,6 +1643,12 @@
                     }
                 },
                 "after2": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place2": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -1684,6 +1702,12 @@
                         "enumeration": []
                     }
                 },
+                "place3": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator3": {
                     "displayName": "分子",
                     "type": {
@@ -1727,6 +1751,12 @@
                     }
                 },
                 "after4": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place4": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -1780,6 +1810,12 @@
                         "enumeration": []
                     }
                 },
+                "place5": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator5": {
                     "displayName": "分子",
                     "type": {
@@ -1823,6 +1859,12 @@
                     }
                 },
                 "after6": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place6": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -1876,6 +1918,12 @@
                         "enumeration": []
                     }
                 },
+                "place7": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator7": {
                     "displayName": "分子",
                     "type": {
@@ -1919,6 +1967,12 @@
                     }
                 },
                 "after8": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place8": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -1972,6 +2026,12 @@
                         "enumeration": []
                     }
                 },
+                "place9": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator9": {
                     "displayName": "分子",
                     "type": {
@@ -2015,6 +2075,12 @@
                     }
                 },
                 "after10": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place10": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -2068,6 +2134,12 @@
                         "enumeration": []
                     }
                 },
+                "place11": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator11": {
                     "displayName": "分子",
                     "type": {
@@ -2111,6 +2183,12 @@
                     }
                 },
                 "after12": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place12": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -2164,6 +2242,12 @@
                         "enumeration": []
                     }
                 },
+                "place13": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator13": {
                     "displayName": "分子",
                     "type": {
@@ -2207,6 +2291,12 @@
                     }
                 },
                 "after14": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place14": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -2260,6 +2350,12 @@
                         "enumeration": []
                     }
                 },
+                "place15": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator15": {
                     "displayName": "分子",
                     "type": {
@@ -2303,6 +2399,12 @@
                     }
                 },
                 "after16": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place16": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -2356,6 +2458,12 @@
                         "enumeration": []
                     }
                 },
+                "place17": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator17": {
                     "displayName": "分子",
                     "type": {
@@ -2399,6 +2507,12 @@
                     }
                 },
                 "after18": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place18": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -2452,6 +2566,12 @@
                         "enumeration": []
                     }
                 },
+                "place19": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
                 "numerator19": {
                     "displayName": "分子",
                     "type": {
@@ -2495,6 +2615,12 @@
                     }
                 },
                 "after20": {
+                    "displayName": "挿入位置",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "place20": {
                     "displayName": "挿入位置",
                     "type": {
                         "enumeration": []
@@ -2573,6 +2699,12 @@
                 },
                 "bold": {
                     "displayName": "太字",
+                    "type": {
+                        "enumeration": []
+                    }
+                },
+                "rowLevels": {
+                    "displayName": "行の階層",
                     "type": {
                         "enumeration": []
                     }

@@ -82,10 +82,12 @@ export class Visual implements IVisual {
     /** 最後に組んだ表の書式ペインの選択肢（続きの回の途中で表を組み直さないときも、書式ペインに入れる） */
     private lastFormat: DataDrivenFormat | null = null;
     /**
-     * 指標の小計（科目の最初の段の小計）を入れる設定を保存した段の欄と時刻。保存はこのセッションで段の欄ごとに 1 回だけ
-     *
+     * 指標の小計（科目の最初の段の小計と、行の階層を出す指標の 2 段目から下の段の小計）を入れる設定を保存した段の欄（の組）と時刻。
+     * 保存はこのセッションで段の欄の組ごとに 1 回だけ。2 段目から下の段の小計を切ったら、その段を含む組は消す（出し直したらまた保存する）
      */
     private subtotalsPersisted = new Map<string, number>();
+    /** 行の階層を出す指標が無くなって、2 段目から下の段の小計を切る設定を保存した段の欄の組（このセッションで組ごとに 1 回だけ。段の小計を入れ直したら、その段を含む組は消す） */
+    private subtotalsTurnedOff = new Set<string>();
     /** 小計の設定を保存したあと、待つ時間がたったら見直す時計（update が来なくても、届かなければ知らせる） */
     private subtotalTimer: number | null = null;
     /** 選択。押したものの並びと、最後に描いた表（選択を変えたら描き直すだけで、組み直さない） */
@@ -179,13 +181,20 @@ export class Visual implements IVisual {
         // 最初の段の小計を入れる設定を保存する。読み込みの途中は保存しない
         const missing = viewModel.indicatorSubtotals;
         if (missing && !loading) {
-            const action = subtotalAction(missing, this.subtotalsPersisted.get(missing.queryName), Date.now());
+            const key = [missing.queryName, ...(missing.levels ?? [])].join("\u0001");
+            const action = subtotalAction(missing, this.subtotalsPersisted.get(key), Date.now());
             if (action === "persist") {
-                this.persistSubtotals(missing.queryName);
+                this.persistSubtotals(key, missing.queryName, missing.levels ?? []);
                 this.scheduleSubtotalCheck();
             }
             if (action === "warn") viewModel.warnings.unshift(INDICATOR_SUBTOTAL_WARNING);
             else viewModel.notice = INDICATOR_NOTICE;
+        }
+        // 行の階層を出す指標が無くなったら、2 段目から下の段の小計を切る（読み込むデータを戻す）。保存が返す update では、もう切ってあるので輪にならない
+        const off = viewModel.indicatorSubtotalsOff;
+        if (off && !loading && fromUpdate && !this.subtotalsTurnedOff.has(off.join("\u0001"))) {
+            this.subtotalsTurnedOff.add(off.join("\u0001"));
+            this.persistSubtotalsOff(off);
         }
 
         // 取り切れない（上限）ときは、届いた分で組んで知らせる。読み込みの途中の警告は途中までの分のものなので、読み切ってから出す
@@ -388,20 +397,34 @@ export class Visual implements IVisual {
     }
 
     /**
-     * 指標の小計を入れる設定を保存する：行の小計と段ごとの小計を入れ、科目の最初の段（段の欄の selector）だけを入れる。
-     * ほかの段の既定は切ったまま
+     * 指標の小計を入れる設定を保存する：行の小計と段ごとの小計を入れ、科目の最初の段（段の欄の selector）と、行の階層を出す指標が
+     * あれば科目の 2 段目から下の段（levels）だけを入れる。ほかの段の既定は切ったまま
      */
-    private persistSubtotals(queryName: string): void {
-        this.subtotalsPersisted.set(queryName, Date.now());
+    private persistSubtotals(key: string, queryName: string, levels: string[]): void {
+        this.subtotalsPersisted.set(key, Date.now());
+        for (const off of [...this.subtotalsTurnedOff]) if (off.split("\u0001").some((name) => levels.includes(name))) this.subtotalsTurnedOff.delete(off);
         try {
             this.host.persistProperties({
                 merge: [
                     { objectName: "subTotals", properties: { rowSubtotals: true, perRowLevel: true }, selector: null },
-                    { objectName: "subTotals", properties: { levelSubtotalEnabled: true }, selector: { metadata: queryName } },
+                    ...[queryName, ...levels].map((name): powerbi.VisualObjectInstance => ({ objectName: "subTotals", properties: { levelSubtotalEnabled: true }, selector: { metadata: name } })),
                 ],
             });
         } catch (error) {
             console.error("指標の小計の設定を保存できませんでした", error);
+        }
+    }
+
+    /** 科目の 2 段目から下の段の小計を切る設定を保存する（行の階層を出す指標が無くなったとき） */
+    private persistSubtotalsOff(levels: string[]): void {
+        // 組の鍵は最初の段の欄と 2 段目から下の段の欄（build）。切った段を含む組は、出し直したときにまた保存する
+        for (const key of [...this.subtotalsPersisted.keys()]) if (key.split("\u0001").slice(1).some((name) => levels.includes(name))) this.subtotalsPersisted.delete(key);
+        try {
+            this.host.persistProperties({
+                merge: levels.map((name): powerbi.VisualObjectInstance => ({ objectName: "subTotals", properties: { levelSubtotalEnabled: false }, selector: { metadata: name } })),
+            });
+        } catch (error) {
+            console.error("小計の設定を切れませんでした", error);
         }
     }
 

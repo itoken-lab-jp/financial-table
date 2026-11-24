@@ -32,7 +32,8 @@ import {
 import { SCROLL_START_ITEMS } from "./shared/scrollStart";
 import type { Theme } from "./theme";
 import { MeasureSetting, ORDER_NONE } from "./events";
-import { CALC_KEY, CalcChoices } from "./rows";
+import { CALC_KEY, CalcChoices, OTHERS_KEY, SECTION_KEY, parseSectionChoice } from "./rows";
+import { INDICATOR_LEVELS } from "./data";
 
 export { UNIT_TYPES, UNIT_NOTATIONS, PRECISIONS };
 
@@ -257,6 +258,13 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
         value: true,
     });
 
+    valueFirst = new formattingSettings.ToggleSwitch({
+        name: "valueFirst",
+        displayName: "比較の値を基準の前に出す",
+        description: "見せ方が値の比較の列を、期間ごとに基準の列の前（左）に並べる（予算・実績・予算差の並び）。値の列どうしは列 1〜3 の順。差・比・率の列は基準の後ろのまま",
+        value: false,
+    });
+
     diffSwap = new formattingSettings.ToggleSwitch({
         name: "diffSwap",
         displayName: "2 段の上下入れ替え",
@@ -311,6 +319,8 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
     subSize = new formattingSettings.NumUpDown({ name: "subSize", displayName: "2 段目の数字の文字サイズ", description: "2 段の見せ方の 2 段目の数字", value: DEFAULT_TEXT_SIZES.sub });
 
     general = new formattingSettings.Group({ name: "comparisonMain", displayName: "基準", slices: [this.main, this.latestHeader, this.confirmedScenario, this.confirmedLabel, this.forecastLabel, this.relabelMonths] });
+    /** 比較の列の並び（比較の列そのものは見る人が選ぶ） */
+    order = new formattingSettings.Group({ name: "comparisonOrder", displayName: "列の並び", slices: [this.valueFirst] });
     /** 2 段の見せ方の上下（比較の列は見る人が選ぶ） */
     twoRows = new formattingSettings.Group({ name: "comparisonTwoRows", displayName: "2 段の表示", slices: [this.diffSwap] });
     tones = new formattingSettings.Group({ name: "comparisonTones", displayName: "差の色", slices: [this.toneMode, this.good, this.bad] });
@@ -320,7 +330,7 @@ export class ComparisonCardSettings extends formattingSettings.CompositeCard {
         slices: [this.columnSize, this.columnBold, this.compareHeadSize, this.compareHeadBold, this.mainSize, this.compareSize, this.subSize],
     });
 
-    groups = [this.general, this.twoRows, this.tones, this.texts];
+    groups = [this.general, this.order, this.twoRows, this.tones, this.texts];
 
     /** 主の選択肢を流し込む。main は viewModel が保存値とデータから決めたもの */
     applyEvents(mainItems: powerbi.IEnumMember[], main: string): void {
@@ -849,15 +859,17 @@ export const CALC_GOOD_ITEMS: powerbi.IEnumMember[] = [
 /** どこからの「表の最初」と、挿入位置の「表の最後」（区分の名前とぶつからない値） */
 export const CALC_TABLE_START = "__start__";
 export const CALC_TABLE_END = "__end__";
+/** 小計の挿入位置の「終了位置の後ろ」（既定。足す範囲の最後の区分の後ろ） */
+export const CALC_AFTER_RANGE = "__range__";
 /** 表に無い保存値の表示名：書式ペインの小計は「計算行 N」、区分・指標は名前か queryName（キーの頭を外す）、科目はコード */
 const missingLabel = (value: string) => (value.startsWith(CALC_KEY) ? `計算行 ${value.slice(CALC_KEY.length)}` : value.replace(/^§[a-z]+:/, ""));
-export const CALC_PROPS = ["kind", "name", "from", "after", "numerator", "denominator", "format", "good"] as const;
+export const CALC_PROPS = ["kind", "name", "from", "after", "place", "numerator", "denominator", "format", "good"] as const;
 export type CalcProp = (typeof CALC_PROPS)[number];
 /** 書式ペインの計算行の保存値（生の文字。空は ""） */
 export type CalcSaved = Record<CalcProp, string>;
 /** 計算行 i（1 から）の設定の名前。1 つの object（calcRows）に kind1・name1… と並べる */
 export const calcProp = (prop: CalcProp, slot: number): string => `${prop}${slot}`;
-export const EMPTY_CALC: CalcSaved = { kind: "", name: "", from: "", after: "", numerator: "", denominator: "", format: "", good: "" };
+export const EMPTY_CALC: CalcSaved = { kind: "", name: "", from: "", after: "", place: "", numerator: "", denominator: "", format: "", good: "" };
 
 /** 計算行の 1 本（書式ペインのコンテナーの項目。公式のサンプルどおり SimpleCard を継ぐ。name は capabilities のカード名でなく識別子） */
 class CalcRowItem extends SimpleCard {
@@ -865,6 +877,7 @@ class CalcRowItem extends SimpleCard {
     rowName: formattingSettings.TextInput;
     from: formattingSettings.ItemDropdown;
     after: formattingSettings.ItemDropdown;
+    place: formattingSettings.ItemDropdown;
     numerator: formattingSettings.ItemDropdown;
     denominator: formattingSettings.ItemDropdown;
     format: formattingSettings.TextInput;
@@ -894,14 +907,22 @@ class CalcRowItem extends SimpleCard {
         this.from = new formattingSettings.ItemDropdown({
             name: calcProp("from", slot),
             displayName: "開始位置",
-            description: "小計を足し始めるレベル 1 の行（表の並び）。負債合計は流動負債から",
+            description: "小計を足し始めるレベル 1 の行（表の並び）。負債合計は流動負債から。外のフィルターでこの行が消えると、次に出ている行から足す",
             items: [NO_ITEM],
             value: NO_ITEM,
         });
         this.after = new formattingSettings.ItemDropdown({
             name: calcProp("after", slot),
             displayName: "挿入位置",
-            description: "このレベル 1 の行の後に出す。小計はここまで足す",
+            description: "小計をここまで足すレベル 1 の行（表の並び）。挿入位置が「終了位置の後ろ」なら、この行の後に出す。外のフィルターでこの行が消えると、範囲の中で最後に出ている行まで足す",
+            items: [NO_ITEM],
+            value: NO_ITEM,
+        });
+        this.place = new formattingSettings.ItemDropdown({
+            name: calcProp("place", slot),
+            displayName: "挿入位置",
+            description:
+                "この行の後ろに出す（指標・ほかの計算行の後ろも選べる）。区分は区分の合計行（区分の中の行の後ろ）。表の最初は一番上の行の前。小計の既定は終了位置の後ろ。外のフィルターで区分が消えると、選んだときの並びで前に出ている区分の後ろに出す。区分のほかの行が無いときは出さずに知らせる",
             items: [NO_ITEM],
             value: NO_ITEM,
         });
@@ -933,7 +954,7 @@ class CalcRowItem extends SimpleCard {
             items: CALC_GOOD_ITEMS,
             value: CALC_GOOD_ITEMS[0],
         });
-        this.slices = [this.kind, this.rowName, this.from, this.after, this.numerator, this.denominator, this.format, this.good];
+        this.slices = [this.kind, this.rowName, this.from, this.after, this.place, this.numerator, this.denominator, this.format, this.good];
     }
 }
 
@@ -990,6 +1011,26 @@ export class CalcRowsCardSettings extends formattingSettings.CompositeCard {
         const keep = (items: powerbi.IEnumMember[], value: string) =>
             value === "" || items.some((i) => i.value === value) ? items : [...items, { value, displayName: `${missingLabel(value)}（表に無い）` }];
         const sectionItems = choices.sections.map((c) => ({ value: c.value, displayName: c.displayName }));
+        // 開始・終了の値は区分の名前と選んだときの区分の並び（rows.ts の sectionChoiceValue）。並びだけ変わった区分は、今の選択肢を
+        // 選んだ形で見せる。名前だけの値（前の版の保存）は「（選び直す）」で残す（選び直すと並びも保存され、区分が表から消えても計算行が残る）
+        const keepSection = (items: powerbi.IEnumMember[], value: string): { items: powerbi.IEnumMember[]; value: string } => {
+            if (items.some((i) => i.value === value)) return { items, value };
+            const { label, sequence } = parseSectionChoice(value);
+            const same = sectionItems.find((i) => parseSectionChoice(i.value).label === label);
+            if (same && sequence !== null) return { items, value: same.value };
+            return { items: [...items, { value, displayName: `${label}（${same ? "選び直す" : "表に無い"}）` }], value };
+        };
+        /** 挿入位置の保存値を選択肢に合わせる。区分は名前が同じなら今の並びの選択肢を選んだ形で見せる。表に無い値は「（表に無い）」で残す */
+        const keepPlace = (items: powerbi.IEnumMember[], value: string): { items: powerbi.IEnumMember[]; value: string } => {
+            if (items.some((i) => i.value === value)) return { items, value };
+            if (value.startsWith(SECTION_KEY)) {
+                const { label } = parseSectionChoice(value.slice(SECTION_KEY.length));
+                const same = items.map((i) => String(i.value)).find((v) => v.startsWith(SECTION_KEY) && parseSectionChoice(v.slice(SECTION_KEY.length)).label === label);
+                if (same) return { items, value: same };
+                return { items: [...items, { value, displayName: `${label}（表に無い）` }], value };
+            }
+            return { items: [...items, { value, displayName: `${missingLabel(value)}（表に無い）` }], value };
+        };
         const refItems = choices.refs.map((c) => ({ value: c.value, displayName: c.displayName }));
         this.items.forEach((item, i) => {
             const s = saved[i] ?? EMPTY_CALC;
@@ -1001,18 +1042,38 @@ export class CalcRowsCardSettings extends formattingSettings.CompositeCard {
             // 種類で要る欄だけを出す（欄ごとのグレーアウトは部品に無い）：小計は名前・どこから・挿入位置、割り算は名前・挿入位置・分子・分母・書式・良し悪し
             item.rowName.visible = used;
             item.from.visible = kind === CALC_KINDS.subtotal;
-            item.after.visible = used;
-            // 小計の「挿入位置」は足す範囲の最後でもある（その区分まで足して、その後ろに置く）。どこからと組で読めるように名前を変える
-            item.after.displayName = ratio ? "挿入位置" : "終了位置";
+            // 終了位置は小計の足す範囲の最後。割り算の置く場所は「挿入位置」（place）で選ぶ（前の版の割り算の after は、place が空のときの既定として読む）
+            item.after.visible = kind === CALC_KINDS.subtotal;
+            item.after.displayName = "終了位置";
+            item.place.visible = used;
             item.numerator.visible = ratio;
             item.denominator.visible = ratio;
             // 書式・良し悪しは行別の書式に移した（2.1.7.15）。古い保存値があるときだけ、消せるように出す
             item.format.visible = ratio && s.format.trim() !== "";
             item.good.visible = ratio && s.good !== "" && s.good !== "up";
-            item.from.items = keep([{ value: CALC_TABLE_START, displayName: "表の最初" }, ...sectionItems], s.from);
-            item.from.value = itemOf(item.from.items, s.from || CALC_TABLE_START);
-            item.after.items = keep([...sectionItems, { value: CALC_TABLE_END, displayName: "表の最後" }], s.after);
-            item.after.value = itemOf(item.after.items, s.after || CALC_TABLE_END);
+            const from = keepSection([{ value: CALC_TABLE_START, displayName: "表の最初" }, ...sectionItems], s.from || CALC_TABLE_START);
+            item.from.items = from.items;
+            item.from.value = itemOf(from.items, from.value);
+            const after = keepSection([...sectionItems, { value: CALC_TABLE_END, displayName: "表の最後" }], s.after || CALC_TABLE_END);
+            item.after.items = after.items;
+            item.after.value = itemOf(after.items, after.value);
+            // 挿入位置：表の最初・表の行（自分の行と「その他の後ろ」は入れない）・表の最後。区分は選んだときの区分の並びを添える（区分が消えたときに
+            // 前に出ている区分の後ろに置く）。小計は先頭に「終了位置の後ろ」（既定）。割り算の既定は前の版の挿入位置（after）
+            const own = CALC_KEY + item.slot;
+            const placeItems: powerbi.IEnumMember[] = [
+                ...(ratio ? [] : [{ value: CALC_AFTER_RANGE, displayName: "終了位置の後ろ" }]),
+                { value: CALC_TABLE_START, displayName: "表の最初" },
+                ...choices.places.filter((p) => p.value !== own && !p.value.startsWith(OTHERS_KEY)).map((p) => {
+                    if (!p.value.startsWith(SECTION_KEY)) return p;
+                    const section = sectionItems.find((i) => parseSectionChoice(i.value).label === p.value.slice(SECTION_KEY.length));
+                    return section ? { value: SECTION_KEY + section.value, displayName: p.displayName } : p;
+                }),
+                { value: CALC_TABLE_END, displayName: "表の最後" },
+            ];
+            const placeSaved = s.place || (ratio ? (s.after && s.after !== CALC_TABLE_END ? SECTION_KEY + s.after : CALC_TABLE_END) : CALC_AFTER_RANGE);
+            const place = keepPlace(placeItems, placeSaved);
+            item.place.items = place.items;
+            item.place.value = itemOf(place.items, place.value);
             // 分子・分母の選択肢は長い（表の行すべて）ので、割り算の行にだけ入れる
             item.numerator.items = ratio ? keep([NO_ITEM, ...refItems], s.numerator) : [NO_ITEM];
             item.numerator.value = itemOf(item.numerator.items, s.numerator);
@@ -1033,6 +1094,11 @@ const INDICATOR_AGGREGATION_ITEMS: powerbi.IEnumMember[] = [
     { value: "flow", displayName: "合計（四半期・通期で足す）" },
     { value: "stock", displayName: "期末（期間の最後の月の値）" },
 ];
+/** 指標の行の下に「行」の階層を出すか（data.ts の INDICATOR_LEVELS の値） */
+const INDICATOR_LEVELS_ITEMS: powerbi.IEnumMember[] = [
+    { value: INDICATOR_LEVELS.off, displayName: "出さない" },
+    { value: INDICATOR_LEVELS.on, displayName: "出す（開くと行ごとの値）" },
+];
 /** 横持ちの指標のイベントの「すべてのイベント」（イベントに依らない値。営業日数など） */
 export const INDICATOR_ALL_EVENTS = "__all__";
 
@@ -1052,6 +1118,8 @@ export interface IndicatorSetting {
     good: string;
     /** 行の名前と数字を太字にするか（"on" | "off"） */
     bold: string;
+    /** 行の下に「行」の階層を出すか（"on" | "off"。行の後ろに置いた指標だけ効く） */
+    rowLevels?: string;
     /** 横持ちのときのイベント（金額のメジャーの queryName か INDICATOR_ALL_EVENTS）。縦持ちでは null（イベントの列で分かれて届く） */
     event: string | null;
     eventChoices: Array<{ value: string; displayName: string }>;
@@ -1067,6 +1135,8 @@ const INDICATOR_HELP = {
     good: "差の色の向き。既定は色を付けない",
     bold: "この指標の行の名前と数字を太字にする。「行」カードの「集計行を太字」を切っていても太字",
     event: "メジャーを積んだ（横持ち）ときの、指標の値のシナリオ。既定はシナリオの順序の一番後ろのメジャー。「すべてのシナリオ」はシナリオに依らない値（営業日数など）",
+    rowLevels:
+        "この指標の行の下に、「行」フィールドと同じ階層（区分 → 中分類 → 行）でこの指標の値を出す。指標の行を開くと出る（既定は閉じる）。値は Power BI がレベルごとに計算した値で、子の足し算にしない（平均や率のメジャーも合う）。値のある行だけ出す。区分・中分類ごとの値を読むため、読み込むデータが増える",
 };
 
 /**
@@ -1116,6 +1186,10 @@ export class IndicatorsCardSettings extends formattingSettings.CompositeCard {
             // 書式・良し悪し・太字は「数値」カードに移した（2.1.7.15）。古い保存値は行の既定として効き、「数値」カードの設定が勝つ。
             // 古い欄は書式ペインに出さない（2.1.7.19、ユーザー「前の置き場所を消したい」）
             if (setting.placement !== INDICATOR_MODES.under) slices.push(dropdown("aggregation", "期間の集計", INDICATOR_AGGREGATION_ITEMS, setting.aggregation, INDICATOR_HELP.aggregation));
+            // 行の階層は、行の後ろに置いた指標だけ（うちは親の行と同じ見せ方の行、表に出さない指標は行が無い）
+            if (setting.placement === INDICATOR_MODES.after) {
+                slices.push(dropdown(INDICATOR_LEVELS.property, "行の階層", INDICATOR_LEVELS_ITEMS, setting.rowLevels ?? INDICATOR_LEVELS.off, INDICATOR_HELP.rowLevels));
+            }
             // 横持ちだけ：指標の値のシナリオ
             if (setting.event !== null) {
                 const events: powerbi.IEnumMember[] = [...setting.eventChoices, { value: INDICATOR_ALL_EVENTS, displayName: "すべてのシナリオ" }];
@@ -1932,7 +2006,7 @@ export function arrangeCards(model: powerbi.visuals.FormattingModel, settings: V
                     : [
                           ...groupsOf(calc).filter((g) => g.uid === "calcScope-group"),
                           { uid: "calcDefine-group", displayName: "種類と名前", slices: pick("calcRows", calcSlot, ["kind", "name"]) },
-                          { uid: "calcPlace-group", displayName: "位置", slices: pick("calcRows", calcSlot, ["from", "after"]) },
+                          { uid: "calcPlace-group", displayName: "位置", slices: pick("calcRows", calcSlot, ["from", "after", "place"]) },
                           { uid: "calcRatio-group", displayName: "分子と分母", slices: pick("calcRows", calcSlot, ["numerator", "denominator"]) },
                       ]),
             ]),
@@ -1957,7 +2031,7 @@ export function arrangeCards(model: powerbi.visuals.FormattingModel, settings: V
             ...indicators,
             groups: keep([
                 ...groupsOf(indicators).filter((g) => g.uid === "indicatorsScope-group"),
-                part("indicatorsPlace-group", "位置", ["after", "placement"]),
+                part("indicatorsPlace-group", "位置", ["after", "placement", "rowLevels"]),
                 part("indicatorsSum-group", "集計", ["aggregation", "event"]),
             ]),
         });
